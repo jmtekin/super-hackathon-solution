@@ -7,6 +7,7 @@
 3. **Restore.** Only into test copies, never production. Fault kit: **7/7 Frappe and 6/6 Postgres faults caught** (bit flip, truncation, deleted rows, wrong totals, poisoned dump), none reached a test site; the poisoned dump is **quarantined in 8.5 s**.
 
 **Live:** https://65-20-116-145.sslip.io/ (public, and judges can press Run: one run at a time, only into test copies; [/overview](https://65-20-116-145.sslip.io/overview) shows the whole flow and the live policies).
+**The ERP it protects (Frappe/ERPNext on Vultr):** production [http://70.34.199.143](http://70.34.199.143) (read only for BackupAirlock), restored test copies [test.local :8080](http://70.34.199.143:8080) (ERP v1) and [test2.local :8081](http://70.34.199.143:8081) (ERP v2, upgraded schema).
 **Built on Vultr:** two Vultr Cloud Compute VMs (BackupAirlock: vc2-4c-8gb, Stockholm; the ERP: Frappe 16 + ERPNext) and Vultr Serverless Inference for every LLM call (`glm-5.3` writes bridges and repairs, `deepseek-v4.1-flash-1017` as fallback; `ui/app.py:47-48`).
 
 Vultr "Agent Runtime" hackathon, Stockholm, 27 Nov 2026. For a map of the code with file:line evidence, see [CLAUDE.md](CLAUDE.md).
