@@ -263,6 +263,7 @@ function chainSandbox(ev) {
   if (ev.phase === "started") {
     chain.running++;
     cell(chain.phase, ev.backup, "w", "");
+    if (chain.phase === "adapt") ROWS.slice(2).forEach(([k]) => cell(k, ev.backup, "na", "·"));
     night(ev.backup, chain.phase === "native" ? "probing" : "adapting");
     term(`$ docker run --network none --cpus 1 --memory 256m --read-only ... ${ev.name}  [${ev.backup}]`, "s");
   } else if (ev.phase === "exited") {

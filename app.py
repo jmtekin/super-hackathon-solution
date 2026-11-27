@@ -65,7 +65,7 @@ Reply with a line starting CAUSE: (one sentence), then the full corrected script
 MIGRATE_SYSTEM = """You are Restorer's migration writer. Old backups no longer load into the current app because its schema changed. Write one SQLite migration that copies every row from the old schema into the current one.
 - It runs with the sqlite3 CLI on the restored database, which already has the current schema and is empty. The old backup, loaded into its own schema, is attached as old (refer to old.<table>).
 - Plain SQL only: INSERT INTO ... SELECT with explicit column lists. No CREATE, DROP, ALTER, PRAGMA or ATTACH.
-- Derive new columns from the old data where the data allows; otherwise let the column default apply.
+- Copy every old table. Derive new columns from the old data where the data allows (simple substr/instr expressions); otherwise let the column default apply. No placeholders, no comments.
 Reply with a line starting CHANGES: followed by one short line per schema change, then the SQL in one ```sql block."""
 
 REPAIR_MIGRATION_SYSTEM = """You are Restorer's migration repairer. A schema migration failed inside the sandbox. Fix it with the smallest change that addresses the error. Same rules: plain SQL, INSERT INTO ... SELECT with explicit column lists, the old database attached as old.
@@ -320,6 +320,19 @@ async def chain_drill(run):
                       "error": "timeout" if r["timed_out"] else _last_line(r["stderr"])})
         return [(c, c["result"]) for c in todo if not c["result"]["ok"]]
 
+    def check(c):
+        """Verify one night's restored database; True when every check passes."""
+        c["checks"], c["db_sha"] = [], None
+        if not c["result"]["ok"]:
+            return False
+        db = run.dir / f"{c['backup']}.db"
+        db.write_bytes(c["result"]["artifact"][1])
+        c["db_sha"] = _sha(c["result"]["artifact"][1])
+        c["checks"] = verify.run(db, c["expected"])
+        run.emit({"type": "chain", "phase": "verify", "backup": c["backup"],
+                  "checks": [{f: k[f] for f in ("check", "pass", "detail")} for k in c["checks"]]})
+        return all(k["pass"] for k in c["checks"])
+
     verdict, explanation, migration, old_v, rounds = None, "", None, None, 0
     try:
         run.step("Native restore", "running", detail=f"{len(chain)} sandboxes in parallel, current app schema v{app_v}")
@@ -355,14 +368,25 @@ async def chain_drill(run):
                 run.step(name, "running", detail=f"{len(broken)} sandboxes in parallel: load into schema v{old_v}, "
                          f"migrate to v{app_v}")
                 failed = await wave(f"adapt-{rounds}", broken, CHAIN_ADAPT, {"migrate.sql": migration})
-                run.step(name, "fail" if failed else "ok", detail=f"{len(broken) - len(failed)} of {len(broken)} adapted")
-                if not failed or rounds == MAX_ATTEMPTS:
+                # A migration that exits 0 can still lose data, so each round is judged by the verifier too.
+                rejected = [c for c in broken if not check(c) and c["result"]["ok"]]
+                run.step(name, "fail" if failed or rejected else "ok",
+                         detail=f"{len(broken) - len(failed)} of {len(broken)} ran, "
+                         f"{len(broken) - len(failed) - len(rejected)} pass verification")
+                if not (failed or rejected) or rounds == MAX_ATTEMPTS:
                     break
-                c, r = failed[0]
-                run.step("Repair migration", "running", detail="stderr goes back to the model")
+                if failed:
+                    c, r = failed[0]
+                    evidence = f"It failed on {c['backup']} with exit {r['exit']}.\nstderr:\n{r['stderr'][-3000:]}"
+                else:
+                    c = rejected[0]
+                    evidence = (f"It ran without errors, but the deterministic verifier rejected the result for "
+                                f"{c['backup']}:\n" + "\n".join(f"- {k['check']}: {k['detail']}"
+                                                                for k in c["checks"] if not k["pass"]))
+                run.step("Repair migration", "running",
+                         detail=("stderr" if failed else "the failed checks") + " go back to the model")
                 text = await llm(run, "repair", REPAIR_MIGRATION_SYSTEM,
-                                 context + f"\nMigration:\n```sql\n{migration}```\nIt failed on {c['backup']} with exit "
-                                 f"{r['exit']}.\nstderr:\n{r['stderr'][-3000:]}")
+                                 context + f"\nMigration:\n```sql\n{migration}```\n{evidence}")
                 fixed = _script(text)
                 diff = _diff(migration, fixed, f"migrate.sql (round {rounds})", f"migrate.sql (round {rounds + 1})")
                 run.step("Repair migration", "ok", cause=_section(text, "CAUSE"), diff=diff)
@@ -370,15 +394,10 @@ async def chain_drill(run):
 
         run.step("Verification", "running", detail="each night against its own manifest, no model involved")
         for c in chain:
-            c["adapted"], c["checks"], c["db_sha"] = c in broken, [], None
-            if not c["result"]["ok"]:
-                continue
-            db = run.dir / f"{c['backup']}.db"
-            db.write_bytes(c["result"]["artifact"][1])
-            c["db_sha"] = _sha(c["result"]["artifact"][1])
-            c["checks"] = verify.run(db, c["expected"])
-            run.emit({"type": "chain", "phase": "verify", "backup": c["backup"],
-                      "checks": [{f: k[f] for f in ("check", "pass", "detail")} for k in c["checks"]]})
+            c["adapted"] = c in broken
+            if c["adapted"] and migration:
+                continue  # already verified in its last round
+            check(c)
         checks = [k for c in chain for k in c["checks"]]
         good = [c for c in chain if c["checks"] and all(k["pass"] for k in c["checks"])]
         n_pass = sum(k["pass"] for k in checks)
@@ -405,12 +424,14 @@ async def chain_drill(run):
         verdict = verdict or {"level": "failed", "headline": "Drill aborted.", "reason": str(e)[:300]}
         run.step("Error", "fail", detail=str(e)[:300])
     note = {True: f"migrated from schema v{old_v} to v{app_v}", False: f"native schema v{app_v}"}
+    passed = lambda c: bool(c.get("checks")) and all(k["pass"] for k in c["checks"])
     await seal(run, verdict, explanation, files, checks=[{**k, "check": f"{c['backup']} {k['check']}"}
                                                          for c in chain for k in c.get("checks", [])],
                restored_db_sha256=None,
                chain=[{"backup": c["backup"], "taken_at": c["catalog"]["taken_at"],
                        "schema_version": c["catalog"]["schema_version"],
-                       "note": note[c.get("adapted", False)] if c.get("checks") else "not restored",
+                       "note": note[c.get("adapted", False)] if passed(c) else
+                       "restored, checks fail" if c.get("checks") else "not restored",
                        "restored_db_sha256": c.get("db_sha"),
                        "checks_passed": f"{sum(k['pass'] for k in c.get('checks', []))}/{len(c.get('checks', []))}"}
                       for c in chain],
