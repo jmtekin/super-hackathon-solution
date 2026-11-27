@@ -539,7 +539,7 @@ function certView() {
     <section><h3 class="colhead">Model calls</h3><dl class="kv"><dt>provider</dt><dd>${esc(c.inference)}</dd>
       ${(c.llm_calls || []).map(l => `<dt>${esc(l.purpose)}</dt><dd>${esc(l.model)} · ${sec(l.latency_s)} · ${l.tokens} tokens</dd>`).join("") || "<dt>calls</dt><dd>none needed</dd>"}</dl></section>
     <section><h3 class="colhead">Seal</h3><dl class="kv"><dt>proof sha256</dt><dd>${esc(c.proof_sha256)}</dd></dl>
-      <p class="note">sha256 over this certificate's JSON without the field itself; recompute it to check nothing was edited.</p></section>
+      <p class="note">sha256 of the rest of this certificate (JSON, sorted keys). Recompute it to check nothing was edited.</p></section>
   </div>`;
 }
 
