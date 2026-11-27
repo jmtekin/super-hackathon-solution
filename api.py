@@ -144,7 +144,7 @@ app = FastAPI(title="RestoreGuard", docs_url=None, redoc_url=None, lifespan=life
 def _summary(b):
     m = b.get("manifest") or {}
     checks = [c for r in b["cells"].values() for c in r["checks"]]
-    return {"id": b["id"], "file": b["file"], "status": b["status"], "reason": b.get("reason", ""),
+    return {"id": b["id"], "file": b["file"], "sha256": m.get("sha256"), "status": b["status"], "reason": b.get("reason", ""),
             "created_at": m.get("created_at"), "schema_version": m.get("schema_version"),
             "app_version": m.get("app_version"), "bytes": b.get("bytes"), "found_at": b.get("found_at"),
             "started_at": b.get("started_at"), "finished_at": b.get("finished_at"),
@@ -188,6 +188,26 @@ def certificate(bid: str):
     if not cert:
         raise HTTPException(409, "not finished")
     return JSONResponse(cert, headers={"Content-Disposition": f'attachment; filename="dr-certificate-{bid}.json"'})
+
+
+@app.get("/api/backups/{bid}/incident.json")
+def incident(bid: str):
+    """Forensic log of a quarantined backup: what the static scan found and what the sandbox stopped."""
+    b = _get(bid)
+    if b["status"] != "quarantined":
+        raise HTTPException(409, f"backup is {b['status']}, not quarantined")
+    cells = []
+    for v, r in b["cells"].items():
+        f = RESULTS / f"{bid}@{v}.events.jsonl"
+        events = [json.loads(l) for l in f.read_text().splitlines()] if f.exists() else []
+        cells.append({"app_version": v, "restored_into": r["restored_into"], "signals": r["signals"],
+                      "static_scan": r["static_scan"],
+                      "containment_events": [{k: e.get(k) for k in ("t", "signal", "event", "detail")}
+                                             for e in events if e["type"] == "policy"],
+                      "errors": [e["line"] for e in events if e["type"] == "log" and "ERROR" in e["line"]][:20]})
+    return JSONResponse({"backup": b["file"], "sha256": b["manifest"]["sha256"], "status": b["status"],
+                         "reason": b["reason"], "cells": cells},
+                        headers={"Content-Disposition": f'attachment; filename="incident-{bid}.json"'})
 
 
 @app.get("/api/backups/{bid}/bridges/{name}")

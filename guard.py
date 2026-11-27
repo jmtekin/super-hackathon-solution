@@ -56,6 +56,8 @@ SCAN = [(re.compile(r"\b(TO|FROM)\s+PROGRAM\b", re.I), "COPY ... PROGRAM runs a 
         (re.compile(r"\bCREATE\s+EVENT\s+TRIGGER\b|\bALTER\s+SYSTEM\b", re.I), "changes server-wide behaviour"),
         (re.compile(r"\bdblink|postgres_fdw\b", re.I), "opens connections out of the database")]
 CONTAINED = {"network", "rootfs", "honey", "memory", "timeout"}
+SIGNS = [(sig, pattern, event.replace("outside /work", "outside the database's data dir"))
+         for sig, pattern, event in airlock_sandbox.SIGNS]
 
 BRIDGE_SYSTEM = """You are RestoreGuard's bridge migration writer. A PostgreSQL 16 backup of an ERP was restored, but the ERP app version under test expects a different schema, so the app refuses to start on it. Write one SQL script that transforms the restored database in place into exactly the app's schema.
 - It runs with psql -v ON_ERROR_STOP=1 in a single transaction on the restored database, as superuser, with no network.
@@ -224,7 +226,7 @@ class Sandbox:
 
     def _signals(self, text, stream, keep=None):
         for line in text.splitlines():
-            hits = [x for x in airlock_sandbox.SIGNS if x[1].search(line)]
+            hits = [x for x in SIGNS if x[1].search(line)]
             if keep is None or hits or keep.search(line):
                 self.cell.emit({"type": "log", "stream": stream, "line": line[:2000]})
             for sig, _, event in hits:
