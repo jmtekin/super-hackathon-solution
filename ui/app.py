@@ -723,6 +723,16 @@ def settings():
     return FileResponse(HERE / "static" / "settings.html")
 
 
+@app.get("/airlock.css")
+def airlock_css():
+    return FileResponse(HERE / "static" / "airlock.css", media_type="text/css")
+
+
+@app.get("/inter.woff2")
+def inter_font():
+    return FileResponse(HERE / "static" / "inter.woff2", media_type="font/woff2")
+
+
 @app.get("/erp-test-local.jpg")
 def erp_shot():
     return FileResponse(HERE / "static" / "erp-test-local.jpg")
