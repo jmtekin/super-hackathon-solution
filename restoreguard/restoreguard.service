@@ -1,0 +1,21 @@
+[Unit]
+Description=RestoreGuard: proves every Nordvik ERP backup restores into a test instance of the app (results API :8600, Jonas's UI)
+After=network-online.target docker.service
+
+[Service]
+User=agent
+Group=agent
+SupplementaryGroups=docker
+WorkingDirectory=/opt/agent/projects/restoreguard
+# faults/out: the fault kit's copies show up in the UI next to the real backups.
+Environment=RESTOREGUARD_BACKUPS=/opt/agent/projects/restoreguard/backups:/opt/agent/projects/restoreguard/faults/out
+# 2 s so a dropped backup shows up in the UI at once (live demo); a folder glob, nothing remote here.
+Environment=RESTOREGUARD_POLL=2
+ExecStart=/opt/agent/projects/restorer/.venv/bin/python api.py
+Restart=always
+RestartSec=5
+MemoryMax=512M
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

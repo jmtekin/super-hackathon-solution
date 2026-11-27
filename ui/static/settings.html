@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings · BackupAirlock</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ccircle cx=%278%27 cy=%278%27 r=%276%27 fill=%27%233fb950%27/%3E%3C/svg%3E">
+<style>
+/* Settings: what the runtime is set to, read from its GET /api/config (no tokens, keys or paths).
+   Same system as the timeline (index.html): design/COLOR.md, design/SPACING.md, type 12 / 13 / 14 / 16 / 20. */
+:root{
+  --bg:#111113;--surface:#18191b;--hover:#272a2d;--selected:#2e3135;
+  --line:#363a3f;--line-2:#43484e;--strong:#5a6169;--ink:#edeef0;--ink-2:#c4c8ce;--accent:#70b8ff;
+  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;--s7:48px;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline;text-underline-offset:3px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.page{max-width:1440px;margin:0 auto;padding:var(--s5) var(--s7) var(--s7)}
+
+.bar{display:flex;align-items:center;gap:var(--s5);height:40px}
+.brand{font-weight:600;font-size:14px;color:var(--ink)}
+.nav{display:flex;gap:var(--s1)}
+.nav a{height:32px;line-height:32px;padding:0 var(--s3);border-radius:3px;color:var(--ink-2);font-size:13px}
+.nav a:hover{background:var(--hover);text-decoration:none}
+.nav a[aria-current=page]{color:var(--ink);background:var(--selected)}
+
+h1{font-size:20px;line-height:28px;font-weight:600;margin-top:var(--s7)}
+.lead{color:var(--ink-2);margin-top:var(--s2)}
+
+/* one section per row: name on the left line, its values on the right line */
+.sec{display:grid;grid-template-columns:240px minmax(0,1fr);gap:var(--s7);padding:var(--s5) 0;border-top:1px solid var(--line)}
+.sec:first-of-type{margin-top:var(--s7)}
+.sec h2{font-size:14px;line-height:20px;font-weight:600}
+.sec h2 + p{font-size:12px;line-height:16px;color:var(--ink-2);margin-top:var(--s1)}
+dl{display:grid;grid-template-columns:128px minmax(0,1fr);column-gap:var(--s4);row-gap:var(--s2)}
+/* sibling groups (two sources, four targets, two sandboxes) sit side by side, two to a row */
+.cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s5) var(--s7);max-width:1040px}
+dt{font-size:13px;line-height:20px;color:var(--ink-2)}
+dd{font-size:13px;line-height:20px;overflow-wrap:anywhere}
+.group h3{font-size:13px;line-height:20px;font-weight:600;margin-bottom:var(--s2)}
+ul.rules{list-style:none}
+ul.rules li{font-size:13px;line-height:20px;padding:var(--s1) 0}
+.err{color:var(--ink-2);font-size:13px;margin-top:var(--s7)}
+
+@media (max-width:900px){
+  .sec{grid-template-columns:minmax(0,1fr);gap:var(--s3)}
+  .cols{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width:640px){
+  .page{padding:var(--s4) var(--s4) var(--s6)}
+  .bar{gap:var(--s3)}
+  .nav a{padding:0 var(--s2)}
+  h1{margin-top:var(--s6)}
+  dl{grid-template-columns:minmax(0,1fr);row-gap:0}
+  dd{margin-bottom:var(--s2)}
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="bar">
+    <a class="brand" href="overview">BackupAirlock</a>
+    <nav class="nav"><a href="overview">Overview</a><a href="timeline">Timeline</a><a href="settings" aria-current="page">Settings</a></nav>
+  </header>
+  <h1>Settings</h1>
+  <p class="lead">Read from the running runtime on Vultr. Changing them means changing its config on the VM.</p>
+  <div id="body"></div>
+</div>
+<script>
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const dl = pairs => `<dl>${pairs.filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`;
+const sec = (title, sub, inner) => `<section class="sec"><div><h2>${esc(title)}</h2>${sub ? `<p>${esc(sub)}</p>` : ""}</div><div>${inner}</div></section>`;
+const cols = inner => `<div class="cols">${inner}</div>`;
+const group = (title, inner) => `<div class="group"><h3>${esc(title)}</h3>${inner}</div>`;
+const every = s => s >= 60 ? `every ${s / 60} min` : `every ${s} s`;
+const sandbox = p => dl([["runtime", p.runtime], ["image", p.image], ["network", p.network], ["root filesystem", p.rootfs],
+  ["backup file", p.input], ["data", p.data], ["memory", p.app_memory ? `${p.memory}, app ${p.app_memory}` : p.memory],
+  ["CPU", `${p.cpus}, shares ${p.cpu_shares}`], ["processes", `at most ${p.pids_limit}`], ["capabilities", p.capabilities],
+  ["runs as", p.user], ["time limit", `${p.timeout_s} s`]]);
+
+fetch("rg/api/config").then(r => r.ok ? r.json() : Promise.reject(r.status)).then(c => {
+  document.getElementById("body").innerHTML = [
+    sec("Sources", "Backups are only ever read from here.", cols(c.sources.map(s => group(s.site,
+      dl([["address", s.url], ["access", s.access], ["checked", every(s.poll_s)]]))).join(""))),
+    sec("Restore targets", "Where a backup that passed is restored. Never production.", cols(c.targets.map(t => group(t.site,
+      dl([["app version", t.app], ["address", t.url], ["restore", t.restore]]))).join(""))),
+    sec("Sandbox", "Every restore runs here first.", cols(group("ERP (MariaDB)", sandbox(c.sandbox.frappe)) + group("Stand-in (Postgres)", sandbox(c.sandbox.postgres)))),
+    sec("Heal", "Old backup on a newer app version.", dl([["model", c.bridge.model], ["inference", c.bridge.provider],
+      ["attempts", `at most ${c.bridge.max_rounds} rounds, checked after each`]])),
+    sec("Business rules", "Checked on every restored copy.", cols(group("ERP", `<ul class="rules">${c.rules.frappe.map(r => `<li>${esc(r)}</li>`).join("")}</ul>`) +
+      group("Stand-in", `<ul class="rules">${c.rules["stand-in"].map(r => `<li>${esc(r)}</li>`).join("")}</ul>`))),
+  ].join("");
+}).catch(() => { document.getElementById("body").innerHTML = `<p class="err">The runtime is not answering, so its settings cannot be shown.</p>`; });
+</script>
+</body>
+</html>

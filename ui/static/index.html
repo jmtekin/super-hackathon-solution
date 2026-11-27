@@ -1,0 +1,1070 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BackupAirlock</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ccircle cx=%278%27 cy=%278%27 r=%276%27 fill=%27%233fb950%27/%3E%3C/svg%3E">
+<style>
+/* Console v7 (one view: timeline at the bottom, checks above; docs/design/first-impression/README.md) on the v5 system. Colour: design/COLOR.md (Radix slate 12-step neutrals, state hues only on marks, links and the one danger word).
+   Spacing: design/SPACING.md (4 8 12 16 24 32 48; inside a group < between groups < between regions).
+   Type 12 / 13 / 14 / 16 / 20. */
+:root{
+  --bg:#111113;--surface:#18191b;--hover:#272a2d;--selected:#2e3135;
+  --line:#363a3f;--line-2:#43484e;--strong:#5a6169;--ink:#edeef0;--ink-2:#c4c8ce;
+  --ok:#3fb950;--heal:#6cb6a8;--warn:#d29922;--bad:#ff9592;--accent:#70b8ff;
+  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;--s7:48px;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline;text-underline-offset:3px}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mono{font-family:var(--mono);font-size:12px}
+.muted{color:var(--ink-2)}
+.page{max-width:1440px;margin:0 auto;padding:var(--s5) var(--s7) var(--s7)}
+
+/* header */
+.bar{display:flex;align-items:center;gap:var(--s5);height:40px}
+.brand{font-weight:600;font-size:14px}
+.tabs{display:flex;gap:var(--s1)}
+.tabs button{height:32px;padding:0 var(--s3);border-radius:3px;color:var(--ink-2);font-size:13px}
+.tabs button:hover{background:var(--hover)}
+.tabs button[aria-selected=true]{color:var(--ink);background:var(--selected)}
+.live{margin-left:auto;display:flex;align-items:center;gap:var(--s2);color:var(--ink-2);font-size:12px}
+.live i{width:6px;height:6px;border-radius:1px;background:var(--strong)}
+.live.on i{background:var(--ok)}
+.top{display:flex;justify-content:space-between;align-items:flex-end;gap:var(--s5);margin-top:var(--s6)}
+.meta{font-size:12px;color:var(--ink-2)}
+h1{font-size:20px;line-height:28px;font-weight:600;margin-top:var(--s1)}
+h1 em{font-style:normal;color:var(--bad)}
+.actions{display:flex;gap:var(--s4);align-items:center;flex-shrink:0;font-size:13px}
+.btn{height:32px;padding:0 var(--s3);border-radius:3px;font-size:13px;font-weight:600;line-height:30px;border:1px solid var(--line-2);color:var(--ink);white-space:nowrap;display:inline-block}
+.btn.primary{background:var(--selected);border-color:var(--strong)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn:hover{text-decoration:none;border-color:var(--strong);background:var(--hover)}
+.note{font-size:12px;color:var(--ink-2);margin-top:var(--s2)}
+.note:empty{display:none}
+
+/* main grid: matrix 7 columns, panel 5; both start on the content-top line */
+.main{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,5fr);gap:var(--s7);margin-top:var(--s7);align-items:start}
+.colhead{font:12px/16px var(--mono);color:var(--ink-2);text-transform:uppercase;letter-spacing:.06em;padding:0 var(--s4) var(--s2)}
+.colhead.corner{padding-left:0}
+.matrix{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr)}
+.matrix > .row{display:contents}
+/* one row rhythm: same hairline, same top padding, same 13/20 first line, so name and status share a baseline */
+.bk,.cell{padding:var(--s3) var(--s4);border-top:1px solid var(--line);min-width:0}
+.bk{padding-left:0}
+.bk .name{font-size:13px;line-height:20px;font-weight:600;overflow-wrap:anywhere}
+.bk .sub{font-size:12px;line-height:16px;color:var(--ink-2);margin-top:var(--s1)}
+.cell{text-align:left;width:100%;display:flex;flex-direction:column;justify-content:flex-start}
+.cell:hover{background:var(--hover)}
+.cell[aria-pressed=true]{background:var(--selected);box-shadow:inset 2px 0 0 var(--strong)}
+.st{display:flex;align-items:center;gap:var(--s2);font-size:13px;font-weight:600;line-height:20px}
+.st i{width:8px;height:8px;border-radius:1px;flex-shrink:0;background:var(--c)}
+.st i.hollow{background:none;box-shadow:inset 0 0 0 1.5px var(--c)}
+.st b{font-weight:600}
+.st.c-bad b{color:var(--bad)}
+.st span{font-weight:400;color:var(--ink-2)}
+.cell .d{font-size:12px;line-height:16px;color:var(--ink-2);margin-top:var(--s1)}
+.cell .app{display:none;font:12px/16px var(--mono);color:var(--ink-2);margin-bottom:var(--s1)}
+.c-ok{--c:var(--ok)}.c-heal{--c:var(--heal)}.c-warn{--c:var(--warn)}.c-bad{--c:var(--bad)}.c-idle{--c:var(--strong)}.c-run{--c:var(--ink)}
+
+/* panel: no card; its text starts on the panel column's edge */
+.panel{min-width:0}
+.panel h2{font-size:16px;line-height:24px;font-weight:600;overflow-wrap:anywhere}
+.panel h2 .muted{font-weight:400}
+.panel .st{margin-top:var(--s2)}
+.panel .lead{margin-top:var(--s1);color:var(--ink-2);font-size:13px}
+.panel .lead:empty{display:none}
+.panel section{margin-top:var(--s6)}
+.panel h3 span + span{text-transform:none}
+.panel h3{font:12px/16px var(--mono);color:var(--ink-2);text-transform:uppercase;letter-spacing:.06em;padding-bottom:var(--s2);display:flex;justify-content:space-between;gap:var(--s3)}
+.rows > div{display:grid;grid-template-columns:16px minmax(0,1fr) minmax(0,1fr);column-gap:var(--s2);padding:var(--s2) 0;border-top:1px solid var(--line);font-size:13px;line-height:20px}
+.rows .m{font-weight:700}
+.rows .ok{color:var(--ok)}.rows .no{color:var(--bad)}.rows .warn{color:var(--warn)}
+.rows .d{color:var(--ink-2);overflow-wrap:anywhere}
+.rows .n small{color:var(--ink-2);font-size:12px}
+.rows.ev > div{grid-template-columns:48px minmax(0,1fr)}
+.rows.ev .t{font:12px/20px var(--mono);color:var(--ink-2)}
+.rows.ev .st{align-items:flex-start;font-weight:400;margin-top:0}
+.rows.ev .st i{margin-top:6px}
+.rows.ev .st .muted{display:block}
+.rows.ev span{overflow-wrap:anywhere;min-width:0}
+.code{margin-top:var(--s2);background:var(--surface);border-radius:3px;padding:var(--s3);font:12px/20px var(--mono);color:var(--ink-2);white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto}
+.kv{display:grid;grid-template-columns:auto 1fr;column-gap:var(--s4);row-gap:var(--s1);font-size:12px}
+.kv dt{color:var(--ink-2)}
+.kv dd{overflow-wrap:anywhere}
+.kv.target{margin-top:var(--s4)}
+.links{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s4);margin-top:var(--s6);font-size:13px}
+section .links{margin-top:var(--s3)}
+.timing{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) 56px;column-gap:var(--s3);align-items:center;font-size:12px;padding:var(--s1) 0}
+.timing .s{text-align:right}
+.timing .b i{display:block;height:4px;border-radius:1px;background:var(--strong)}
+details summary{cursor:pointer;color:var(--accent);font-size:13px;margin-top:var(--s6)}
+details.grp summary{list-style:none;margin:0}
+details.grp summary::-webkit-details-marker{display:none}
+details.grp summary h3 b{color:var(--ok);font-weight:400}
+
+/* the one view (Jonas 15:35-15:36): checks of the selected backup above, the timeline of backups along the bottom, nothing else */
+.page.full{max-width:none;padding:0}
+.ov{height:100vh;height:100dvh;display:grid;grid-template-rows:auto minmax(0,1fr) auto}
+.brand{display:flex;align-items:baseline;gap:var(--s3);padding:var(--s4) var(--s7);border-bottom:1px solid var(--line)}
+.brand b{font-size:16px;font-weight:700;letter-spacing:-.01em}
+.brand span{font-size:13px;color:var(--ink-2)}
+/* Run (Jonas 16:17): one primary action, three one-click stories beside it, the parameters in a small panel under it */
+.brand{position:relative}
+.ctl{margin-left:auto;align-self:center;display:flex;align-items:center;gap:var(--s3)}
+.scen{display:flex;gap:2px;padding:2px;border:1px solid var(--line);border-radius:4px}
+.scen button{height:28px;padding:0 var(--s3);border-radius:3px;font-size:13px;color:var(--ink-2);white-space:nowrap}
+.scen button:hover:not(:disabled){background:var(--hover);color:var(--ink)}
+.scen button[aria-pressed=true]{background:var(--selected);color:var(--ink)}
+.scen button:disabled:not([aria-pressed=true]),.ctl .quiet:disabled{opacity:.45;cursor:default}
+.ctl .quiet{height:32px;padding:0 var(--s2);font-size:13px;color:var(--ink-2)}
+.ctl .quiet:hover:not(:disabled){color:var(--ink)}
+.brand .msg{font-size:12px;color:var(--ink-2);max-width:360px;text-align:right}
+.brand .msg.err{color:var(--warn)}
+.runp{position:absolute;right:var(--s7);top:calc(100% + var(--s2));z-index:5;width:400px;max-height:calc(100dvh - 96px);overflow:auto;display:grid;gap:var(--s4);
+  padding:var(--s4);background:var(--surface);border:1px solid var(--line-2);border-radius:4px;box-shadow:0 12px 32px rgba(0,0,0,.45);font-weight:400}
+.runp h3{font-size:12px;line-height:16px;font-weight:600;color:var(--ink-2);margin-bottom:var(--s1)}
+.runp label{display:flex;align-items:center;gap:var(--s2);font-size:13px;line-height:28px;cursor:pointer}
+.runp label span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.runp label i{width:8px;height:8px;border-radius:50%;background:var(--c);flex-shrink:0}
+.runp label small{margin-left:auto;padding-left:var(--s3);font-size:12px;color:var(--strong);white-space:nowrap}
+.runp .bks{max-height:196px;overflow:auto;margin-right:calc(-1 * var(--s2));padding-right:var(--s2)}
+.runp .opts{display:grid;grid-template-columns:1fr 1fr;column-gap:var(--s4)}
+.runp input{accent-color:var(--accent);margin:0}
+.runp footer{display:flex;align-items:center;justify-content:flex-end;gap:var(--s3);padding-top:var(--s3);border-top:1px solid var(--line)}
+.sum{grid-column:1/-1;display:flex;flex-wrap:wrap;column-gap:var(--s5);row-gap:var(--s1);margin-top:calc(var(--s3) - var(--s5));font-size:13px;color:var(--ink-2)}
+.sum strong{color:var(--ink);font-weight:600}
+.dt{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);grid-template-rows:auto auto minmax(0,1fr);column-gap:var(--s6);row-gap:var(--s5);padding:var(--s6) var(--s7) var(--s5);min-height:0}
+.dt header{grid-column:1/-1;display:flex;align-items:baseline;flex-wrap:wrap;column-gap:var(--s4);row-gap:var(--s1)}
+.dt h2{font-size:20px;line-height:28px;font-weight:600;overflow-wrap:anywhere}
+.dt .when{font-size:13px;color:var(--ink-2)}
+.ck{display:grid;align-content:start;gap:var(--s5);overflow:auto;min-height:0;padding-right:var(--s2)}
+.ck h3{font-size:13px;line-height:20px;font-weight:600;padding-bottom:var(--s2);border-bottom:1px solid var(--line)}
+.ck ul{list-style:none;margin-top:var(--s2)}
+.ck li{display:grid;grid-template-columns:8px minmax(0,1fr) auto;column-gap:var(--s3);align-items:start;font-size:13px;line-height:24px}
+.ck li i{margin-top:8px;width:8px;height:8px;border-radius:50%;background:var(--c)}
+.ck li.skipped i,.ck li.waiting i{background:none;box-shadow:inset 0 0 0 1.5px var(--c)}
+.ck li.skipped span,.ck li.waiting span{color:var(--ink-2)}
+.term{overflow:auto;min-height:0;background:var(--surface);border-radius:3px;padding:var(--s3) var(--s4);font:12px/20px var(--mono);color:var(--ink-2)}
+.term>div{display:grid;grid-template-columns:48px minmax(0,1fr);column-gap:var(--s3)}
+.term>div>span:last-child{overflow-wrap:anywhere;white-space:pre-wrap}
+.term .t{text-align:right;color:var(--strong)}
+.term .hot{background:var(--hover);box-shadow:0 0 0 4px var(--hover);color:var(--ink)}
+.term .c-bad{color:var(--bad)}
+.term pre{margin:0 0 var(--s1) 60px;font:inherit;color:var(--strong);white-space:pre-wrap;overflow-wrap:anywhere}
+.ck li b{font-size:12px;font-weight:400;color:var(--ink-2)}
+.ck li b span{color:var(--strong);margin-right:var(--s3)}
+.ck li.hot{background:var(--hover);box-shadow:0 0 0 4px var(--hover)}
+.strip{display:grid;grid-template-columns:auto minmax(0,1fr) auto;column-gap:var(--s3);row-gap:var(--s1);align-items:center;font-size:12px;line-height:16px;color:var(--ink-2)}
+.lane{position:relative;height:16px}
+.lane::before{content:"";position:absolute;left:0;right:0;top:7px;height:2px;background:var(--line)}
+.lane em{position:absolute;top:5px;height:6px;min-width:2px;border-radius:1px;background:var(--line-2)}
+.lane i{position:absolute;top:4px;width:8px;height:8px;margin-left:-4px;border-radius:50%;background:var(--c);box-shadow:0 0 0 2px var(--bg)}
+.lane i.hot{transform:scale(1.6);z-index:1}
+.lane-s{text-align:right}
+.axis{display:flex;justify-content:space-between;color:var(--strong)}
+.ck li.done b{color:var(--ok)}
+.ck li.fail b,.ck li.blocked b{color:var(--bad);font-weight:600}
+.ck li.blocked i{width:6px;height:6px;margin:9px 1px 0;box-shadow:0 0 0 2px var(--bg),0 0 0 3.5px var(--c)}
+/* one mark per backup, oldest left, evenly spaced; colour = does it restore; a tick over the latest that does */
+.band{--bg:var(--surface);background:var(--bg)}
+.tl{position:relative;height:168px;margin:0 var(--s7);touch-action:none}
+.tl::before{content:"";position:absolute;left:0;right:0;top:55px;height:2px;background:var(--line)}
+.mk{position:absolute;top:56px;width:44px;height:44px;margin:-22px 0 0 -22px;display:grid;place-items:center}
+.mk i{width:16px;height:16px;border-radius:50%;background:var(--c);box-shadow:0 0 0 4px var(--bg);transition:transform .12s ease-out}
+.mk i.hollow{background:var(--bg);box-shadow:inset 0 0 0 2px var(--c),0 0 0 4px var(--bg)}
+.mk[aria-pressed=true] i{transform:scale(1.5);box-shadow:0 0 0 3px var(--bg),0 0 0 4px var(--ink-2)}
+.mk.c-bad i{width:12px;height:12px;box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--c)}
+.mk.c-bad[aria-pressed=true] i{box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--c),0 0 0 7px var(--bg),0 0 0 8px var(--ink-2)}
+.mk[aria-pressed=true] i.hollow{box-shadow:inset 0 0 0 1.5px var(--c),0 0 0 3px var(--bg),0 0 0 4px var(--ink-2)}
+.mk.latest::before{content:"";position:absolute;left:21px;top:-8px;width:2px;height:12px;background:var(--ok)}
+.lb{position:absolute;top:84px;transform:translateX(-50%);white-space:nowrap;font-size:12px;line-height:16px;color:var(--ink-2);text-align:center;pointer-events:none}
+.lb span{display:block;color:var(--strong)}
+.lb:first-of-type{transform:translateX(-22px);text-align:left}
+.lb:last-of-type{transform:translateX(calc(22px - 100%));text-align:right}
+.lb b{display:none;font-weight:600;color:var(--c)}
+.lb.sel{color:var(--ink)}
+.lb.sel span{color:var(--ink-2)}
+.lb.sel b{display:block}
+/* the restored ERP after this backup's restore, floating above its point; a link to that test copy */
+.peekwrap{position:absolute;bottom:calc(100% - 32px);z-index:4;opacity:0;visibility:hidden;transition:opacity .12s ease-out,visibility 0s .12s}
+.peekwrap.on{opacity:1;visibility:visible;transition:opacity .12s ease-out}
+.peek{display:block;width:320px;transform:translateX(-50%);background:var(--surface);border:1px solid var(--line-2);border-radius:4px;overflow:hidden;box-shadow:0 12px 32px rgba(0,0,0,.45);color:var(--ink-2);font-size:12px;line-height:16px}
+.peek:hover{text-decoration:none;border-color:var(--strong);color:var(--ink)}
+.peek img{display:block;width:100%;height:auto;aspect-ratio:16/10;background:#fff}
+.peek span{display:block;padding:var(--s2) var(--s3)}
+#ray{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;opacity:0;transition:opacity .18s ease-out}
+#ray.on{opacity:1}
+#ray line{stroke:var(--ink-2);stroke-width:1;stroke-opacity:.45}
+@media (prefers-reduced-motion:no-preference){
+  #ray{transition:none}
+  .mk i.run{animation:beat 1.2s ease-in-out infinite}
+}
+@keyframes beat{50%{transform:scale(1.3)}}
+
+/* certificate */
+.cert{max-width:880px;margin-top:var(--s7)}
+.cert .head{display:flex;justify-content:space-between;align-items:flex-start;gap:var(--s5)}
+.cert h2{font-size:20px;line-height:28px;font-weight:600}
+.cert table{width:100%;border-collapse:collapse;margin-top:var(--s2);font-size:13px}
+.cert th{font:12px/16px var(--mono);color:var(--ink-2);text-transform:uppercase;letter-spacing:.06em;text-align:left;padding:var(--s2) var(--s3) var(--s2) 0;border-bottom:1px solid var(--line-2)}
+.cert td{padding:var(--s2) var(--s3) var(--s2) 0;border-bottom:1px solid var(--line);vertical-align:top}
+.cert section{margin-top:var(--s6)}
+.cert .kv{margin-top:var(--s2)}
+.cert .colhead{padding-left:0}
+.cert .stamp{font-size:13px;margin-top:var(--s1)}
+
+@media (max-width:900px){
+  .page{padding:var(--s4)}
+  .bar{gap:var(--s3)}
+  .live span{display:none}
+  .top{display:block}
+  .actions{margin-top:var(--s4);flex-wrap:wrap}
+  h1{font-size:18px;line-height:26px}
+  .main{display:block;margin-top:var(--s6)}
+  /* cells bleed 12 px into the page margin so all text stays on the 16 px page edge */
+  .matrix{grid-template-columns:1fr 1fr;margin:0 calc(-1 * var(--s3))}
+  .matrix > .colhead{display:none}
+  .cell .app{display:block}
+  .bk{grid-column:1 / 3;padding:var(--s3) var(--s3) 0}
+  .cell{border-top:0;padding:var(--s2) var(--s3) var(--s3)}
+  .panel{margin-top:var(--s7)}
+  .rows > div{grid-template-columns:16px minmax(0,1fr)}
+  .rows .d{grid-column:2}
+  .cert .head{display:block}
+  .cert .head .actions{margin-top:var(--s3)}
+  .cert table,.cert tbody,.cert tr,.cert td{display:block}
+  .cert tr:first-child{display:none}
+  .cert tr{padding:var(--s2) 0;border-bottom:1px solid var(--line)}
+  .cert td{border:0;padding:2px 0;overflow-wrap:anywhere}
+  .cert td:empty{display:none}
+  .timing{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) 48px}
+  .dt{display:block;overflow:auto;padding:var(--s5) var(--s4) var(--s4)}
+  .ck{overflow:visible;margin-top:var(--s5);padding-right:0}
+  .term{margin-top:var(--s5);max-height:50vh}
+  .tl{margin:0 var(--s5)}
+  .brand{padding:var(--s3) var(--s4)}
+  .brand span{display:none}
+  .brand{flex-wrap:wrap;row-gap:var(--s3)}
+  .ctl{display:contents}
+  .ctl .quiet{order:1;margin-left:auto}
+  .ctl .btn{order:1}
+  .scen{order:2;width:100%}
+  .scen button{flex:1;padding:0 var(--s1);font-size:12px}
+  .brand .msg{order:3;width:100%;max-width:none;text-align:left}
+  .brand .msg:empty{display:none}
+  .runp{left:var(--s4);right:var(--s4);width:auto;top:calc(100% + var(--s1))}
+  .sum{margin-top:var(--s2)}
+}
+@media print{
+  :root{--bg:#fff;--surface:#f4f4f2;--hover:#fff;--selected:#fff;--line:#ddd;--line-2:#bbb;--strong:#999;--ink:#111;--ink-2:#444;--ok:#1d6b3e;--warn:#7a5200;--bad:#a3201a;--accent:#111}
+  .bar,.top,.no-print{display:none}
+  .page{padding:0}
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="bar">
+    <span class="brand">BackupAirlock</span>
+    <div class="tabs" role="tablist">
+      <button role="tab" data-view="overview">Overview</button>
+      <button role="tab" data-view="backups">Backups</button>
+      <button role="tab" data-view="drill">Drill</button>
+    </div>
+    <div class="live" id="live"><i></i><span>offline</span></div>
+  </div>
+  <div class="top" id="top">
+    <div style="min-width:0">
+      <div class="meta" id="meta"></div>
+      <h1 id="headline">Loading</h1>
+    </div>
+    <div class="actions" id="actions"></div>
+  </div>
+  <div class="note" id="note"></div>
+  <div id="body"></div>
+</div>
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+// Units join their number with a no-break space so "23.6 s" never wraps to a line of its own.
+const mb = n => n == null ? "" : (n / 1048576).toFixed(n < 10485760 ? 2 : 1) + "\u00a0MB";
+const sec = s => s == null ? "" : `${(+s).toFixed(1)}\u00a0s`;
+const clock = d => new Date(d).toLocaleString("en-GB", {timeZone: "Europe/Stockholm", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"});
+// A refused write explains itself: the console's JSON detail, or the VM's sign-in wall (Caddy answers 401 with no body).
+const why = async r => r.status === 401 ? "sign in with the team password first" : (await r.json().catch(() => ({}))).detail || `${r.status} ${r.statusText}`;
+const getJSON = async u => { const r = await fetch(u); if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 120)}`); return r.json(); };
+
+// One vocabulary for both engines. Healed is ready (it restores, with the bridge); red is only ever quarantine.
+const STATES = {
+  native:      ["c-ok",   "Restored", ""],
+  healed:      ["c-heal", "Healed", ""],
+  drift:       ["c-warn", "Drift", ""],
+  healing:     ["c-warn", "Drift", "healing"],
+  failed:      ["c-warn", "Not restorable", ""],
+  quarantined: ["c-bad",  "Blocked", ""],
+  running:     ["c-run",  "Running", "", true],
+  queued:      ["c-idle", "Queued", "", true],
+  not_run:     ["c-idle", "Not run", "", true],
+};
+function mark(state, extra) {
+  const [cls, word, tag, hollow] = STATES[state] || ["c-idle", state, ""];
+  const t = extra ?? tag;
+  return `<div class="st ${cls}"><i class="${hollow ? "hollow" : ""}"></i><b>${esc(word)}</b>${t ? `<span>${esc(t)}</span>` : ""}</div>`;
+}
+// Uppercase policy events ("NETWORK: DENIED, ...") read as shouting; keep the words, drop the caps.
+const calm = s => String(s || "").replace(/^([A-Z][A-Z /-]+):/, (_, p) => p.charAt(0) + p.slice(1).toLowerCase() + ":")
+  .replace(/\b(DENIED|READ-ONLY|NOT DESTROYED|TIMEOUT|CAP HIT)\b/g, w => w.toLowerCase());
+
+/* Check groups, as the spec names them: manifest, business logic, app boot. */
+function group(name) {
+  if (/^rule:|required:|business rules|books balance|invoice|receivable|stock|orphan|ledger|fk integrity|row counts|rows match|invariant sums|records|total_cost|priority is|status is|estimated_hours/i.test(name)) return "Business logic";
+  if (/^app |api health|login|token api|smoke|test\.local/i.test(name)) return "App boot";
+  return "Manifest and restore";
+}
+function groups(checks) {
+  const out = {"Manifest and restore": [], "Business logic": [], "App boot": []};
+  for (const c of checks) out[group(c.name)].push(c);
+  return Object.entries(out).filter(([, v]) => v.length);
+}
+
+/* ---------- Backups view: the backup watcher runtime (watched ERP backups) ---------- */
+const rg = {summaries: [], versions: [], details: {}, live: {}, sel: null, es: null};
+
+async function rgLoad() {
+  const [list, health] = await Promise.all([getJSON("rg/api/backups"), getJSON("rg/health")]);
+  rg.summaries = list;
+  rg.versions = health.app_versions;
+  rg.frappe = health.frappe?.restores_into;
+  rg.testUrls = health.frappe?.test_urls || {};
+  if (!rg.sel && list.length) {
+    const b = list.find(b => ["dr_ready", "quarantined", "not_restorable"].includes(b.status)) || list[0];
+    rg.sel = {b: b.id, v: rgTargets(b).at(-1)};
+  }
+  if (rg.sel) await rgDetail(rg.sel.b);
+}
+// A Frappe backup is proved on the team's test site, not on the stand-in app versions.
+const rgTargets = b => b.kind === "frappe" && rg.frappe ? [rg.frappe] : rg.versions;
+async function rgDetail(id, force) {
+  const s = rg.summaries.find(b => b.id === id);
+  const d = rg.details[id];
+  if (!s || (!force && d && d.status === s.status && d.finished_at === s.finished_at)) return;
+  rg.details[id] = await getJSON(`rg/api/backups/${encodeURIComponent(id)}`);
+}
+function rgCell(id, v) {
+  const s = rg.summaries.find(b => b.id === id);
+  const live = rg.live[`${id}@${v}`];
+  if (s.status === "running" && live && !s.cells[v]) return {state: live.state || "running", reason: live.step, elapsed_s: live.t};
+  if (s.cells[v]) return s.cells[v];
+  // Refused before any sandbox (e.g. an incomplete manifest): the backup's own reason fills every cell.
+  if (["failed", "not_restorable"].includes(s.status)) return {state: "failed", reason: s.reason};
+  return {state: s.status === "queued" || s.status === "running" ? s.status : "not_run", reason: ""};
+}
+// The timestamp prefix is in the sub line already; the suffix is what tells the backups apart.
+const shortName = f => f.replace(/^\d{8}[T_]\d{6}Z?[-_]/, "");
+function rgView() {
+  const ss = rg.summaries;
+  const done = ss.filter(b => !["queued", "running"].includes(b.status));
+  const ready = done.filter(b => b.status === "dr_ready"), q = done.filter(b => b.status === "quarantined");
+  const newest = ready.slice().sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))[0];
+  return {
+    meta: `Watched backups · Nordvik Handel ERP (stand-in app) · ${ss.length} backups watched · each restored into a throwaway test instance, never production`,
+    headline: !ss.length ? "No backups yet. The watcher picks up each new dump and its manifest."
+      : `${ready.length} of ${done.length} backups DR ready` + (newest ? `; newest ${clock(newest.created_at)}` : "") + "."
+        + (q.length ? ` <em>${q.length} blocked: do not restore.</em>` : ""),
+    actions: rg.sel && rg.details[rg.sel.b]?.certificate ? `<a href="#cert">Certificate</a>` : "",
+    cols: rg.versions.map(v => ({id: v, label: `App ${v}`})),
+    rows: ss.map(b => ({
+      id: b.id, name: shortName(b.file), full: b.file,
+      sub: [b.created_at && clock(b.created_at), b.schema_version != null && `schema ${/^\d/.test(b.schema_version) ? "v" : ""}${b.schema_version}`, mb(b.bytes)].filter(Boolean).join(" · "),
+      cols: b.kind === "frappe" && rg.frappe ? [{id: rg.frappe, label: rg.frappe}] : null,
+      cells: Object.fromEntries(rgTargets(b).map(v => { const c = rgCell(b.id, v); return [v, {state: c.state,
+        line: [b.kind === "frappe" && v, cellLine(c.state, c.reason, c.elapsed_s, b.status === "running")].filter(Boolean).join(" · ")}]; })),
+    })),
+    sel: rg.sel,
+  };
+}
+function cellLine(state, reason, s, running) {
+  if (running && ["running", "queued"].includes(state)) return reason ? `${reason}` : "waiting for a sandbox";
+  if (state === "healed") return `bridge migration · ${sec(s)}`;
+  if (state === "native") return `${sec(s)}`;
+  if (state === "quarantined") return `${String(reason).replace(/^containment: ([^;]*).*$/, "$1").split(", ").length} attacks contained`;
+  return [shortReason(reason), sec(s)].filter(Boolean).join(" · ");
+}
+// The cell names the failure in a few words; the panel carries the tool's full message.
+const shortReason = r => String(r || "").split("; ")[0].replace(/^([^(:]*?): .*$/, "$1").replace(/\d{4,}/g, n => (+n).toLocaleString("en"));
+function rgPanel() {
+  if (!rg.sel) return "";
+  const d = rg.details[rg.sel.b], v = rg.sel.v;
+  if (!d) return `<div class="panel"><p class="muted">Loading</p></div>`;
+  const c = d.cells[v], live = rg.live[`${d.id}@${v}`];
+  const head = `<h2>${esc(shortName(d.file))} <span class="muted">on ${d.kind === "frappe" ? "" : "app "}${esc(v)}</span></h2>`;
+  if (!c) {
+    const evs = live ? live.events : [];
+    if (!["queued", "running"].includes(d.status)) return `<div class="panel">${head}${mark(["failed", "not_restorable"].includes(d.status) ? "failed" : "not_run")}${d.reason ? `<p class="lead">${esc(d.reason)}</p>` : ""}</div>`;
+    return `<div class="panel">${head}${mark(d.status === "queued" ? "queued" : "running")}
+      ${evs.length ? `<section><h3><span>Live</span><span>${sec(live.t)}</span></h3>${eventRows(evs)}</section>`
+ : ""}</div>`;
+  }
+  const checks = c.checks.map(k => ({name: k.check, pass: k.pass, detail: k.detail}));
+  const m = d.manifest || {};
+  return `<div class="panel">${head}
+    ${mark(c.state)}
+    ${lead(c.state, c.reason)}
+    ${targetLine(c.restored_into, (d.logs[v] || []).some(e => e.type === "sandbox" && e.phase === "destroyed"))}
+    ${containment(c.signals.map(s => ({signal: s})).concat(), c.static_scan, d.logs[v])}
+    ${groups(checks).map(([g, ks]) => checkSection(g, ks)).join("")}
+    ${bridgeSection(c.bridges.map(b => ({name: b.name, round: b.round, sha256: b.sha256, changes: b.changes,
+        url: `rg/api/backups/${encodeURIComponent(d.id)}/bridges/${encodeURIComponent(b.name)}`})), c.llm_calls)}
+    ${timings(Object.entries(c.timings), c.elapsed_s)}
+    <section><details class="grp"><summary><h3><span>Backup manifest</span><span>${Object.keys(m.row_counts || {}).filter(k => k !== "schema_version").length} tables</span></h3></summary><dl class="kv">
+      <dt>taken</dt><dd>${m.created_at ? esc(clock(m.created_at)) : ""} by app ${esc(m.app_version || "")}</dd>
+      ${Object.entries(m.row_counts || {}).filter(([k]) => k !== "schema_version").map(([k, n]) => `<dt>${esc(k)}</dt><dd>${n.toLocaleString("en")} rows</dd>`).join("")}
+    </dl></details></section>
+    <details><summary>Run log, ${(d.logs[v] || []).length} events</summary>${eventRows(d.logs[v] || [])}</details>
+    <div class="links no-print"><button class="btn" id="rerun" ${["queued", "running"].includes(d.status) ? "disabled" : ""}>Run again</button></div>
+  </div>`;
+}
+function rgStream() {
+  if (rg.es) return;
+  rg.es = new EventSource("rg/api/stream");
+  rg.es.onopen = () => setLive(true);
+  rg.es.onerror = () => setLive(false);
+  rg.es.onmessage = e => {
+    const ev = JSON.parse(e.data);
+    if (ev.type === "backup") { rgRefresh(); return; }
+    if (!ev.cell) return;
+    const L = rg.live[ev.cell] ||= {events: [], state: "running"};
+    if (L.done) { L.events = []; L.done = false; }
+    L.events.push(ev); L.t = ev.t;
+    if (ev.type === "check") L.step = ev.check;
+    if (ev.type === "bridge") { L.state = "healing"; L.step = `bridge round ${ev.round}`; }
+    if (ev.type === "verdict") { L.done = true; L.state = ev.state; L.step = ev.reason; rgRefresh(); }
+    if (view !== "drill") draw();
+  };
+}
+let rgTimer;
+function rgRefresh() {
+  clearTimeout(rgTimer);
+  rgTimer = setTimeout(async () => {
+    rg.summaries = await getJSON("rg/api/backups");
+    if (view === "overview") await Promise.all(rg.summaries.map(b => rgDetail(b.id).catch(() => {})));
+    else if (rg.sel) await rgDetail(rg.sel.b);
+    if (view !== "drill") draw();
+  }, 300);
+}
+
+/* ---------- Drill view: preloaded dumps + upload, poisoned dump included (the spec's demo) ---------- */
+const dr = {proof: null, runId: null, live: null, sel: null, upload: null, es: null};
+
+async function drLoad() {
+  const r = await getJSON("api/runs?fixture=matrix&limit=1");
+  if (r.active.length) return drFollow(r.active[0]);
+  if (r.runs.length) { dr.runId = r.runs[0].run_id; dr.proof = await getJSON(`api/runs/${dr.runId}/proof.json`); }
+  if (dr.proof && !dr.sel) {
+    const q = dr.proof.matrix.find(m => m.status.startsWith("QUARANTINED"));
+    dr.sel = {b: (q || dr.proof.matrix[0]).backup, v: dr.proof.matrix[0].app_versions[q ? 0 : 1]?.app || dr.proof.matrix[0].app_versions[0].app};
+  }
+}
+function drFollow(runId) {
+  dr.runId = runId; dr.proof = null;
+  dr.live = {apps: [], backups: [], cells: {}, events: [], steps: []};
+  dr.es?.close();
+  dr.es = new EventSource(`api/runs/${runId}/events`);
+  dr.es.onopen = () => setLive(true);
+  dr.es.onmessage = e => {
+    const ev = JSON.parse(e.data), L = dr.live;
+    L.events.push(ev);
+    if (ev.type === "matrix" && ev.phase === "init") { L.apps = ev.apps; L.backups = ev.backups;
+      if (!dr.sel) dr.sel = {b: ev.backups[ev.backups.length - 1].file, v: ev.apps[0].title}; }
+    if (ev.type === "matrix" && ev.phase === "cell") L.cells[`${ev.backup}|${ev.app}`] = {...L.cells[`${ev.backup}|${ev.app}`], ...ev, t: ev.t};
+    if (ev.type === "step") L.steps.push(ev);
+    if (ev.type === "verdict") L.verdict = ev;
+    if (view === "drill") draw();
+  };
+  dr.es.addEventListener("end", async () => {
+    dr.es.close(); dr.es = null; setLive(view === "backups" && !!rg.es);
+    try { dr.proof = await getJSON(`api/runs/${runId}/proof.json`); dr.live = null; } catch (err) { note(`Drill ended without a certificate: ${err.message}`); }
+    if (view === "drill") draw();
+  });
+}
+const fileOf = id => dr.live?.backups.find(b => b.id === id)?.file || id;
+const titleOf = id => dr.live?.apps.find(a => a.id === id)?.title || id;
+function drReceipts(file, app) {
+  return (dr.proof?.command_receipts || []).filter(r => String(r.n).startsWith(`${file} on ${app}`));
+}
+function drView() {
+  const running = !!dr.live;
+  const base = {cols: [], rows: [], sel: dr.sel, actions: drActions(running)};
+  if (running) {
+    const L = dr.live;
+    base.cols = L.apps.map(a => ({id: a.title, label: a.title}));
+    base.rows = L.backups.map(b => ({
+      id: b.file, name: b.file,
+      sub: `schema v${b.version} · ${mb(b.size)}`,
+      cells: Object.fromEntries(L.apps.map(a => { const c = L.cells[`${b.id}|${a.id}`] || {state: "running"};
+        return [a.title, {state: c.state === "drift" && c.bridge ? "healing" : c.state, line: c.state === "healing"
+          ? `bridge round ${c.round}` : (c.detail || "fresh sandbox: restore, boot, suite")}]; })),
+    }));
+    base.meta = `Drill · running · ${sec(L.events.at(-1)?.t)}`;
+    base.headline = L.verdict ? esc(L.verdict.headline) : `${L.backups.length} backups x ${L.apps.length} app versions, one sealed sandbox per cell.`;
+    return base;
+  }
+  const p = dr.proof;
+  if (!p) return {...base, meta: "Drill", headline: "No drill has run yet."};
+  const apps = p.matrix[0].app_versions.map(a => a.app);
+  base.cols = apps.map(a => ({id: a, label: a}));
+  base.rows = p.matrix.map(m => ({
+    id: m.backup, name: m.backup,
+    sub: `schema v${m.schema_version} · ${mb(m.bytes)}`,
+    cells: Object.fromEntries(m.app_versions.map(a => {
+      const rc = drReceipts(m.backup, a.app), s = rc.reduce((t, r) => t + (r.elapsed || 0), 0);
+      const inc = p.incidents.find(i => i.backup === m.backup)?.detonations.find(d => d.app === a.app);
+      const tests = a.suite.length + a.control_plane_checks.length;
+      return [a.app, {state: a.result, line: a.result === "quarantined" && inc
+        ? `${inc.signals.length} attacks contained`
+        : a.result === "healed" ? `${tests} checks pass · ${sec(s)}`
+        : a.result === "native" ? `${tests} checks pass · ${sec(s)}` : a.detail}];
+    })),
+  }));
+  const ready = p.matrix.filter(m => m.status === "DR READY"), q = p.matrix.filter(m => m.status.startsWith("QUARANTINED"));
+  base.meta = `Drill · test instances only · Nordvik Handel ERP · ${clock(p.generated_at.replace(/(\d\d)(\d\d)$/, "$1:$2"))} · ${sec(p.elapsed_s)}`;
+  base.headline = `${ready.length} of ${p.matrix.length} backups DR ready.` + (q.length ? ` <em>${q.map(m => esc(m.backup)).join(", ")} blocked: do not restore.</em>` : "");
+  return base;
+}
+function drActions(running) {
+  return `${dr.proof ? `<a href="#cert">Certificate</a>` : ""}
+    <label class="btn" for="file" title="Your own SQL dump, up to 25 MB">${dr.upload ? esc(dr.upload.name) : "Add .sql"}</label>
+    <input type="file" id="file" accept=".sql,.db,.dump,text/plain" hidden>
+    <button class="btn primary" id="run" ${running ? "disabled" : ""}>${running ? "Running" : "Run drill"}</button>`;
+}
+function drPanel() {
+  if (!dr.sel) return "";
+  const {b, v} = dr.sel;
+  const head = `<h2>${esc(b)} <span class="muted">on ${esc(v)}</span></h2>`;
+  if (dr.live) {
+    const L = dr.live, bid = L.backups.find(x => x.file === b)?.id, aid = L.apps.find(x => x.title === v)?.id;
+    const c = L.cells[`${bid}|${aid}`] || {state: "running"};
+    const evs = L.events.filter(e => e.backup === bid && e.app === aid && e.type !== "cpu" && e.type !== "matrix" && !(e.type === "log" && e.stream === "stdout"));
+    const pol = evs.filter(e => e.type === "policy");
+    return `<div class="panel">${head}${mark(c.state === "drift" && c.bridge ? "healing" : c.state)}
+      ${targetLine(null)}
+      <p class="lead">${esc(c.detail || "")}</p>
+      ${pol.length ? `<section><h3><span>Containment</span><span>${pol.length} signals</span></h3>${eventRows(pol, true)}</section>` : ""}
+      ${c.host ? checkSection("Checks so far", c.host.map(k => ({name: k.check, pass: k.pass, detail: k.detail}))) : ""}
+      ${c.changes ? `<section><h3><span>Bridge, round ${c.round}</span></h3><div class="code">${esc(c.changes)}</div></section>` : ""}
+      <section><h3><span>Live</span><span>${sec(evs.at(-1)?.t)}</span></h3>${eventRows(evs.slice(-14))}</section></div>`;
+  }
+  const p = dr.proof, m = p.matrix.find(x => x.backup === b), a = m?.app_versions.find(x => x.app === v);
+  if (!a) return "";
+  const inc = p.incidents.find(i => i.backup === b), det = inc?.detonations.find(d => d.app === v);
+  const rc = drReceipts(b, v);
+  const checks = a.suite.map(t => ({name: t.test, pass: t.pass, detail: t.detail}))
+    .concat(a.control_plane_checks.map(k => ({name: k.check, pass: k.pass, detail: k.detail})));
+  const br = a.bridge && p.bridges[a.bridge];
+  return `<div class="panel">${head}
+    ${mark(a.result)}
+    ${targetLine(null, det ? det.destroyed : rc.at(-1)?.destroyed)}
+    ${lead(a.result, a.detail)}
+    ${det ? containmentDrill(det, inc) : ""}
+    ${groups(checks).map(([g, ks]) => checkSection(g, ks)).join("")}
+    ${br ? bridgeSection([{name: a.bridge, round: br.rounds, sha256: br.sha256, changes: br.changes,
+        url: `api/runs/${p.run_id}/bridges/${encodeURIComponent(a.bridge)}`}],
+        p.llm_calls.filter(l => l.purpose.includes(a.bridge.replace(/^bridge_|\.sql$/g, "").replace("_to_", " to ")))) : ""}
+    ${rc.length ? timings(rc.map(r => [String(r.n).split(", ").slice(1).join(", ") || "sandbox", r.elapsed]), rc.reduce((t, r) => t + r.elapsed, 0)) : ""}
+    <section><h3><span>Sandbox policy</span></h3><p class="lead">${esc(policyLine(p.sandbox_policy))}</p></section>
+    ${inc ? `<div class="links no-print"><a href="api/runs/${p.run_id}/incident.json">Incident log (JSON)</a></div>` : ""}
+  </div>`;
+}
+function containmentDrill(det, inc) {
+  return `<section><h3><span>Containment</span><span>${det.containment_events.length} signals</span></h3>
+    ${eventRows(det.containment_events, true)}
+    <div class="rows ev"><div><span class="t">${(+det.elapsed_s).toFixed(2)}</span><span class="st c-idle" style="font-weight:400"><i class="hollow"></i><span>Sandbox ${det.destroyed ? "destroyed" : "NOT destroyed"}</span></span></div></div></section>
+    <section><h3><span>Static scan of the dump</span><span>${inc.static_scan.length} lines</span></h3>
+    <div class="code">${inc.static_scan.map(f => `line ${f.line}  ${esc(f.text)}\n        ${esc(f.why)}`).join("\n")}</div></section>`;
+}
+
+/* ---------- shared panel parts ---------- */
+// A ready or quarantined cell's reason restates its status or the sections below; only what adds something stays.
+function lead(state, reason) {
+  if (!["native", "healed", "quarantined"].includes(state)) return reason ? `<p class="lead">${esc(reason)}</p>` : "";
+  const extra = String(reason || "").match(/\(([^)]*itself)\)/)?.[1];
+  return extra ? `<p class="lead">${esc(extra.charAt(0).toUpperCase() + extra.slice(1))}.</p>` : "";
+}
+function checkSection(title, ks) {
+  const pass = ks.filter(k => k.pass).length;
+  const rows = `<div class="rows">${ks.map(k => {
+    const [n, when] = String(k.name).split(/ (?=\()/);
+    return `<div><span class="m ${k.pass ? "ok" : "no"}">${k.pass ? "✓" : "✕"}</span><span class="n">${esc(n)}${when ? ` <small>${esc(when)}</small>` : ""}</span><span class="d">${esc(k.detail)}</span></div>`;
+  }).join("")}</div>`;
+  // All passing: one line, rows one click away. Any failure: open, so the failing check is the first thing read.
+  if (pass === ks.length) return `<section><details class="grp"><summary><h3><span>${esc(title)}</span><span><b>✓</b> ${pass} of ${ks.length} pass</span></h3></summary>${rows}</details></section>`;
+  return `<section><h3><span>${esc(title)}</span><span>${pass} of ${ks.length}</span></h3>${rows}</section>`;
+}
+function containment(sigs, scan, events) {
+  const pol = (events || []).filter(e => e.type === "policy");
+  if (!sigs.length && !(scan || []).length) return "";
+  return `<section><h3><span>Containment</span><span>${sigs.length} signals</span></h3>${pol.length ? eventRows(pol, true)
+    : `<div class="rows">${sigs.map(s => `<div><span class="m no">●</span><span>${esc(s.signal)}</span><span></span></div>`).join("")}</div>`}</section>
+    ${(scan || []).length ? `<section><h3><span>Static scan of the dump</span><span>${scan.length} ${scan.length === 1 ? "line" : "lines"}</span></h3><div class="code">${scan.map(f => typeof f === "string" ? esc(f) : `line ${esc(f.line)}  ${esc(f.text)}\n        ${esc(f.why)}`).join("\n")}</div></section>` : ""}`;
+}
+function bridgeSection(bs, llm) {
+  if (!bs.length) return "";
+  const l = (llm || [])[0];
+  return bs.map(b => `<section><h3><span>Bridge migration, round ${esc(b.round)}</span><span>${l ? `${esc(l.model)} · ${sec(l.latency_s)}` : ""}</span></h3>
+    <div class="code">${esc(b.changes)}</div>
+    <div class="links"><a href="${b.url}" download="${esc(b.name)}">Download ${esc(b.name)}</a></div></section>`).join("");
+}
+function timings(pairs, total) {
+  if (!pairs.length) return "";
+  const max = Math.max(...pairs.map(p => +p[1] || 0), 0.01);
+  return `<section><details class="grp"><summary><h3><span>Timing</span><span>${sec(total)}</span></h3></summary>${pairs.map(([n, s]) =>
+    `<div class="timing"><span>${esc(n)}</span><span class="b"><i style="width:${(100 * (+s || 0) / max).toFixed(1)}%"></i></span><span class="s">${sec(s)}</span></div>`).join("")}</details></section>`;
+}
+const evText = e => e.type === "check" ? `${e.pass ? "✓" : "✕"} ${e.check}${e.detail ? `: ${e.detail}` : ""}`
+  : e.type === "sandbox" ? `sandbox ${e.name} ${e.phase}${e.exit != null ? `, exit ${e.exit}` : ""}${e.policy ? `: ${e.policy.image}, network ${e.policy.network}, memory ${e.policy.memory}, rootfs ${e.policy.rootfs}` : ""}`
+  : e.type === "restore" ? (e.phase === "started" ? `restore ${e.file} into ${e.restored_into}` : `restore ${e.phase}, exit ${e.rc}, ${e.s} s`)
+  : e.type === "llm" ? `${e.model} ${e.purpose} ${e.phase}${e.latency_s ? `, ${e.latency_s} s` : ""}`
+  : e.type === "bridge" ? `bridge ${e.name}, round ${e.round}`
+  : e.type === "verdict" ? `verdict: ${e.state}, ${e.reason}`
+  : e.type === "log" ? `${e.stream}: ${e.line}`
+  : e.event || e.detail || e.type;
+function eventRows(evs, policy) {
+  return `<div class="rows ev">${evs.map(e => {
+    const text = evText(e);
+    return `<div><span class="t">${e.t != null ? (+e.t).toFixed(2) : ""}</span><span${policy ? ' class="st c-bad" style="font-weight:400"' : ""}>${policy ? "<i></i>" : ""}<span>${esc(calm(text))}${policy && e.detail ? `<br><span class="muted mono">${esc(e.detail)}</span>` : ""}</span></span></div>`;
+  }).join("")}</div>`;
+}
+// Every restore lands in a throwaway TEST instance of the app (own container, own DB, no network), never production.
+// Names what the test instance was (database, network), never its sandbox id.
+function targetLine(target, destroyed) {
+  const db = target?.database?.replace(/^.*?(Postgres[^,]*?) \S+(, .*)?$/, "$1$2");
+  return `<dl class="kv target"><dt>restored into</dt><dd>test instance${db ? `, ${esc(db)}` : ""}${destroyed === false ? ", NOT destroyed" : destroyed ? ", destroyed after the checks" : ""}${target?.production_touched === false ? ". Production untouched" : ""}</dd></dl>`;
+}
+const policyLine = p => p ? [p.runtime, `network ${String(p.network).split(" ")[0]}`, `rootfs ${p.rootfs}`, `${p.memory} RAM`,
+  `${p.cpus} CPU`, `pids ${p.pids_limit}`, `caps ${p.capabilities}`, `${p.timeout_s} s cap`].join(" · ") : "";
+
+/* ---------- the one view: checks of the selected backup above, the timeline of backups (oldest left) below ---------- */
+// Colour = does this backup work (Jonas 15:16 "colors for if its working"); healed works too, in a calmer tone.
+const OV = {
+  ready: ["c-ok", "Restored"], healed: ["c-heal", "Healed"], not_restorable: ["c-warn", "Not restorable"],
+  quarantined: ["c-bad", "Blocked"], running: ["c-run", "In the airlock", "run"], queued: ["c-idle", "Queued", "hollow"],
+};
+const ovState = b => b.status === "dr_ready" ? (Object.values(b.cells).some(c => c.state === "healed") ? "healed" : "ready")
+  : b.status === "failed" ? "not_restorable" : b.status;
+const ovList = () => rg.summaries.slice().sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""));
+const ovSel = {id: null};
+// What a backup is, in words (Jonas 16:17 "clear which are the backups"): which system made it, from where, and the fault
+// in it if it is a test copy (the fault kit's, or one a Run injected).
+const FAULT = {"bitflip-stale": "bit-flipped (old checksum)", bitflip: "bit-flipped", truncated: "truncated", "truncated-sql": "truncated",
+  "rows-deleted": "rows deleted", "rule-broken": "rule broken", poisoned: "poisoned", "schema-v2": "upgraded schema"};
+const faultOf = b => b.injected?.fault || (b.id.match(/-(bitflip-stale|bitflip|truncated-sql|truncated|rows-deleted|rule-broken|poisoned|schema-v2)(?:_v\d+$|-database$)/) || [])[1];
+function bkName(b) {
+  const f = faultOf(b), what = b.kind === "frappe" ? "ERP backup" : `Stand-in v${b.schema_version ?? "?"} backup`;
+  return f ? `${what}, ${FAULT[f] || f}` : what;
+}
+const bkSource = b => (b.kind === "frappe" ? (b.id.match(/^\d{8}_\d{6}-(\w+?)(?:-run-|-database|-\w+-database)/)?.[1] || "").replace(/_/g, ".") : "stand-in app")
+  + (b.injected ? ", fault injected by a run" : faultOf(b) ? ", fault-kit copy" : "");
+const ovPtr = {x: 0, y: 0, on: false, frame: 0};
+const ovPeek = {on: false, pinned: false};
+// The ERP right after this backup's restore (Jonas 16:23 "a screenshot of the site at that version ... click it and go to a
+// test version of it"): the shown cell's test site, linked from the runtime's test sites only, never production.
+function peekHtml(b) {
+  const d = rg.details[b.id], c = ovCell(d), key = c && Object.keys(d.cells).find(k => d.cells[k] === c);
+  const site = (b.shots || []).includes(key) ? key : (b.shots || [])[0], url = rg.testUrls?.[site];
+  if (!site || !url) return "";
+  return `<a class="peek" id="peek" href="${esc(url)}/app/demo-service-request" target="_blank" rel="noopener">
+    <img src="rg/api/backups/${encodeURIComponent(b.id)}/shot/${encodeURIComponent(site)}.png" alt="${esc(site)} right after this backup's restore" width="1280" height="800">
+    <span>${esc(site)}, the test copy this backup was restored into</span></a>`;
+}
+function peekPlace() {
+  const w = $("#peekwrap"), m = document.querySelector(`.mk[data-id="${CSS.escape(ovSel.id || "")}"]`);
+  if (!w || !m) return;
+  w.style.left = m.style.left; w.style.translate = "";
+  const r = $("#peek")?.getBoundingClientRect();
+  if (r) { const dx = Math.max(8 - r.left, 0) + Math.min(innerWidth - 8 - r.right, 0); if (dx) w.style.translate = `${dx}px 0`; }
+}
+// The cell to show: the healed one tells the most, then a native pass, else whatever ran.
+const ovCell = d => { const cs = Object.values(d?.cells || {}); return cs.find(c => c.state === "healed") || cs.find(c => c.state === "native") || cs[0]; };
+const VERIFY = /^(sha256|dump readable|static scan|a demo\.local backup file name)/i;
+const baseName = n => String(n).split(" (")[0].replace(/^rule: /, "");
+// Verify (before restore) and Restore checks by name, each at its final result (a bridge round overrides the native attempt).
+function ovSplit(c) {
+  const v = new Map(), r = new Map();
+  for (const k of c?.checks || []) (VERIFY.test(k.check) ? v : r).set(baseName(k.check), k.pass);
+  return [v, r];
+}
+// Every check under Jonas's three terms (15:35 "Verify / Heal / Restore"). A check that a passing backup of the same kind
+// runs but this one never reached is skipped.
+// The stream's events of the shown cell (any cell of the backup before its details exist).
+const ovLive = (b, c) => Object.values(rg.live).find(L => L.events[0]?.backup === b.id && (!c || L.events[0].cell === c.cell));
+function ovChecks(b) {
+  const run = ["running", "queued"].includes(b.status), done = ovCell(rg.details[b.id]);
+  // While it runs, the previous run's results would read as this run's: only the stream's checks count.
+  const L = run && ovLive(b, done), evs = L && !L.done ? L.events : [];
+  const c = run ? {state: "running", checks: evs.filter(e => e.type === "check"), bridges: evs.filter(e => e.type === "bridge")} : done;
+  if (!c) return "";
+  const ref = ovSplit(ovCell(rg.details[rg.summaries.find(x => x.kind === b.kind && x.status === "dr_ready")?.id]));
+  const missing = run ? "waiting" : "skipped";
+  const fail = b.status === "quarantined" ? "blocked" : "fail";
+  const list = (m, refm) => [...new Set([...refm.keys(), ...m.keys()])].map(n => [n, m.has(n) ? (m.get(n) ? "done" : fail) : missing]);
+  const [v, r] = ovSplit(c);
+  const heal = c.state === "healed" || c.bridges.length
+    ? c.checks.filter(k => !k.pass && /\(native\)/.test(k.check)).map(k => [baseName(k.check) + " on the old schema", "fail"])
+        .concat(c.bridges.map((x, i) => [`bridge round ${x.round}`, i < c.bridges.length - 1 ? "fail" : run ? "waiting" : "done"]))
+    : [["schema bridge", b.status === "dr_ready" ? "skipped" : missing]];
+  const C = {done: "c-ok", fail: "c-bad", blocked: "c-bad", skipped: "c-idle", waiting: "c-idle"};
+  // When each check ran, from the run log: its last result, a native failure's first, a bridge round's event.
+  const log = run ? evs : rg.details[b.id]?.logs?.[Object.keys(rg.details[b.id].cells).find(k => rg.details[b.id].cells[k] === c)] || [], at = new Map();
+  for (const e of log) {
+    if (e.type === "check") { at.set(baseName(e.check), +e.t); if (!e.pass && /\(native\)/.test(e.check) && !at.has(baseName(e.check) + " on the old schema")) at.set(baseName(e.check) + " on the old schema", +e.t); }
+    if (e.type === "bridge") at.set(`bridge round ${e.round}`, +e.t);
+  }
+  let i = 0;
+  const gs = [["Verify", list(v, ref[0])], ["Heal", heal], ["Restore", list(r, ref[1])]].map(([g, ks]) => [g, ks.map(([n, st]) => ({n, st, t: at.get(n), i: i++}))]);
+  return `<div class="ck">${ovStrip(gs, C, Math.max(...log.map(e => +e.t || 0), 0))}${gs.map(([g, ks]) => `<section><h3>${g}</h3><ul>
+    ${ks.map(k => `<li class="${k.st} ${C[k.st]}" data-k="${k.i}" data-n="${esc(k.n)}"><i></i><span title="${esc(k.n)}">${esc(k.n)}</span><b>${k.t != null ? `<span>${sec(k.t)}</span>` : ""}${k.st}</b></li>`).join("")}</ul></section>`).join("")}</div>`;
+}
+// The pass on a time axis (Jonas 16:01 "the smaller timeline ... clear that its related to the checks"): one lane per
+// group, each check a tick where it finished, the lane's bar from its first to its last check.
+function ovStrip(gs, C, T) {
+  if (!T) return "";
+  const x = t => (100 * t / T).toFixed(2);
+  return `<div class="strip">${gs.map(([g, ks]) => { const ts = ks.filter(k => k.t != null).map(k => k.t);
+    return `<span class="lane-n">${g}</span><div class="lane">${ts.length ? `<em style="left:${x(Math.min(...ts))}%;width:${x(Math.max(...ts) - Math.min(...ts))}%"></em>` : ""}
+      ${ks.filter(k => k.t != null).map(k => `<i class="${C[k.st]}" data-k="${k.i}" style="left:${x(k.t)}%" title="${esc(k.n)}, ${sec(k.t)}"></i>`).join("")}</div>
+      <span class="lane-s">${ts.length ? sec(Math.max(...ts) - Math.min(...ts)) : ""}</span>`; }).join("")}
+    <span></span><div class="axis"><span>0 s</span><span>${sec(T)}</span></div><span></span></div>`;
+}
+// Hovering a check lights its tick on the strip and its lines in the run log (Jonas 16:03), and the tick lights the row;
+// on touch a tap does the same.
+function ovHot(e) {
+  const el = e.target.closest?.("[data-k]"), k = el?.dataset.k, n = $(`.ck li[data-k="${k}"]`)?.dataset.n;
+  document.querySelectorAll(".ck [data-k]").forEach(x => x.classList.toggle("hot", x.dataset.k === k));
+  const term = $("#term"), ls = term ? [...term.querySelectorAll("[data-n]")] : [];
+  ls.forEach(x => x.classList.toggle("hot", x.dataset.n === n));
+  const first = n && ls.find(x => x.dataset.n === n);
+  if (first) term.scrollTop += first.getBoundingClientRect().top - term.getBoundingClientRect().top - 48;
+}
+document.addEventListener("pointerover", e => { if (e.pointerType === "mouse") ovHot(e); });
+document.addEventListener("click", e => { if (e.target.closest?.(".ck")) ovHot(e); });
+// The runtime's own log of the shown cell, right of the checks (Jonas 15:47 "To the right is cmd output"); while the
+// backup runs, the stream's events.
+function ovTerm(b) {
+  const d = rg.details[b.id], c = ovCell(d), key = c && Object.keys(d.cells).find(k => d.cells[k] === c);
+  const live = ovLive(b, c);
+  const evs = live?.events.length && (!live.done || !d?.logs?.[key]) ? live.events : d?.logs?.[key] || [];
+  const sql = Object.fromEntries((c?.bridges || []).map(x => [x.name, x.sql]));
+  const name = e => e.type === "bridge" ? `bridge round ${e.round}` : e.type !== "check" ? "" : baseName(e.check) + (!e.pass && /\(native\)/.test(e.check) ? " on the old schema" : "");
+  const line = e => `<div class="${e.type === "policy" || e.type === "check" && !e.pass ? "c-bad" : ""}"${name(e) ? ` data-n="${esc(name(e))}"` : ""}><span class="t">${e.t != null ? (+e.t).toFixed(2) : ""}</span><span>${esc(calm(evText(e)))}</span></div>`
+    + (e.type === "bridge" && sql[e.name] ? `<pre>${esc(sql[e.name])}</pre>` : "");
+  return `<div class="term" id="term"${live && !live.done ? " data-live" : ""}>${evs.length ? evs.map(line).join("") : `<div><span class="t"></span><span>${["running", "queued"].includes(b.status) ? "waiting for the sandbox" : "no log"}</span></div>`}</div>`;
+}
+// The verdict in numbers, under the name: checks, time, bridge rounds, where it was restored.
+function ovSum(b) {
+  const d = rg.details[b.id] || b, c = ovCell(d), run = ["running", "queued"].includes(b.status);
+  if (run || !d.checks_total) return "";
+  const rounds = c?.bridges?.length, into = c?.restored_into?.instance?.replace(/ rg-\w+/, "");
+  // Checks and time both of the shown cell (one app version), each check at its final result.
+  const key = c && Object.keys(d.cells || {}).find(k => d.cells[k] === c), res = c ? ovSplit(c).flatMap(m => [...m.values()]) : [];
+  const on = key ? ` on ${/^\d/.test(key) ? `app ${key}` : key}` : "";
+  return `<p class="sum"><span><strong>${c ? res.filter(Boolean).length : d.checks_passed} of ${c ? res.length : d.checks_total}</strong> checks passed${esc(on)} in ${sec(c?.elapsed_s ?? d.elapsed_s)}</span>
+    ${rounds ? `<span>schema bridged by ${esc(c.llm_calls?.at(-1)?.model || "the model")} in round ${rounds}</span>` : ""}
+    ${into ? `<span>restored into ${esc(into)}</span>` : ""}</p>`;
+}
+function ovDetail(b) {
+  const [c, word] = OV[ovState(b)] || ["c-idle", b.status];
+  return `<header><h2 title="${esc(b.file)}">${esc(bkName(b))}</h2><span class="when">${esc(clock(b.created_at))}</span><span class="when">from ${esc(bkSource(b))}</span><div class="st ${c}"><i></i><b>${esc(word)}</b></div></header>${ovSum(b)}${ovChecks(b)}${ovTerm(b)}`;
+}
+/* Run: the parameters, and three stories that are each one real run of the newest ERP backup */
+const runP = {open: false, bks: null, targets: null, fault: "", heal: true, scen: null, msg: "", err: false};
+const RUN_FAULTS = [["", "None"], ["bitflip", "Bit flip"], ["truncated", "Truncate"], ["rows-deleted", "Delete rows"], ["poisoned", "Poisoned"]];
+const SCENARIOS = [
+  {key: "tonight", name: "Tonight's backup", story: "The newest ERP backup is restored into test.local and checked",
+   body: b => ({backups: [b.id], targets: ["test.local"], heal: true})},
+  {key: "upgrade", name: "App upgraded", story: "The same backup on the upgraded app in test2.local: the fields moved, GLM heals it",
+   body: b => ({backups: [b.id], targets: ["test2.local"], heal: true})},
+  {key: "bad", name: "Bad backup arrives", story: "A poisoned copy of it arrives and is blocked; the latest restorable stays on the good one",
+   body: b => ({backups: [b.id], targets: ["test.local"], fault: "poisoned", heal: true})},
+];
+const busy = () => rg.summaries.some(b => ["queued", "running"].includes(b.status));
+const newestReal = () => { const ss = ovList().filter(b => !faultOf(b)); return ss.filter(b => b.kind === "frappe").at(-1) || ss.at(-1); };
+function runTargets() {
+  const fr = rg.frappe || [], v = {"test.local": "ERP app v1", "test2.local": "ERP app v2"};
+  return [...fr.map(t => [t, t, v[t] || ""]), ...rg.versions.map(t => [t, `Stand-in ${t}`, ""])];
+}
+function runPanel() {
+  if (!runP.open) return "";
+  const ss = ovList().slice().reverse(), ts = runTargets();
+  runP.bks ||= new Set([newestReal()?.id].filter(Boolean));
+  runP.targets ||= new Set(ts.map(t => t[0]));
+  return `<div class="runp" id="runp" role="dialog" aria-label="Run parameters">
+    <section><h3>Backups to check</h3><div class="bks">${ss.map(b => { const [c] = OV[ovState(b)] || ["c-idle"];
+      return `<label class="${c}"><input type="checkbox" name="bk" value="${esc(b.id)}"${runP.bks.has(b.id) ? " checked" : ""}><i></i><span title="${esc(b.file)}">${esc(bkName(b))}</span><small>${esc(clock(b.created_at))}</small></label>`; }).join("")}</div></section>
+    <section><h3>Restore into</h3><div class="opts">${ts.map(([id, name, sub]) =>
+      `<label title="${esc(sub)}"><input type="checkbox" name="tg" value="${esc(id)}"${runP.targets.has(id) ? " checked" : ""}>${esc(name)}${sub ? `<small>${esc(sub)}</small>` : ""}</label>`).join("")}</div></section>
+    <section><h3>Inject a fault</h3><div class="opts">${RUN_FAULTS.map(([id, name]) =>
+      `<label><input type="radio" name="fault" value="${id}"${runP.fault === id ? " checked" : ""}>${name}</label>`).join("")}</div></section>
+    <section><label><input type="checkbox" name="heal"${runP.heal ? " checked" : ""}>Heal schema drift with AI (GLM on Vultr)</label></section>
+    <footer><button class="btn quiet" id="runp-x">Cancel</button><button class="btn primary" id="runp-go"${busy() ? " disabled" : ""}>Start run</button></footer></div>`;
+}
+function runCtl() {
+  const b = busy();
+  if (!b) runP.scen = null;
+  return `<div class="ctl"><span class="msg${runP.err ? " err" : ""}" id="msg" role="status">${esc(runP.msg)}</span>
+    <div class="scen" role="group" aria-label="Demo scenarios">${SCENARIOS.map(x => `<button data-scen="${x.key}" title="${esc(x.story)}" aria-pressed="${runP.scen === x.key}"${b ? " disabled" : ""}>${esc(x.name)}</button>`).join("")}</div>
+    <button class="quiet" id="reset" title="Remove the copies runs made and put back the results they replaced"${b ? " disabled" : ""}>Reset</button>
+    <button class="btn primary" id="runbtn" aria-expanded="${runP.open}"${b ? " disabled" : ""}>${b ? "Running" : "Run"}</button></div>${runPanel()}`;
+}
+const runMsg = (t, err) => { runP.msg = t || ""; runP.err = !!err; const m = $("#msg"); if (m) { m.textContent = runP.msg; m.classList.toggle("err", runP.err); } };
+async function startRun(body, scen) {
+  runMsg("Starting");
+  const r = await fetch("rg/api/runs", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  if (!r.ok) return runMsg(`Not started: ${await why(r)}`, true);
+  const {queued} = await r.json();
+  runP.open = false; runP.scen = scen || null;
+  ovSel.id = queued[0];
+  runMsg("");
+  rg.summaries = await getJSON("rg/api/backups");
+  draw();
+}
+function bindRun() {
+  $("#runbtn")?.addEventListener("click", () => { runP.open = !runP.open; draw(); });
+  $("#runp-x")?.addEventListener("click", () => { runP.open = false; draw(); });
+  const p = $("#runp");
+  p?.addEventListener("change", e => {
+    const t = e.target, set = {bk: runP.bks, tg: runP.targets}[t.name];
+    if (set) t.checked ? set.add(t.value) : set.delete(t.value);
+    if (t.name === "fault") runP.fault = t.value;
+    if (t.name === "heal") runP.heal = t.checked;
+  });
+  $("#runp-go")?.addEventListener("click", () => {
+    if (!runP.bks.size) return runMsg("Pick at least one backup", true);
+    if (!runP.targets.size) return runMsg("Pick at least one place to restore into", true);
+    startRun({backups: [...runP.bks], targets: [...runP.targets], fault: runP.fault || null, heal: runP.heal});
+  });
+  document.querySelectorAll("[data-scen]").forEach(el => el.onclick = () => {
+    const x = SCENARIOS.find(x => x.key === el.dataset.scen), b = newestReal();
+    if (b) startRun(x.body(b), x.key); else runMsg("No ERP backup to run on yet", true);
+  });
+  $("#reset")?.addEventListener("click", async () => {
+    runMsg("Resetting");
+    const r = await fetch("rg/api/runs/reset", {method: "POST"});
+    if (!r.ok) return runMsg(`Not reset: ${await why(r)}`, true);
+    const {restored} = await r.json();
+    rg.summaries = await getJSON("rg/api/backups");
+    await Promise.all(restored.map(id => rgDetail(id, true).catch(() => {})));
+    ovSel.id = null; runMsg(""); draw();
+  });
+}
+addEventListener("keydown", e => { if (e.key === "Escape" && runP.open) { runP.open = false; draw(); $("#runbtn")?.focus(); } });
+addEventListener("pointerdown", e => { if (runP.open && !e.target.closest?.("#runp, #runbtn")) { runP.open = false; draw(); } });
+
+function ovView() {
+  const ss = ovList();
+  if (!ss.length) return "";
+  const latest = ss.filter(b => b.status === "dr_ready").at(-1);
+  const sel = ss.find(b => b.id === ovSel.id) || ss.at(-1);
+  ovSel.id = sel.id;
+  return `<div class="ov"><div class="brand"><b>BackupAirlock</b><span>Every backup restored into a sandbox, checked, and healed when the schema moved</span>${runCtl()}</div><div class="dt" id="dt">${ovDetail(sel)}</div>
+    <div class="band"><div class="tl">${ss.map((b, i) => { const [c, word, mod] = OV[ovState(b)] || ["c-idle", b.status, "hollow"];
+      return `<button class="mk ${c}${b === latest ? " latest" : ""}" data-id="${esc(b.id)}" style="left:${ss.length > 1 ? i / (ss.length - 1) * 100 : 50}%"
+        aria-pressed="${b === sel}" aria-label="${esc(bkName(b))}, ${esc(clock(b.created_at))}, from ${esc(bkSource(b))}: ${esc(word)}"><i class="${mod || ""}"></i></button>`; }).join("")}
+    ${ss.map((b, i) => { const [c, word] = OV[ovState(b)] || ["c-idle", b.status];
+      return `<div class="lb ${c}${b === sel ? " sel" : ""}${b === latest ? " latest" : ""}" data-id="${esc(b.id)}" style="left:${ss.length > 1 ? i / (ss.length - 1) * 100 : 50}%"
+      aria-hidden="true">${esc(bkName(b))}<span>${esc(clock(b.created_at))}</span><span>${esc(bkSource(b))}</span><b>${esc(word)}</b></div>`; }).join("")}
+    <div class="peekwrap${ovPeek.on ? " on" : ""}" id="peekwrap">${peekHtml(sel)}</div></div></div>
+    <svg id="ray" aria-hidden="true"><line></line></svg></div>`;
+}
+function ovPick(id) {
+  if (!id || ovSel.id === id) return;
+  ovSel.id = id;
+  const show = () => { if (ovSel.id === id && $("#dt")) { const b = rg.summaries.find(b => b.id === id); $("#dt").innerHTML = ovDetail(b); ovTail(); $("#peekwrap").innerHTML = peekHtml(b); peekPlace(); } };
+  document.querySelectorAll(".mk").forEach(m => m.setAttribute("aria-pressed", m.dataset.id === id));
+  document.querySelectorAll(".lb").forEach(l => l.classList.toggle("sel", l.dataset.id === id));
+  ovLabels();
+  show();
+  rgDetail(id).then(show, () => {});
+}
+// Labels that would touch are dropped; the selected one always stays, then the latest restorable, the first and the last.
+function ovLabels() {
+  const ls = [...document.querySelectorAll(".lb")];
+  ls.forEach(l => { l.hidden = false; l.style.translate = ""; });
+  const rank = l => l.classList.contains("sel") ? 0 : l.classList.contains("latest") ? 1 : l === ls[0] || l === ls.at(-1) ? 2 : 3;
+  const boxes = new Map(ls.map(l => [l, l.getBoundingClientRect()])), kept = [];
+  for (const l of [...ls].sort((a, b) => rank(a) - rank(b))) {
+    const r = boxes.get(l);
+    if (kept.some(k => r.left < k.right + 16 && r.right > k.left - 16)) l.hidden = true;
+    else kept.push(r);
+  }
+  // A centred label near either edge is pulled back inside the page.
+  for (const l of ls) { const r = boxes.get(l), dx = Math.max(4 - r.left, 0) + Math.min(innerWidth - 4 - r.right, 0); if (dx) l.style.translate = `${dx}px 0`; }
+}
+addEventListener("resize", ovLabels);
+// A running log follows its newest line.
+const ovTail = () => { const t = $("#term"); if (t?.dataset.live != null) t.scrollTop = t.scrollHeight; };
+// A thin line from the cursor to the nearest mark (Jonas 15:35 "easy to not hover correctly over the dot"), only once the
+// cursor is near the timeline (15:55 "only select if quite close", 16:08 radius halved); elsewhere the selection stays.
+function ovFrame() {
+  ovPtr.frame = 0;
+  const ray = $("#ray");
+  if (!ray) return;
+  let near, d = Infinity;
+  const tl = $(".tl")?.getBoundingClientRect(), close = tl && ovPtr.y > tl.top - 32 && ovPtr.y < tl.bottom && ovPtr.x > tl.left - 16 && ovPtr.x < tl.right + 16;
+  // On the way up to the card, and on it, the selection holds and the card stays.
+  const pk = $("#peek")?.getBoundingClientRect(), inPeek = ovPtr.on && pk && ovPtr.x > pk.left && ovPtr.x < pk.right && ovPtr.y > pk.top && ovPtr.y < tl.top + 32;
+  ovPeek.on = !!(inPeek || ovPtr.on && close || ovPeek.pinned);
+  $("#peekwrap")?.classList.toggle("on", ovPeek.on);
+  if (inPeek) { ray.classList.remove("on"); return; }
+  if (ovPtr.on && close) for (const m of document.querySelectorAll(".mk")) {
+    const r = m.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, e = (x - ovPtr.x) ** 2 + (y - ovPtr.y) ** 2;
+    if (e < d) { d = e; near = {m, x, y}; }
+  }
+  ray.classList.toggle("on", !!near);
+  if (!near) return;
+  // The line stops at the selection ring, never over the mark.
+  const l = ray.firstElementChild, dx = ovPtr.x - near.x, dy = ovPtr.y - near.y, k = Math.max(0, 1 - 18 / (Math.hypot(dx, dy) || 1));
+  ray.classList.toggle("on", k > 0);
+  l.setAttribute("x1", ovPtr.x); l.setAttribute("y1", ovPtr.y); l.setAttribute("x2", ovPtr.x - dx * k); l.setAttribute("y2", ovPtr.y - dy * k);
+  ovPick(near.m.dataset.id);
+}
+const ovDraw = () => { ovPtr.frame ||= requestAnimationFrame(ovFrame); };
+// Touch and pen: on the timeline only, so the checks above still scroll.
+const ovPoint = e => {
+  if (view !== "overview" || (e.pointerType !== "mouse" && !e.target.closest?.(".tl"))) return;
+  ovPtr.x = e.clientX; ovPtr.y = e.clientY; ovPtr.on = true; ovDraw();
+};
+addEventListener("pointermove", ovPoint);
+addEventListener("pointerdown", ovPoint);
+addEventListener("pointerup", e => { if (e.pointerType !== "mouse") { ovPeek.pinned = !!e.target.closest?.(".tl"); ovPtr.on = false; ovDraw(); } });
+addEventListener("pointerdown", e => { if (!e.target.closest?.(".tl, #peek")) ovPeek.pinned = false; }, true);
+document.addEventListener("pointerout", e => { if (!e.relatedTarget) { ovPtr.on = false; ovDraw(); } });
+addEventListener("keydown", e => {
+  if (view !== "overview" || !["ArrowLeft", "ArrowRight"].includes(e.key)) return;
+  const ms = [...document.querySelectorAll(".mk")], i = ms.findIndex(m => m.dataset.id === ovSel.id);
+  const m = ms[Math.max(0, Math.min(ms.length - 1, i + (e.key === "ArrowLeft" ? -1 : 1)))];
+  if (!m) return;
+  e.preventDefault(); ovPtr.on = false; ovDraw(); ovPick(m.dataset.id); m.focus({preventScroll: true});
+});
+
+/* ---------- certificate (both engines carry the same matrix shape) ---------- */
+function certView() {
+  const c = view === "drill" ? dr.proof : rg.details[rg.sel?.b]?.certificate;
+  if (!c) return `<p class="muted">No certificate for this selection yet.</p>`;
+  const json = view === "drill" ? `api/runs/${c.run_id}/proof.json` : `rg/api/backups/${encodeURIComponent(rg.sel.b)}/certificate.json`;
+  const verdicts = c.matrix.map(m => m.status);
+  return `<div class="cert">
+    <div class="head"><div><div class="meta">${esc(c.issuer || "BackupAirlock")} · ${esc(c.generated_at)}</div>
+      <h2>DR Readiness Certificate</h2>
+      <div class="stamp">${c.matrix.map(m => `${esc(m.backup)}: ${esc(m.status.split(":")[0].toLowerCase())}`).join(" · ")}</div></div>
+      <div class="actions no-print"><a href="#">Back</a><a href="${json}">JSON</a>
+        ${view === "drill" ? `<a href="api/runs/${c.run_id}/proof.html">HTML</a>` : ""}<button class="btn primary" onclick="print()">Print</button></div></div>
+    <section><h3 class="colhead">Backup x app version</h3><table><tr><th>Backup</th><th>App version</th><th>Result</th><th>Bridge</th><th>Checks</th></tr>
+      ${c.matrix.map(m => m.app_versions.map((a, i) => { const ks = (a.suite || []).concat(a.control_plane_checks || []);
+        return `<tr><td>${i ? "" : `<b class="mono">${esc(m.backup)}</b><br><span class="mono muted">${esc(m.sha256)}</span>`}</td><td>${esc(a.app)}</td>
+          <td>${mark(a.result)}</td><td class="mono">${a.bridge ? `${esc(a.bridge)}<br><span class="muted">${esc(a.bridge_sha256.slice(0, 16))}</span>` : ""}</td>
+          <td>${ks.length ? `${ks.filter(k => k.pass).length} of ${ks.length}` : "not run, sandbox killed"}</td></tr>`; }).join("")).join("")}</table></section>
+    <section><h3 class="colhead">Sandbox policy</h3><dl class="kv">${Object.entries(c.sandbox_policy).map(([k, v]) => `<dt>${esc(k.replace(/_/g, " "))}</dt><dd>${esc(v)}</dd>`).join("")}</dl></section>
+    <section><h3 class="colhead">Model calls</h3><dl class="kv"><dt>provider</dt><dd>${esc(c.inference)}</dd>
+      ${(c.llm_calls || []).map(l => `<dt>${esc(l.purpose)}</dt><dd>${esc(l.model)} · ${sec(l.latency_s)} · ${l.tokens} tokens</dd>`).join("") || "<dt>calls</dt><dd>none needed</dd>"}</dl></section>
+    <section><h3 class="colhead">Seal</h3><dl class="kv"><dt>proof sha256</dt><dd>${esc(c.proof_sha256)}</dd></dl>
+      <p class="note">sha256 of the rest of this certificate (JSON, sorted keys). Recompute it to check nothing was edited.</p></section>
+  </div>`;
+}
+
+/* ---------- render ---------- */
+let view = "overview";
+function setLive(on) { $("#live").className = "live" + (on ? " on" : ""); $("#live span").textContent = on ? "live" : view === "drill" ? "no drill running" : "offline"; }
+function note(t) { $("#note").textContent = t || ""; }
+function draw() {
+  document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.view === view));
+  const one = view === "overview" && location.hash !== "#cert";
+  $(".page").classList.toggle("full", one);
+  $(".bar").hidden = $("#top").hidden = one;
+  if (one) { $("#body").innerHTML = ovView(); ovLabels(); ovTail(); peekPlace(); if (ovPtr.on) ovDraw(); return bind(); }
+  const V = view === "drill" ? drView() : rgView();
+  $("#meta").textContent = V.meta || "";
+  $("#headline").innerHTML = V.headline || "";
+  $("#actions").innerHTML = V.actions || "";
+  if (location.hash === "#cert") { $("#body").innerHTML = certView(); return bind(); }
+  const sel = V.sel;
+  // Nothing to list: the headline already says so.
+  if (!V.rows.length) { $("#body").innerHTML = ""; return bind(); }
+  $("#body").innerHTML = `<div class="main"><div>
+    <div class="matrix"><div class="colhead corner">Backup</div>${V.cols.map(c => `<div class="colhead">${esc(c.label)}</div>`).join("")}
+    ${V.rows.map(r => `<div class="row"><div class="bk"><div class="name" title="${esc(r.full || r.name)}">${esc(r.name)}</div><div class="sub">${esc(r.sub)}</div></div>
+      ${matrixCells(r, r.cols || V.cols, sel, V.cols.length)}</div>`).join("")}
+    </div></div>
+    <div>${view === "drill" ? drPanel() : rgPanel()}</div></div>`;
+  bind();
+}
+function matrixCells(r, cols, sel, width) {
+  const xs = cols.map(c => r.cells[c.id] || {state: "not_run", line: ""});
+  const what = x => String(x.line).split(" · ")[0];
+  const same = cols.length > 1 && !["native", "healed"].includes(xs[0].state) && xs.every(x => x.state === xs[0].state && what(x) === what(xs[0]));
+  const cell = (x, c, label, span) => `<button class="cell" data-b="${esc(r.id)}" data-v="${esc(c.id)}"${span ? ` style="grid-column:span ${span}"` : ""}
+    aria-pressed="${!!sel && sel.b === r.id && (!!span || sel.v === c.id)}">${label ? `<div class="app">${esc(label)}</div>` : ""}${mark(x.state)}<div class="d">${esc(x.line)}</div></button>`;
+  if (cols.length === 1 && width > 1) return cell(xs[0], cols[0], cols[0].label, width);
+  return same ? cell({...xs[0], line: what(xs[0])}, cols[0], "", cols.length)
+    : cols.map((c, i) => cell(xs[i], c, c.label)).join("");
+}
+function bind() {
+  bindRun();
+  document.querySelectorAll(".mk").forEach(el => { el.onfocus = el.onclick = () => ovPick(el.dataset.id); });
+  document.querySelectorAll(".cell").forEach(el => el.onclick = async () => {
+    const s = {b: el.dataset.b, v: el.dataset.v};
+    if (view === "drill") dr.sel = s; else { rg.sel = s; await rgDetail(s.b).catch(e => note(e.message)); }
+    draw();
+    if (matchMedia("(max-width:900px)").matches) document.querySelector(".panel")?.scrollIntoView({behavior: "smooth"});
+  });
+  $("#rerun")?.addEventListener("click", async () => {
+    const r = await fetch(`rg/api/backups/${encodeURIComponent(rg.sel.b)}/rerun`, {method: "POST"});
+    note(r.ok ? "Queued." : `Not queued: ${await why(r)}`);
+    rgRefresh();
+  });
+  $("#file")?.addEventListener("change", async e => {
+    const f = e.target.files[0]; if (!f) return;
+    note(`Uploading ${f.name}`);
+    const r = await fetch(`api/uploads?name=${encodeURIComponent(f.name)}`, {method: "POST", body: f});
+    if (!r.ok) { dr.upload = null; note(`Upload refused: ${await why(r)}`); }
+    else { dr.upload = await r.json(); note(`${dr.upload.name} (${mb(dr.upload.bytes)}) joins the next drill as a fourth row.`); }
+    draw();
+  });
+  $("#run")?.addEventListener("click", async () => {
+    const r = await fetch(`api/runs/matrix${dr.upload ? "?upload=" + dr.upload.id : ""}`, {method: "POST"});
+    if (!r.ok) { note(`Not started: ${await why(r)}`); return; }
+    note(""); dr.sel = null; dr.upload = null; drFollow((await r.json()).run_id); draw();
+  });
+}
+function setView(v, hash) {
+  view = v; history.pushState(null, "", `?view=${v}${hash ? "#" + hash : ""}`); note(""); start(); scrollTo(0, 0);
+}
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => setView(b.dataset.view));
+window.addEventListener("popstate", () => { view = viewFromUrl(); start(); });
+window.addEventListener("hashchange", draw);
+async function start() {
+  draw();
+  try {
+    // Each engine loads once; switching views must not restart a drill's live stream.
+    if (view === "drill" && !dr.proof && !dr.live) await drLoad();
+    if (view !== "drill" && !rg.es) { await rgLoad(); rgStream(); }
+    // Every backup's checks up front, so moving along the timeline never waits on the network.
+    if (view === "overview") await Promise.all(rg.summaries.map(b => rgDetail(b.id).catch(() => {})));
+  } catch (e) { note(view === "drill" ? `Drill results unavailable: ${e.message}` : `Backup watcher unavailable: ${e.message}`); }
+  setLive(view === "drill" ? !!dr.es : !!rg.es);
+  draw();
+}
+const viewFromUrl = () => ["drill", "backups"].includes(new URLSearchParams(location.search).get("view")) ? new URLSearchParams(location.search).get("view") : "overview";
+view = viewFromUrl();
+start();
+</script>
+</body>
+</html>

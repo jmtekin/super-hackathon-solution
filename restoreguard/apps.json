@@ -1,0 +1,6 @@
+[
+  {"version": "1.0.0", "image": "nordvik-standin:1.0.0", "schema": 1, "port": 8000, "migrations": "/app/migrations",
+   "label": "Nordvik stand-in 1.0.0"},
+  {"version": "2.0.0", "image": "nordvik-standin:2.0.0", "schema": 2, "port": 8000, "migrations": "/app/migrations",
+   "label": "Nordvik stand-in 2.0.0"}
+]

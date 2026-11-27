@@ -1,57 +1,48 @@
 #!/bin/sh
-# One-command install of Restorer on a fresh Vultr VM (Ubuntu 24.04 / Debian 12), as root:
-#   VULTR_INFERENCE_KEY=... sh install.sh            (serves on port 80)
-#   VULTR_INFERENCE_KEY=... RESTORER_PORT=8530 sh install.sh
-# Re-running is safe: it updates the code, rebuilds the sandbox image and restarts the service.
+# One Vultr VM (Ubuntu 24.04), as root, from this checkout: cp .env.example .env, fill it in, sh install.sh.
+# Installs the console (ui/) and the BackupAirlock runtime (restoreguard/, 127.0.0.1:8600, reached only
+# through the console's /rg/* proxy). With PUBLIC_HOST set, Caddy serves the console on https://PUBLIC_HOST/
+# (automatic TLS) and the console itself listens on 127.0.0.1 only; without it the console is on port 80.
+# Re-running is safe.
 set -eu
-[ "$(id -u)" = 0 ] || { echo "run as root" >&2; exit 1; }
-: "${VULTR_INFERENCE_KEY:?set VULTR_INFERENCE_KEY (Vultr Serverless Inference API key)}"
-PORT="${RESTORER_PORT:-80}"
-SRC="$(cd "$(dirname "$0")" && pwd)"
-DEST=/opt/restorer
+cd "$(dirname "$0")"
+[ -f .env ] || { echo "no .env: cp .env.example .env and fill it in" >&2; exit 1; }
+set -a
+. ./.env
+set +a
+RESTOREGUARD_HOST=127.0.0.1
+if [ -n "${PUBLIC_HOST:-}" ]; then
+  : "${WRITE_PASSWORD:?set WRITE_PASSWORD (basic auth for every write: Run drill, Add .sql, rerun)}"
+  RESTORER_HOST=127.0.0.1
+  RESTORER_PORT=8530
+fi
+export RESTOREGUARD_HOST RESTORER_HOST RESTORER_PORT
+sh ui/install.sh
+sh restoreguard/install.sh
+[ -n "${PUBLIC_HOST:-}" ] || exit 0
 
-apt-get update -qq
-apt-get install -y -qq docker.io python3-venv rsync >/dev/null
-systemctl enable --now docker
-
-id restorer >/dev/null 2>&1 || useradd --system --home "$DEST" --shell /usr/sbin/nologin restorer
-usermod -aG docker restorer
-mkdir -p "$DEST"
-rsync -a --delete --exclude .venv --exclude runs --exclude .git --exclude shots "$SRC"/ "$DEST"/
-python3 -m venv "$DEST/.venv"
-"$DEST/.venv/bin/pip" install -q -r "$DEST/requirements.txt"
-(cd "$DEST" && python3 fixtures/build.py)
-mkdir -p "$DEST/runs"
-chown -R restorer:restorer "$DEST"
-docker build -q -t restorer-sandbox:2 -f "$DEST/sandbox.Dockerfile" "$DEST"
-
-# The key lives only here and in the control-plane process, never in a sandbox.
+apt-get -o DPkg::Lock::Timeout=600 install -y -qq caddy >/dev/null
+# Reading is public; anything that is not a read starts work on this VM, so it needs the team password.
+HASH="$(printf "%s\n" "$WRITE_PASSWORD" | caddy hash-password)"
 umask 077
-printf 'VULTR_INFERENCE_KEY=%s\nRESTORER_HOST=0.0.0.0\nRESTORER_PORT=%s\n' "$VULTR_INFERENCE_KEY" "$PORT" > /etc/restorer.env
+cat > /etc/caddy/Caddyfile <<CADDY
+$PUBLIC_HOST {
+	# never gzip the live event streams (SSE): gzip buffers them until the run ends
+	@compress {
+		not path_regexp (/events|/stream)\$
+	}
+	encode @compress gzip
+	# no login (Jonas 16:47 "remove login"): judges can press Run; the runtime runs one at a time, only into test copies
+	reverse_proxy 127.0.0.1:$RESTORER_PORT
+}
+CADDY
 umask 022
-
-cat > /etc/systemd/system/restorer.service <<UNIT
-[Unit]
-Description=Restorer control plane
-After=network-online.target docker.service
-
-[Service]
-User=restorer
-Group=restorer
-SupplementaryGroups=docker
-EnvironmentFile=/etc/restorer.env
-WorkingDirectory=$DEST
-ExecStart=$DEST/.venv/bin/python app.py
-AmbientCapabilities=CAP_NET_BIND_SERVICE
-Restart=always
-MemoryMax=1G
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-systemctl daemon-reload
-systemctl enable restorer >/dev/null
-systemctl restart restorer
-command -v ufw >/dev/null && ufw status | grep -q active && ufw allow "$PORT/tcp" >/dev/null || true
-sleep 2
-curl -fsS "http://127.0.0.1:$PORT/health" && echo && echo "Restorer is up: http://$(hostname -I | awk '{print $1}'):$PORT/"
+chown root:caddy /etc/caddy/Caddyfile
+chmod 640 /etc/caddy/Caddyfile
+caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
+systemctl enable caddy >/dev/null
+systemctl reload-or-restart caddy
+# The first certificate needs an ACME round trip; give it up to two minutes.
+i=0
+until curl -fs "https://$PUBLIC_HOST/health"; do i=$((i + 1)); [ $i -lt 24 ] || exit 1; sleep 5; done
+echo && echo "BackupAirlock is up: https://$PUBLIC_HOST/"

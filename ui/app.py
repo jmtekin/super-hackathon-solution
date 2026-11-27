@@ -708,6 +708,26 @@ def index():
     return FileResponse(HERE / "static" / "index.html")
 
 
+@app.get("/overview", response_class=HTMLResponse)
+def overview():
+    return FileResponse(HERE / "static" / "overview.html")
+
+
+@app.get("/timeline", response_class=HTMLResponse)
+def timeline():
+    return FileResponse(HERE / "static" / "index.html")
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings():
+    return FileResponse(HERE / "static" / "settings.html")
+
+
+@app.get("/erp-test-local.jpg")
+def erp_shot():
+    return FileResponse(HERE / "static" / "erp-test-local.jpg")
+
+
 @app.get("/health")
 def health():
     return {"ok": True, "service": "restorer-control-plane", "runs_active": sum(not r.done for r in runs.values())}
@@ -867,6 +887,60 @@ table{{border-collapse:collapse;width:100%}}td{{border-bottom:1px solid #e2e8f0;
 <h2>Backup fingerprints</h2><pre>{e(json.dumps(p['backup_sha256'], indent=1))}</pre>
 <p><code>proof sha256 {p['proof_sha256']}</code></p>"""
     return HTMLResponse(body, headers={"Content-Disposition": f'attachment; filename="{'dr-certificate' if p.get('matrix') else 'recovery-proof'}-{run_id}.html"'})
+
+
+@app.get("/api/runs")
+def list_runs(fixture: str = "matrix", limit: int = 10):
+    """Finished runs of one fixture, newest first, so the console opens on the last result instead of a blank grid."""
+    out = []
+    for d in sorted(RUNS.glob("2*"), reverse=True):
+        p = d / "proof.json"
+        if p.is_file() and (proof := json.loads(p.read_text())).get("fixture") == fixture:
+            out.append({"run_id": d.name, "generated_at": proof["generated_at"], "verdict": proof["verdict"]})
+            if len(out) >= limit:
+                break
+    active = [r.id for r in runs.values() if not r.done and r.fixture == fixture]
+    return {"active": active, "runs": out}
+
+
+RESTOREGUARD = os.environ.get("RESTOREGUARD_URL", "127.0.0.1:8600")
+
+
+@app.api_route("/rg/{path:path}", methods=["GET", "POST"])
+async def restoreguard(path: str, request: Request):
+    """The console reads the BackupAirlock runtime (backups watcher, results API, SSE) through here: it listens on
+    localhost only, and one public origin keeps the page free of CORS. GET, POST /api/backups/{id}/rerun and the
+    console's Run (POST /api/runs, /api/runs/reset, JSON body up to 64 KB) only."""
+    if not (path.startswith("api/") or path == "health") or (
+            request.method == "POST" and not (path.endswith("/rerun") or path in ("api/runs", "api/runs/reset"))):
+        raise HTTPException(404, "not proxied")
+    data = await request.body() if request.method == "POST" else b""
+    if len(data) > 65536:
+        raise HTTPException(413, "run parameters too large")
+    host, port = RESTOREGUARD.rsplit(":", 1)
+    try:
+        reader, writer = await asyncio.wait_for(asyncio.open_connection(host, int(port)), 3)
+    except (OSError, asyncio.TimeoutError):
+        raise HTTPException(502, "BackupAirlock runtime is not reachable")
+    # HTTP/1.0: no chunked encoding, the runtime closes the socket at the end of the body, SSE streams through.
+    writer.write(f"{request.method} /{path} HTTP/1.0\r\nHost: {host}\r\nContent-Type: application/json\r\n"
+                 f"Content-Length: {len(data)}\r\n\r\n".encode() + data)
+    await writer.drain()
+    head = (await reader.readuntil(b"\r\n\r\n")).decode("latin-1").split("\r\n")
+    status = int(head[0].split()[1])
+    headers = dict(h.split(": ", 1) for h in head[1:] if ": " in h)
+    ctype = headers.get("content-type", "application/json")
+
+    async def body():
+        try:
+            while chunk := await reader.read(65536):
+                yield chunk
+        finally:
+            writer.close()
+
+    extra = {k: v for k, v in headers.items() if k.lower() == "content-disposition"}
+    return StreamingResponse(body(), status_code=status, media_type=ctype,
+                             headers={**extra, "Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 if __name__ == "__main__":
