@@ -148,7 +148,8 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
 .lane-s{text-align:right}
 .axis{display:flex;justify-content:space-between;color:var(--strong)}
 .ck li.done b{color:var(--ok)}
-.ck li.fail b{color:var(--bad);font-weight:600}
+.ck li.fail b,.ck li.blocked b{color:var(--bad);font-weight:600}
+.ck li.blocked i{width:6px;height:6px;margin:9px 1px 0;box-shadow:0 0 0 2px var(--bg),0 0 0 3.5px var(--c)}
 /* one mark per backup, oldest left, evenly spaced; colour = does it restore; a tick over the latest that does */
 .band{--bg:var(--surface);background:var(--bg)}
 .tl{position:relative;height:152px;margin:0 var(--s7);touch-action:none}
@@ -157,6 +158,8 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
 .mk i{width:16px;height:16px;border-radius:50%;background:var(--c);box-shadow:0 0 0 4px var(--bg);transition:transform .12s ease-out}
 .mk i.hollow{background:var(--bg);box-shadow:inset 0 0 0 2px var(--c),0 0 0 4px var(--bg)}
 .mk[aria-pressed=true] i{transform:scale(1.5);box-shadow:0 0 0 3px var(--bg),0 0 0 4px var(--ink-2)}
+.mk.c-bad i{width:12px;height:12px;box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--c)}
+.mk.c-bad[aria-pressed=true] i{box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--c),0 0 0 7px var(--bg),0 0 0 8px var(--ink-2)}
 .mk[aria-pressed=true] i.hollow{box-shadow:inset 0 0 0 1.5px var(--c),0 0 0 3px var(--bg),0 0 0 4px var(--ink-2)}
 .mk.latest::before{content:"";position:absolute;left:21px;top:-8px;width:2px;height:12px;background:var(--ok)}
 .lb{position:absolute;top:84px;transform:translateX(-50%);white-space:nowrap;font-size:12px;line-height:16px;color:var(--ink-2);text-align:center;pointer-events:none}
@@ -640,13 +643,14 @@ function ovChecks(b) {
   if (!c) return "";
   const ref = ovSplit(ovCell(rg.details[rg.summaries.find(x => x.kind === b.kind && x.status === "dr_ready")?.id]));
   const missing = run ? "waiting" : "skipped";
-  const list = (m, refm) => [...new Set([...refm.keys(), ...m.keys()])].map(n => [n, m.has(n) ? (m.get(n) ? "done" : "fail") : missing]);
+  const fail = b.status === "quarantined" ? "blocked" : "fail";
+  const list = (m, refm) => [...new Set([...refm.keys(), ...m.keys()])].map(n => [n, m.has(n) ? (m.get(n) ? "done" : fail) : missing]);
   const [v, r] = ovSplit(c);
   const heal = c.state === "healed" || c.bridges.length
     ? c.checks.filter(k => !k.pass && /\(native\)/.test(k.check)).map(k => [baseName(k.check) + " on the old schema", "fail"])
         .concat(c.bridges.map((x, i) => [`bridge round ${x.round}`, i < c.bridges.length - 1 ? "fail" : run ? "waiting" : "done"]))
     : [["schema bridge", b.status === "dr_ready" ? "skipped" : missing]];
-  const C = {done: "c-ok", fail: "c-bad", skipped: "c-idle", waiting: "c-idle"};
+  const C = {done: "c-ok", fail: "c-bad", blocked: "c-bad", skipped: "c-idle", waiting: "c-idle"};
   // When each check ran, from the run log: its last result, a native failure's first, a bridge round's event.
   const log = run ? evs : rg.details[b.id]?.logs?.[Object.keys(rg.details[b.id].cells).find(k => rg.details[b.id].cells[k] === c)] || [], at = new Map();
   for (const e of log) {
@@ -669,15 +673,18 @@ function ovStrip(gs, C, T) {
       <span class="lane-s">${ts.length ? sec(Math.max(...ts) - Math.min(...ts)) : ""}</span>`; }).join("")}
     <span></span><div class="axis"><span>0 s</span><span>${sec(T)}</span></div><span></span></div>`;
 }
-// Hovering a check lights its tick on the strip and its lines in the run log (Jonas 16:03), and the tick lights the row.
-document.addEventListener("pointerover", e => {
+// Hovering a check lights its tick on the strip and its lines in the run log (Jonas 16:03), and the tick lights the row;
+// on touch a tap does the same.
+function ovHot(e) {
   const el = e.target.closest?.("[data-k]"), k = el?.dataset.k, n = $(`.ck li[data-k="${k}"]`)?.dataset.n;
   document.querySelectorAll(".ck [data-k]").forEach(x => x.classList.toggle("hot", x.dataset.k === k));
   const term = $("#term"), ls = term ? [...term.querySelectorAll("[data-n]")] : [];
   ls.forEach(x => x.classList.toggle("hot", x.dataset.n === n));
   const first = n && ls.find(x => x.dataset.n === n);
   if (first) term.scrollTop += first.getBoundingClientRect().top - term.getBoundingClientRect().top - 48;
-});
+}
+document.addEventListener("pointerover", e => { if (e.pointerType === "mouse") ovHot(e); });
+document.addEventListener("click", e => { if (e.target.closest?.(".ck")) ovHot(e); });
 // The runtime's own log of the shown cell, right of the checks (Jonas 15:47 "To the right is cmd output"); while the
 // backup runs, the stream's events.
 function ovTerm(b) {
@@ -695,7 +702,10 @@ function ovSum(b) {
   const d = rg.details[b.id] || b, c = ovCell(d), run = ["running", "queued"].includes(b.status);
   if (run || !d.checks_total) return "";
   const rounds = c?.bridges?.length, into = c?.restored_into?.instance?.replace(/ rg-\w+/, "");
-  return `<p class="sum"><span><strong>${d.checks_passed} of ${d.checks_total}</strong> checks passed</span><span>${sec(c?.elapsed_s ?? d.elapsed_s)}</span>
+  // Checks and time both of the shown cell (one app version), each check at its final result.
+  const key = c && Object.keys(d.cells || {}).find(k => d.cells[k] === c), res = c ? ovSplit(c).flatMap(m => [...m.values()]) : [];
+  const on = key ? ` on ${/^\d/.test(key) ? `app ${key}` : key}` : "";
+  return `<p class="sum"><span><strong>${c ? res.filter(Boolean).length : d.checks_passed} of ${c ? res.length : d.checks_total}</strong> checks passed${esc(on)} in ${sec(c?.elapsed_s ?? d.elapsed_s)}</span>
     ${rounds ? `<span>schema bridged by ${esc(c.llm_calls?.at(-1)?.model || "the model")} in round ${rounds}</span>` : ""}
     ${into ? `<span>restored into ${esc(into)}</span>` : ""}</p>`;
 }
@@ -746,13 +756,13 @@ addEventListener("resize", ovLabels);
 // A running log follows its newest line.
 const ovTail = () => { const t = $("#term"); if (t?.dataset.live != null) t.scrollTop = t.scrollHeight; };
 // A thin line from the cursor to the nearest mark (Jonas 15:35 "easy to not hover correctly over the dot"), only once the
-// cursor is near the timeline (15:55 "only select if quite close"); elsewhere the selection stays.
+// cursor is near the timeline (15:55 "only select if quite close", 16:08 radius halved); elsewhere the selection stays.
 function ovFrame() {
   ovPtr.frame = 0;
   const ray = $("#ray");
   if (!ray) return;
   let near, d = Infinity;
-  const tl = $(".tl")?.getBoundingClientRect(), close = tl && ovPtr.y > tl.top - 64 && ovPtr.y < tl.bottom && ovPtr.x > tl.left - 32 && ovPtr.x < tl.right + 32;
+  const tl = $(".tl")?.getBoundingClientRect(), close = tl && ovPtr.y > tl.top - 32 && ovPtr.y < tl.bottom && ovPtr.x > tl.left - 16 && ovPtr.x < tl.right + 16;
   if (ovPtr.on && close) for (const m of document.querySelectorAll(".mk")) {
     const r = m.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, e = (x - ovPtr.x) ** 2 + (y - ovPtr.y) ** 2;
     if (e < d) { d = e; near = {m, x, y}; }
