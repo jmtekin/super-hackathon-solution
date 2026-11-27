@@ -61,7 +61,7 @@ v2 dropped has its values row for row in one field v2 added; shared fields uncha
 `/home/frappe/bin/restore_test2_site.sh` (test2.local hardcoded, flock, SQL <= 64 KB, run as the site's own DB
 user with `mariadb --sandbox`) restores + migrates + applies it; test2.local is then checked like test.local with
 the mapping -> `healed`. Key `/opt/agent/.ssh/restoreguard_test2_ed25519`; token `test2.local` in the tokens file.
-First run 2026-11-27 15:45 (`20261127_151409`): test.local native 130 s; test2.local healed round 1
+First run 2026-11-27 15:29 (`20261127_151409`): test.local native 130 s; test2.local healed round 1
 (`effort_hours = estimated_hours`, `category = 'Consulting'`), 25 checks, 132 s; fault kit 7/7 on both columns.
 
 API additions (not yet in `../restorer/README.md` Runtime API): `kind` (`postgres`|`frappe`) in every backup
