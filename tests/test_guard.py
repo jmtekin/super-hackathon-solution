@@ -136,3 +136,109 @@ class Service(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Runs(unittest.TestCase):
+    """POST /api/runs and /api/runs/reset: parameters, one run at a time, injected copies, reset."""
+    M = {"sha256": "x", "schema_version": 1, "row_counts": {}, "invariants": {}, "created_at": "2026-11-27T12:00:00Z"}
+
+    def setUp(self):
+        self.d = Path(tempfile.mkdtemp())
+        self.patches = [mock.patch.object(api, "RESULTS", self.d / "results"), mock.patch.object(api, "DIRS", [self.d]),
+                        mock.patch.object(api, "PRE_RUN", self.d / "results" / "pre-run"),
+                        mock.patch.object(api, "FRAPPE_DIR", self.d / "frappe"), mock.patch.object(api, "FRAPPE", None)]
+        for x in self.patches:
+            x.start()
+        api.backups, api.queue = {}, asyncio.Queue()
+        self.dump = self.d / "20261127T120000Z_v1.dump"
+        self.dump.write_bytes(b"PGDMP" + bytes(range(256)) * 40)
+        self.dump.with_suffix(".json").write_text(json.dumps({**self.M, "file": self.dump.name}))
+        b = guard.load_backup(self.dump)
+        api.backups[b["id"]] = {**b, "status": "dr_ready", "cells": {"1.0.0": {"state": "native"}}}
+        api._save(api.backups[b["id"]])
+
+    def tearDown(self):
+        for x in self.patches:
+            x.stop()
+
+    def run_(self, **body):
+        return asyncio.run(api.new_run(body))
+
+    def code(self, **body):
+        with self.assertRaises(HTTPException) as e:
+            self.run_(**body)
+        return e.exception.status_code, e.exception.detail
+
+    def test_malformed_parameters_refused(self):
+        for body in ({}, {"backups": "x"}, {"backups": [self.dump.stem], "heal": "no"},
+                     {"backups": [self.dump.stem], "targets": "1.0.0"}, {"backups": [self.dump.stem], "fault": "rm -rf"}):
+            self.assertEqual(self.code(**body)[0], 400, body)
+        self.assertEqual(self.code(backups=["nope_v1"])[0], 404)
+        self.assertIn("none of them picked", self.code(backups=[self.dump.stem], targets=["test.local"])[1])
+
+    def test_one_run_at_a_time(self):
+        api.backups["busy_v1"] = {"id": "busy_v1", "status": "running", "cells": {}}
+        self.assertEqual(self.code(backups=[self.dump.stem])[0], 409)
+
+    def test_rerun_with_targets_and_heal_off_keeps_the_previous_result(self):
+        self.assertEqual(self.run_(backups=[self.dump.stem], targets=["2.0.0"], heal=False), {"queued": [self.dump.stem]})
+        self.assertTrue((api.PRE_RUN / f"{self.dump.stem}.json").exists())
+        seen = []
+
+        async def cell(b, a, emit):
+            seen.append(a)
+            return {"app_version": a["version"], "state": "failed", "reason": "drift", "checks": [], "events": [],
+                    "restored_into": {}, "signals": [], "static_scan": [], "bridges": []}
+
+        async def go():
+            task = asyncio.create_task(api.worker())
+            while api.backups[self.dump.stem]["status"] in ("queued", "running"):
+                await asyncio.sleep(0.01)
+            task.cancel()
+        with mock.patch.object(guard, "run_cell", cell), mock.patch.object(guard, "certificate",
+                                                                            lambda *_: {"matrix": [{"status": "NOT RESTORABLE"}]}):
+            asyncio.run(asyncio.wait_for(go(), 5))
+        self.assertEqual([(a["version"], a["heal"]) for a in seen], [("2.0.0", False)])
+        self.assertEqual(api.backups[self.dump.stem]["status"], "not_restorable")
+        self.assertEqual(api.reset_runs(), {"restored": [self.dump.stem]})
+        self.assertEqual(api.backups[self.dump.stem]["status"], "dr_ready")
+        self.assertFalse(api.PRE_RUN.exists() and any(api.PRE_RUN.iterdir()))
+
+    def test_injected_copy_is_a_new_resigned_backup_and_reset_removes_it(self):
+        before = self.dump.read_bytes()
+        stem = self.run_(backups=[self.dump.stem], fault="bitflip")["queued"][0]
+        self.assertIn("-run-bitflip_v1", stem)
+        copy = self.d / f"{stem}.dump"
+        m = json.loads(copy.with_suffix(".json").read_text())
+        self.assertEqual(m["sha256"], guard.sha256_file(copy))
+        self.assertEqual(m["injected"], {"fault": "bitflip", "from": self.dump.stem})
+        self.assertNotEqual(copy.read_bytes(), before)
+        self.assertEqual(self.dump.read_bytes(), before)
+        self.assertEqual(api.backups[stem]["run"]["targets"], ["1.0.0", "2.0.0"])
+        self.assertEqual(self.code(backups=[self.dump.stem])[0], 409)  # the copy is queued
+        api.backups[stem]["status"] = "not_restorable"
+        api.reset_runs()
+        self.assertNotIn(stem, api.backups)
+        self.assertFalse(list(self.d.glob("*-run-*")))
+        self.assertEqual(self.dump.read_bytes(), before)
+
+    def test_fault_needing_a_rebuild_without_a_kit_copy_refused_cleanly(self):
+        with mock.patch.object(api.faults, "HERE", self.d):
+            status, detail = self.code(backups=[self.dump.stem], fault="poisoned")
+        self.assertEqual(status, 409)
+        self.assertIn("fault kit", detail)
+        self.assertEqual(list(api.backups), [self.dump.stem])
+        self.assertTrue(api.queue.empty())
+
+    def test_heal_off_fails_a_drifted_cell_without_asking_the_model(self):
+        cell = guard.Cell({"id": "b_v2", "manifest": {"schema_version": 2}}, {**GOOD, "heal": False}, lambda ev: None)
+
+        async def probe(*_):
+            return False, "column first_name does not exist"
+
+        async def llm(*_):
+            raise AssertionError("no model call with healing off")
+        with mock.patch.object(guard, "_app_probe", probe), mock.patch.object(guard.airlock, "llm", llm):
+            asyncio.run(guard._boot_and_bridge(cell, None))
+        self.assertEqual(cell.state, "failed")
+        self.assertIn("healing is off", cell.reason)

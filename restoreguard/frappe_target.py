@@ -470,6 +470,8 @@ async def _cell(cell):
             if not cell.check(f"a {cfg['source']['site']} backup file name (the only kind the VM restores)", vm_file(cfg, b["file"]), b["file"]):
                 return _fail(cell, f"{b['file']} is not a production backup name; not restored into {cfg['test']['site']}")
             native = await _native(cell, fields, rows, app_fields)
+            if not cell.app.get("heal", True):
+                return _fail(cell, f"{cfg['test']['app']} changed the {cfg['doctype']} fields and healing is off; not restored into {cfg['test']['site']}")
             if (sql := await _bridge(cell, sb, fields, rows, app_fields, native)) is None:
                 return
     await _vm(cell, fields, rows, app_fields, sql)

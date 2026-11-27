@@ -94,23 +94,47 @@ def _scale_column(sql, table, column, factor):
     return sql[:start] + re.sub(r"^\((.*)\)([,;])$", row, sql[start:end], flags=re.M) + sql[end:]
 
 
-def make_frappe(src, out):
-    backup = frappe_target.load_backup(src)
-    m, base = backup["manifest"], backup["id"][:-len("-database")]
+def _frappe_faults(src):
+    """name -> function making that fault's bytes, so one fault can be made without the others."""
     raw = Path(src).read_bytes()
     sql = gzip.decompress(raw).decode()
     table = f"tab{frappe_target.config()['doctype']}"
     insert = re.compile(rf"^INSERT INTO `{re.escape(table)}` VALUES\n.*?;\n", re.M | re.S)
     header_end = sql.index("\n\n", sql.index("enable the sandbox mode")) + 2
+    return {"bitflip-stale": lambda: _flip(raw),
+            "bitflip": lambda: _flip(raw),
+            "truncated": lambda: raw[:int(len(raw) * 0.6)],
+            "truncated-sql": lambda: gzip.compress(sql[:int(len(sql) * 0.6)].encode()),
+            "rows-deleted": lambda: gzip.compress(insert.sub("", sql, count=1).encode()),
+            "rule-broken": lambda: gzip.compress(_scale_column(sql, table, "total_cost", 10).encode()),
+            "poisoned": lambda: gzip.compress((sql[:header_end] + FRAPPE_POISON + sql[header_end:]).encode())}
+
+
+def make_frappe(src, out):
+    backup = frappe_target.load_backup(src)
+    m, base = backup["manifest"], backup["id"][:-len("-database")]
     out.mkdir(parents=True, exist_ok=True)
-    w = lambda fault, data, resign=True: _write(out, f"{base}-{fault}-database", data, m, resign, ext=".sql.gz")
-    return {"bitflip-stale": w("bitflip-stale", _flip(raw), resign=False),
-            "bitflip": w("bitflip", _flip(raw)),
-            "truncated": w("truncated", raw[:int(len(raw) * 0.6)]),
-            "truncated-sql": w("truncated-sql", gzip.compress(sql[:int(len(sql) * 0.6)].encode())),
-            "rows-deleted": w("rows-deleted", gzip.compress(insert.sub("", sql, count=1).encode())),
-            "rule-broken": w("rule-broken", gzip.compress(_scale_column(sql, table, "total_cost", 10).encode())),
-            "poisoned": w("poisoned", gzip.compress((sql[:header_end] + FRAPPE_POISON + sql[header_end:]).encode()))}
+    return {f: _write(out, f"{base}-{f}-database", make(), m, f != "bitflip-stale", ext=".sql.gz")
+            for f, make in _frappe_faults(src).items()}
+
+
+def inject(backup, fault, out, stem, manifest):
+    """One fault on one backup for the console's Run, without a sandbox (so it never waits for a running cell):
+    Frappe faults are made from the file, a Postgres fault that needs a rebuild comes from the kit's copy of
+    that backup. `manifest` is written re-signed next to the copy, last."""
+    if backup.get("kind") == "frappe":
+        data, ext = _frappe_faults(backup["path"])[fault](), ".sql.gz"
+    else:
+        raw, ext = Path(backup["path"]).read_bytes(), ".dump"
+        made = {"bitflip": lambda: _flip(raw), "truncated": lambda: raw[:int(len(raw) * 0.6)]}
+        kit = HERE / "faults" / "out" / backup["id"].replace("_v", f"-{fault}_v", 1)
+        if fault in made:
+            data = made[fault]()
+        elif kit.with_suffix(".dump").exists():
+            data = kit.with_suffix(".dump").read_bytes()
+        else:
+            raise ValueError(f"no {fault} copy of {backup['id']} in the fault kit (python faults.py {backup['file']} --make-only)")
+    return _write(out, stem, data, manifest, ext=ext)
 
 
 async def _rebuild(backup, sql, recount):

@@ -62,7 +62,7 @@ It installs Docker and Python, builds the sandbox and stand-in images, pulls `po
 
 HTTPS: set `PUBLIC_HOST` (e.g. `<ip-with-dashes>.sslip.io`) and `WRITE_PASSWORD`. Caddy then gets the
 certificate and serves the console on `https://PUBLIC_HOST/`; the console moves to `127.0.0.1:8530`.
-Reading is public, every write (Run drill, Add .sql, rerun) asks for basic auth `WRITE_USER`.
+Reading is public, every write (Run, demo scenarios, reset, Run drill, Add .sql, rerun) asks for basic auth `WRITE_USER`.
 
 Frappe target: set `FRAPPE_SOURCE_URL`/`FRAPPE_TEST_URL` and the two `api_key:api_secret` tokens. The
 runtime refuses to start the target if the test URL is on port 80, equals the source, or names

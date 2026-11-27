@@ -452,6 +452,9 @@ async def _boot_and_bridge(cell, sb):
     if cell.backup["manifest"]["schema_version"] == cell.app["schema"]:
         cell.state, cell.reason = "failed", f"app {cell.app['version']} does not run on the restored data: {error}"
         return
+    if not cell.app.get("heal", True):  # the console's Run with healing off: show what drift alone does
+        cell.state, cell.reason = "failed", f"app {cell.app['version']} does not run on the restored data and healing is off: {error}"
+        return
     target = await _app_schema(cell, sb)
     _, current, _ = await sb.exec("pg_dump", "-s", "--no-owner", "-h", "/var/run/postgresql", "-U", "postgres", "restored")
     current = "\n".join(l for l in current.splitlines() if l and not l.startswith(("--", "SET ", "SELECT pg_catalog")))

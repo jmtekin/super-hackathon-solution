@@ -19,9 +19,10 @@ import urllib.request
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
+import faults
 import frappe_target
 import guard
 
@@ -35,6 +36,9 @@ NAME = re.compile(r"^[\w.-]+_v\d+$")
 FRAPPE = frappe_target.config()  # a test target that could be production stops the service here
 FRAPPE_DIR = Path(os.environ.get("RESTOREGUARD_FRAPPE_BACKUPS", HERE / "backups-frappe"))
 FRAPPE_POLL_S = int(os.environ.get("RESTOREGUARD_FRAPPE_POLL", "120"))  # production's Backups page, read only
+RUN_MARK = "-run-"  # copies made by POST /api/runs carry it, so reset removes exactly them
+RUN_FAULTS = ("bitflip", "truncated", "rows-deleted", "poisoned")
+PRE_RUN = RESULTS / "pre-run"  # a backup's result from before the first console run, put back by reset
 
 backups, queue, subscribers = {}, None, set()
 
@@ -137,8 +141,11 @@ async def worker():
         try:
             results = []
             runner = frappe_target if b.get("kind") == "frappe" else guard
+            run = b.get("run") or {}
             for a in _targets(b):
-                r = await runner.run_cell(b, a, broadcast)
+                if run.get("targets") and a["version"] not in run["targets"]:
+                    continue
+                r = await runner.run_cell(b, {**a, "heal": run.get("heal", True)}, broadcast)
                 results.append(r)
                 events = r.pop("events")
                 (RESULTS / f"{bid}@{a['version']}.events.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
@@ -186,6 +193,7 @@ def _summary(b):
             "app_version": m.get("app_version"), "bytes": b.get("bytes"), "found_at": b.get("found_at"),
             "started_at": b.get("started_at"), "finished_at": b.get("finished_at"),
             "elapsed_s": round(b["finished_at"] - b["started_at"], 2) if b.get("finished_at") else None,
+            "run": b.get("run"), "injected": m.get("injected"),
             "checks_passed": sum(c["pass"] for c in checks), "checks_total": len(checks),
             "cells": {v: {"state": r["state"], "reason": r["reason"], "elapsed_s": r["elapsed_s"]}
                       for v, r in b["cells"].items()}}
@@ -268,10 +276,101 @@ def rerun(bid: str):
             b.update((frappe_target if b.get("kind") == "frappe" else guard).load_backup(b["path"]))
         except ValueError as e:
             raise HTTPException(409, f"backup is {b['status']}: {e}") from None
-    b.update(status="queued", reason="", cells={}, certificate=None, started_at=None, finished_at=None)
+    b.update(status="queued", reason="", cells={}, certificate=None, started_at=None, finished_at=None, run=None)
     _status(b)
     queue.put_nowait(bid)
     return {"queued": bid}
+
+
+def _busy():
+    if busy := [b["id"] for b in backups.values() if b["status"] in ("queued", "running")]:
+        raise HTTPException(409, f"a run is in progress: {', '.join(busy)}")
+
+
+@app.post("/api/runs")
+async def new_run(body: dict = Body(...)):
+    """The console's Run: which backups, which app versions / test sites, an optional injected fault, healing on
+    or off. Without a fault each backup itself is proved again (its previous result is kept for reset); with
+    one, a faulted copy of it arrives as a new backup, named *-run-<fault>*. One run at a time, like the sandbox."""
+    ids, versions, fault, heal = body.get("backups"), body.get("targets") or [], body.get("fault") or None, body.get("heal", True)
+    if not ids or not isinstance(ids, list) or not isinstance(versions, list) or not isinstance(heal, bool):
+        raise HTTPException(400, "backups: list of ids, targets: list of app versions or test sites, heal: true/false")
+    if fault not in (None, *RUN_FAULTS):
+        raise HTTPException(400, f"fault must be one of {', '.join(RUN_FAULTS)}")
+    _busy()
+    picked = []
+    for bid in dict.fromkeys(ids):
+        b = _get(bid)
+        if not b.get("manifest"):
+            raise HTTPException(409, f"{bid} has no readable manifest")
+        targets = [a["version"] for a in _targets(b) if not versions or a["version"] in versions]
+        if not targets:
+            raise HTTPException(400, f"{bid} runs on {', '.join(a['version'] for a in _targets(b))}, none of them picked")
+        picked.append((b, targets))
+    queued = []
+    for b, targets in picked:
+        run = {"targets": targets, "heal": heal, "fault": fault}
+        if fault:
+            b = await _inject(b, fault)
+        else:
+            _keep_pre_run(b)
+        b.update(status="queued", reason="", cells={}, certificate=None, started_at=None, finished_at=None, run=run)
+        _status(b)
+        queue.put_nowait(b["id"])
+        queued.append(b["id"])
+    return {"queued": queued}
+
+
+async def _inject(b, fault):
+    now = time.time()
+    if b.get("kind") == "frappe":  # production's own stamp style: site-local time, so it sorts with the real ones
+        site = b["id"][:-len("-database")].split("-", 1)[1]
+        stem, out = f"{time.strftime('%Y%m%d_%H%M%S', time.localtime(now))}-{site}{RUN_MARK}{fault}-database", FRAPPE_DIR
+    else:
+        version = b["id"].rsplit("_v", 1)[1]
+        stem, out = f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime(now))}{RUN_MARK}{fault}_v{version}", DIRS[0]
+    manifest = {**b["manifest"], "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+                "injected": {"fault": fault, "from": b["id"]}}
+    backups[stem] = {"id": stem, "status": "queued", "cells": {}, "path": "", "file": ""}  # the watcher skips it
+    try:
+        path = await asyncio.to_thread(faults.inject, b, fault, out, stem, manifest)
+        rec = (frappe_target if b.get("kind") == "frappe" else guard).load_backup(path)
+    except Exception as e:
+        del backups[stem]
+        raise HTTPException(409, f"could not make the {fault} copy: {e}"[:300]) from None
+    backups[stem] = {**rec, "found_at": now}
+    return backups[stem]
+
+
+def _keep_pre_run(b):
+    if (PRE_RUN / f"{b['id']}.json").exists():
+        return
+    PRE_RUN.mkdir(parents=True, exist_ok=True)
+    for f in RESULTS.glob(f"{b['id']}[.@]*"):
+        f.replace(PRE_RUN / f.name)
+
+
+@app.post("/api/runs/reset")
+def reset_runs():
+    """Back to the demo's clean state: the injected copies go, every backup a run proved again gets its
+    previous result back. Results of runs nobody started from the console are left as they are."""
+    _busy()
+    for bid in [k for k in backups if RUN_MARK in k]:
+        del backups[bid]
+        broadcast({"type": "backup", "id": bid, "status": "removed", "reason": "reset"})
+    for d in [*DIRS, FRAPPE_DIR, RESULTS]:
+        for f in d.glob(f"*{RUN_MARK}*"):
+            f.unlink()
+    restored = []
+    for f in sorted(PRE_RUN.glob("*")) if PRE_RUN.exists() else []:
+        f.replace(RESULTS / f.name)
+        if f.suffix == ".json" and "@" not in f.name:
+            b = json.loads((RESULTS / f.name).read_text())
+            if b["id"] in backups:
+                backups[b["id"]] = b
+                restored.append(b["id"])
+                broadcast({"type": "backup", "id": b["id"], "status": b["status"], "reason": b.get("reason", "")})
+    return {"restored": restored}
 
 
 @app.get("/api/matrix")

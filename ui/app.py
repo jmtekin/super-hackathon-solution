@@ -889,16 +889,22 @@ RESTOREGUARD = os.environ.get("RESTOREGUARD_URL", "127.0.0.1:8600")
 @app.api_route("/rg/{path:path}", methods=["GET", "POST"])
 async def restoreguard(path: str, request: Request):
     """The console reads the BackupAirlock runtime (backups watcher, results API, SSE) through here: it listens on
-    localhost only, and one public origin keeps the page free of CORS. GET and POST /api/backups/{id}/rerun only."""
-    if not (path.startswith("api/") or path == "health") or (request.method == "POST" and not path.endswith("/rerun")):
+    localhost only, and one public origin keeps the page free of CORS. GET, POST /api/backups/{id}/rerun and the
+    console's Run (POST /api/runs, /api/runs/reset, JSON body up to 64 KB) only."""
+    if not (path.startswith("api/") or path == "health") or (
+            request.method == "POST" and not (path.endswith("/rerun") or path in ("api/runs", "api/runs/reset"))):
         raise HTTPException(404, "not proxied")
+    data = await request.body() if request.method == "POST" else b""
+    if len(data) > 65536:
+        raise HTTPException(413, "run parameters too large")
     host, port = RESTOREGUARD.rsplit(":", 1)
     try:
         reader, writer = await asyncio.wait_for(asyncio.open_connection(host, int(port)), 3)
     except (OSError, asyncio.TimeoutError):
         raise HTTPException(502, "BackupAirlock runtime is not reachable")
     # HTTP/1.0: no chunked encoding, the runtime closes the socket at the end of the body, SSE streams through.
-    writer.write(f"{request.method} /{path} HTTP/1.0\r\nHost: {host}\r\nContent-Length: 0\r\n\r\n".encode())
+    writer.write(f"{request.method} /{path} HTTP/1.0\r\nHost: {host}\r\nContent-Type: application/json\r\n"
+                 f"Content-Length: {len(data)}\r\n\r\n".encode() + data)
     await writer.drain()
     head = (await reader.readuntil(b"\r\n\r\n")).decode("latin-1").split("\r\n")
     status = int(head[0].split()[1])

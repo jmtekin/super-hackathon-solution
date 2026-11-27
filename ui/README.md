@@ -92,6 +92,8 @@ backups and proves each one on every app version. JSON only; paths are relative 
 | `GET /api/backups/{id}/incident.json` | forensic log of a quarantined backup: per app version `restored_into, signals, static_scan, containment_events, errors`; 409 if not quarantined |
 | `GET /api/backups/{id}/bridges/{name}` | a bridge migration's SQL (text/plain) |
 | `POST /api/backups/{id}/rerun` | `{queued: id}`; 409 while queued/running |
+| `POST /api/runs` | body `{backups: [id], targets: [app version or test site] (default all), fault: null\|bitflip\|truncated\|rows-deleted\|poisoned, heal: true}` -> `{queued: [id]}`. No fault: each backup is proved again on the picked targets (its previous result kept for reset). A fault: a faulted, re-signed copy `*-run-<fault>*` arrives as a new backup (manifest `injected: {fault, from}`). 400 bad parameters, 404 unknown id, 409 while any run is queued/running |
+| `POST /api/runs/reset` | removes the `-run-` copies, puts back every result a console run replaced -> `{restored: [id]}`; 409 while a run is going |
 | `GET /api/matrix` | `{app_versions: [...], backups: [{id, schema_version, status, cells: [{app_version, state, reason}]}]}` (cells in `app_versions` order) |
 | `GET /api/stream` | SSE, one JSON event per `data:` line (below) |
 
