@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BackupAirlock: every backup proven restorable before you need it</title>
+<title>BackupAirlock</title>
 <style>
-/* Console v6 (first impression: Overview view, docs/design/FIRST-IMPRESSION.md) on the v5 system. Colour: design/COLOR.md (Radix slate 12-step neutrals, state hues only on marks, links and the one danger word).
+/* Console v7 (one view: timeline at the bottom, checks above; docs/design/first-impression/README.md) on the v5 system. Colour: design/COLOR.md (Radix slate 12-step neutrals, state hues only on marks, links and the one danger word).
    Spacing: design/SPACING.md (4 8 12 16 24 32 48; inside a group < between groups < between regions).
    Type 12 / 13 / 14 / 16 / 20. */
 :root{
@@ -109,68 +109,38 @@ details.grp summary{list-style:none;margin:0}
 details.grp summary::-webkit-details-marker{display:none}
 details.grp summary h3 b{color:var(--ok);font-weight:400}
 
-/* overview (Jonas 15:16 "timeline design, much simpler, versions from left to right, on hover, details appear") */
-.ov{margin-top:var(--s7)}
-.ov h1{font-size:40px;line-height:48px;letter-spacing:-.01em;margin:0;max-width:26ch;text-wrap:balance}
-.promise{font-size:16px;line-height:24px;color:var(--ink-2);max-width:60ch;margin-top:var(--s3)}
-.board{margin-top:var(--s6);padding-top:var(--s6);border-top:1px solid var(--line)}
-/* the three things it proves (Jonas 15:21 "3 strong points"), each backed by the watcher's own numbers */
-.pts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s5);margin:var(--s6) calc(-1 * var(--s3)) 0}
-.pt{text-align:left;padding:var(--s3);border-radius:3px;min-width:0}
-.pt:hover{background:var(--hover)}
-.pt b{display:flex;align-items:center;gap:var(--s2);font-size:16px;line-height:24px;font-weight:600}
-.pt b i{width:10px;height:10px;border-radius:50%;background:var(--c);flex-shrink:0}
-.pt .k{display:block;font-size:14px;line-height:20px;margin-top:var(--s1)}
-.pt .e{display:block;font-size:13px;line-height:20px;color:var(--ink-2)}
-.ck{grid-column:1 / -1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s5);margin-top:var(--s5)}
-.ck h3{font-size:13px;line-height:20px;font-weight:600}
-.ck h3 span{font-weight:400;color:var(--ink-2)}
-.ck ul{list-style:none;margin-top:var(--s1)}
-.ck li{font-size:13px;line-height:20px;color:var(--ink-2);display:flex;gap:var(--s2);min-width:0}
-.ck li b{color:var(--ok);font-weight:700;width:12px;flex-shrink:0}
-.ck li b.no{color:var(--bad)}
-.ck li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.verdict{font-size:24px;line-height:32px;font-weight:600;text-wrap:balance}
-.verdict em{font-style:normal;color:var(--bad)}
-/* one rail, one mark per backup, oldest left; the mark carries the verdict, the rest waits for hover */
-.tl{position:relative;display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);margin-top:var(--s7)}
-.tl::before{content:"";position:absolute;left:10px;right:0;top:9px;height:2px;background:var(--line)}
-.mk{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:var(--s2);padding:0 var(--s3) var(--s2) 0;text-align:left;min-width:0}
-.mk i{width:20px;height:20px;border-radius:50%;background:var(--c);box-shadow:0 0 0 4px var(--bg)}
-.mk i.hollow{background:var(--bg);box-shadow:inset 0 0 0 2px var(--c),0 0 0 4px var(--bg)}
-.mk[aria-pressed=true] i{box-shadow:0 0 0 4px var(--bg),0 0 0 6px var(--ink-2)}
-.mk[aria-pressed=true] i.hollow{box-shadow:inset 0 0 0 2px var(--c),0 0 0 4px var(--bg),0 0 0 6px var(--ink-2)}
-.mk .flag{position:absolute;bottom:100%;left:0;margin-bottom:var(--s3);font-size:12px;line-height:16px;font-weight:600;white-space:nowrap;padding-left:var(--s2);border-left:2px solid var(--c)}
-/* in the right half the flag hangs left from the mark so it never leaves the page */
-.mk .flag.r{left:auto;right:calc(100% - 20px);padding:0 var(--s2) 0 0;border-left:0;border-right:2px solid var(--c);text-align:right}
-@media (min-width:901px){.mk .flag.r{right:auto;left:0;padding:0 0 0 var(--s2);border-right:0;border-left:2px solid var(--c);text-align:left}}
-.mk .n{font-size:13px;line-height:20px;font-weight:600;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:var(--s1)}
-.mk .w{font-size:12px;line-height:16px;color:var(--ink-2)}
-.mk.c-bad .w{color:var(--bad)}
-.mk:hover .n{text-decoration:underline;text-underline-offset:3px}
-.axis{display:flex;justify-content:space-between;font-size:12px;color:var(--ink-2);margin-top:var(--s3)}
-/* details of the hovered (or tapped) backup */
-.dt{display:grid;grid-template-columns:minmax(0,4fr) minmax(0,8fr);gap:var(--s7);margin-top:var(--s6);padding-top:var(--s5);border-top:1px solid var(--line);min-height:168px}
-.dt h2{font-size:16px;line-height:24px;font-weight:600;overflow-wrap:anywhere}
+/* the one view (Jonas 15:35-15:36): checks of the selected backup above, the timeline of backups along the bottom, nothing else */
+.page.full{max-width:none;padding:0}
+.ov{height:100vh;height:100dvh;display:grid;grid-template-rows:minmax(0,1fr) auto}
+.dt{overflow:auto;padding:var(--s7) var(--s7) var(--s6)}
+.dt header{display:flex;align-items:baseline;flex-wrap:wrap;column-gap:var(--s4);row-gap:var(--s1)}
+.dt h2{font-size:20px;line-height:28px;font-weight:600;overflow-wrap:anywhere}
 .dt .when{font-size:13px;color:var(--ink-2)}
-.dt .st{margin-top:var(--s3)}
-.dt .why{font-size:13px;color:var(--ink-2);margin-top:var(--s1)}
-.dt .links{margin-top:var(--s5)}
-.path{list-style:none;display:grid;grid-template-columns:repeat(5,minmax(0,1fr)) minmax(0,1.3fr)}
-.stg{position:relative;display:grid;grid-template-rows:16px 12px auto;row-gap:var(--s2)}
-.stg::before{content:"";position:absolute;left:6px;right:0;top:29px;height:2px;background:var(--line)}
-.stg:last-child::before,.stg.stop::before,.stg.none::before{display:none}
-.stg.lit::before{background:var(--c)}
-.stg .sh{font-size:12px;line-height:16px;color:var(--ink-2)}
-.stg i{position:relative;width:12px;height:12px;border-radius:50%;background:var(--bg);box-shadow:inset 0 0 0 2px var(--line-2)}
-.stg.done i,.stg.stop i,.stg.end i{background:var(--c);box-shadow:none}
-.stg.skip i,.stg.active i{box-shadow:inset 0 0 0 2px var(--c)}
-.stg .lb{font-size:13px;line-height:20px;color:var(--ink-2)}
-.stg.stop .lb,.stg.end .lb{color:var(--ink);font-weight:600}
-.stg.stop.c-bad .lb{color:var(--bad)}
-.stg.none i{visibility:hidden}
+.ck{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s6);margin-top:var(--s6);max-width:1200px}
+.ck h3{font-size:13px;line-height:20px;font-weight:600;padding-bottom:var(--s2);border-bottom:1px solid var(--line)}
+.ck ul{list-style:none;margin-top:var(--s2)}
+.ck li{display:grid;grid-template-columns:8px minmax(0,1fr) auto;column-gap:var(--s3);align-items:center;font-size:13px;line-height:24px}
+.ck li i{width:8px;height:8px;border-radius:50%;background:var(--c)}
+.ck li.skipped i,.ck li.waiting i{background:none;box-shadow:inset 0 0 0 1.5px var(--c)}
+.ck li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ck li.skipped span,.ck li.waiting span{color:var(--ink-2)}
+.ck li b{font-size:12px;font-weight:400;color:var(--ink-2)}
+.ck li.fail b{color:var(--ink);font-weight:600}
+.ck li.fail.c-bad b{color:var(--bad)}
+/* one mark per backup, oldest left, evenly spaced; colour = does it restore; a tick over the latest that does */
+.tl{position:relative;height:112px;margin:0 var(--s7);border-top:1px solid var(--line);touch-action:none}
+.tl::before{content:"";position:absolute;left:0;right:0;top:55px;height:2px;background:var(--line)}
+.mk{position:absolute;top:56px;width:44px;height:44px;margin:-22px 0 0 -22px;display:grid;place-items:center}
+.mk i{width:16px;height:16px;border-radius:50%;background:var(--c);box-shadow:0 0 0 4px var(--bg);transition:transform .12s ease-out}
+.mk i.hollow{background:var(--bg);box-shadow:inset 0 0 0 2px var(--c),0 0 0 4px var(--bg)}
+.mk[aria-pressed=true] i{transform:scale(1.5);box-shadow:0 0 0 3px var(--bg),0 0 0 4px var(--ink-2)}
+.mk[aria-pressed=true] i.hollow{box-shadow:inset 0 0 0 1.5px var(--c),0 0 0 3px var(--bg),0 0 0 4px var(--ink-2)}
+.mk.latest::before{content:"";position:absolute;left:21px;top:-8px;width:2px;height:12px;background:var(--ok)}
+#ray{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;visibility:hidden}
+#ray.on{visibility:visible}
+#ray line{stroke:var(--ink-2);stroke-width:1;stroke-opacity:.45}
 @media (prefers-reduced-motion:no-preference){
-  .stg.active i,.mk i.run{animation:beat 1.2s ease-in-out infinite}
+  .mk i.run{animation:beat 1.2s ease-in-out infinite}
 }
 @keyframes beat{50%{transform:scale(1.3)}}
 
@@ -211,21 +181,9 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
   .cert td{border:0;padding:2px 0;overflow-wrap:anywhere}
   .cert td:empty{display:none}
   .timing{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) 48px}
-  .ov{margin-top:var(--s6)}
-  .ov h1{font-size:28px;line-height:36px}
-  .verdict{font-size:20px;line-height:28px}
-  .tl{margin-top:var(--s6)}
-  .pts,.ck{grid-template-columns:1fr;gap:var(--s2)}
-  .ck{gap:var(--s4)}
-  .mk{padding-right:0}
-  .mk .n,.mk .w{display:none}
-  .dt{display:block;min-height:0}
-  .path{grid-template-columns:1fr;margin-top:var(--s5);row-gap:var(--s2)}
-  .stg{grid-template-columns:12px auto 1fr;grid-template-rows:none;column-gap:var(--s3);align-items:center}
-  .stg::before{display:none}
-  .stg .sh{grid-column:2;font-size:13px;line-height:20px}
-  .stg i{grid-column:1;grid-row:1}
-  .stg .lb{grid-column:3}
+  .dt{padding:var(--s5) var(--s4) var(--s4)}
+  .ck{grid-template-columns:1fr;gap:var(--s5);margin-top:var(--s5)}
+  .tl{margin:0 var(--s5)}
 }
 @media print{
   :root{--bg:#fff;--surface:#f4f4f2;--hover:#fff;--selected:#fff;--line:#ddd;--line-2:#bbb;--strong:#999;--ink:#111;--ink-2:#444;--ok:#1d6b3e;--warn:#7a5200;--bad:#a3201a;--accent:#111}
@@ -610,8 +568,7 @@ function targetLine(target, destroyed) {
 const policyLine = p => p ? [p.runtime, `network ${String(p.network).split(" ")[0]}`, `rootfs ${p.rootfs}`, `${p.memory} RAM`,
   `${p.cpus} CPU`, `pids ${p.pids_limit}`, `caps ${p.capabilities}`, `${p.timeout_s} s cap`].join(" · ") : "";
 
-/* ---------- Overview: one rail of backups, oldest left; hover or tap a mark for its path through the airlock ---------- */
-const STAGES = ["Received", "Sealed sandbox", "Checks", "Drift healed", "Test copy", "Certificate"];
+/* ---------- the one view: checks of the selected backup above, the timeline of backups (oldest left) below ---------- */
 // Colour = does this backup work (Jonas 15:16 "colors for if its working"); healed works too, in a calmer tone.
 const OV = {
   ready: ["c-ok", "Restored"], healed: ["c-heal", "Healed"], not_restorable: ["c-warn", "Not restorable"],
@@ -619,112 +576,93 @@ const OV = {
 };
 const ovState = b => b.status === "dr_ready" ? (Object.values(b.cells).some(c => c.state === "healed") ? "healed" : "ready")
   : b.status === "failed" ? "not_restorable" : b.status;
+const ovList = () => rg.summaries.slice().sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""));
 const ovSel = {id: null};
-// One step per stage: [state, label]. done / active / skip (not needed) / stop (the path ends here) / end / pending / none.
-function ovSteps(b) {
-  const healed = Object.values(b.cells).some(c => c.state === "healed");
-  if (b.status === "quarantined") return [["done"], ["stop", "Blocked"], ["none"], ["none"], ["none"], ["none"]];
-  if (["not_restorable", "failed"].includes(b.status)) return [["done"], ["done"], ["stop", "Failed"], ["none"], ["none"], ["none"]];
-  if (b.status === "dr_ready") return [["done"], ["done"], ["done", "Restored"], healed ? ["done", "Healed"] : ["skip", "not needed"], ["done"], ["end", "Issued"]];
-  if (b.status === "queued") return [["done"], ["pending"], ["pending"], ["pending"], ["pending"], ["pending"]];
-  const L = Object.entries(rg.live).filter(([k]) => k.startsWith(b.id + "@")).map(([, v]) => v);
-  const heal = L.some(l => l.state === "healing"), checking = L.some(l => l.events.some(e => e.type === "check"));
-  const settled = Object.keys(b.cells).length > 0;
-  return [["done"], checking || heal || settled ? ["done"] : ["active", "restoring"],
-    heal || settled ? ["done"] : checking ? ["active", "checking"] : ["pending"],
-    heal ? ["active", "writing bridge"] : healed ? ["done", "bridge passed"] : ["pending"], ["pending"], ["pending"]];
+const ovPtr = {x: 0, y: 0, on: false, frame: 0};
+// The cell to show: the healed one tells the most, then a native pass, else whatever ran.
+const ovCell = d => { const cs = Object.values(d?.cells || {}); return cs.find(c => c.state === "healed") || cs.find(c => c.state === "native") || cs[0]; };
+const VERIFY = /^(sha256|dump readable|static scan|a demo\.local backup file name)/i;
+const baseName = n => String(n).split(" (")[0].replace(/^rule: /, "");
+// Verify (before restore) and Restore checks by name, each at its final result (a bridge round overrides the native attempt).
+function ovSplit(c) {
+  const v = new Map(), r = new Map();
+  for (const k of c?.checks || []) (VERIFY.test(k.check) ? v : r).set(baseName(k.check), k.pass);
+  return [v, r];
 }
-function ovWhy(b) {
-  if (b.status === "quarantined") {
-    const n = (String(b.reason).match(/containment: ([^;]*)/)?.[1] || "").split(", ").filter(Boolean).length;
-    return n ? `Blocked before restore: ${n} attacks caught, nothing left the sandbox` : "Blocked before restore: code in the dump";
-  }
-  if (b.status === "dr_ready") {
-    const cs = Object.entries(b.cells), ok = cs.filter(([, c]) => ["native", "healed"].includes(c.state));
-    return `Restored on ${ok.length} of ${cs.length} app version${cs.length > 1 ? "s" : ""}. Checked: ${b.checks_passed} of ${b.checks_total}` + (cs.some(([, c]) => c.state === "healed") ? `. Healed: schema drift bridged by the model` : "");
-  }
-  return shortReason(String(b.reason || "").replace(/^[\w.]+: \w+, /, ""));
+// Every check under Jonas's three terms (15:35 "Verify / Heal / Restore"). A check that a passing backup of the same kind
+// runs but this one never reached is skipped.
+function ovChecks(b) {
+  const c = ovCell(rg.details[b.id]);
+  if (!c) return "";
+  const ref = ovSplit(ovCell(rg.details[rg.summaries.find(x => x.kind === b.kind && x.status === "dr_ready")?.id]));
+  const missing = ["running", "queued"].includes(b.status) ? "waiting" : "skipped";
+  const list = (m, refm) => [...new Set([...refm.keys(), ...m.keys()])].map(n => [n, m.has(n) ? (m.get(n) ? "done" : "fail") : missing]);
+  const [v, r] = ovSplit(c);
+  const heal = c.state === "healed"
+    ? c.checks.filter(k => !k.pass && /\(native\)/.test(k.check)).map(k => [baseName(k.check) + " on the old schema", "fail"])
+        .concat(c.bridges.map((x, i) => [`bridge round ${x.round}`, i === c.bridges.length - 1 ? "done" : "fail"]))
+    : [["schema bridge", b.status === "dr_ready" ? "skipped" : missing]];
+  const fail = b.status === "quarantined" ? "c-bad" : "c-warn", C = {done: "c-ok", fail, skipped: "c-idle", waiting: "c-idle"};
+  return `<div class="ck">${[["Verify", list(v, ref[0])], ["Heal", heal], ["Restore", list(r, ref[1])]].map(([g, ks]) => `<section><h3>${g}</h3><ul>
+    ${ks.map(([n, st]) => `<li class="${st} ${C[st]}"><i></i><span title="${esc(n)}">${esc(n)}</span><b>${st}</b></li>`).join("")}</ul></section>`).join("")}</div>`;
 }
 function ovDetail(b) {
-  if (!b) return "";
   const [c, word] = OV[ovState(b)] || ["c-idle", b.status];
-  const steps = ovSteps(b), path = c === "c-run" || c === "c-idle" ? "c-ok" : c;
-  const busy = rg.summaries.some(x => ["running", "queued"].includes(x.status));
-  return `<div><h2>${esc(shortName(b.file))}</h2><div class="when">${esc(clock(b.created_at))}${b.bytes ? `, ${mb(b.bytes)}` : ""}</div>
-      <div class="st ${c}"><i></i><b>${esc(word)}</b></div><p class="why">${esc(ovWhy(b))}</p>
-      <div class="links"><button class="btn primary" id="again" data-id="${esc(b.id)}" ${busy ? "disabled" : ""}>${["running", "queued"].includes(b.status) ? "Restoring" : "Restore again"}</button>
-        <a href="?view=backups" data-open="${esc(b.id)}">Evidence</a>${b.status === "dr_ready" ? `<a href="?view=backups#cert" data-open="${esc(b.id)}">Certificate</a>` : ""}</div></div>
-    <ol class="path">${steps.map(([st, label], i) => `<li class="stg ${st} ${path}${["done", "stop", "end", "skip", "active"].includes(steps[i + 1]?.[0]) ? " lit" : ""}"><span class="sh">${STAGES[i]}</span><i></i>${label ? `<span class="lb">${esc(label)}</span>` : ""}</li>`).join("")}</ol>
-    ${ovChecks(b)}`;
-}
-function ovPoints(ss) {
-  const ready = ss.filter(b => b.status === "dr_ready"), latest = ready.at(-1);
-  const healed = ss.filter(b => Object.values(b.cells).some(c => c.state === "healed"));
-  const h = healed.at(-1), hv = h && Object.entries(h.cells).find(([, c]) => c.state === "healed")?.[0];
-  const pt = (b, c, title, k, e) => `<button class="pt ${c}" data-pick="${esc(b?.id || "")}"><b><i></i>${title}</b><span class="k">${k}</span><span class="e">${e}</span></button>`;
-  return `<div class="pts">
-    ${pt(latest, "c-ok", "Restores", `Restored: ${ready.length} of ${ss.length} backups`,
-      "Each one restored in its own sealed sandbox, the app booted on it, then the sandbox destroyed")}
-    ${pt(h, "c-heal", "Heals", healed.length ? `Healed: ${healed.length} old backup${healed.length > 1 ? "s" : ""}` : "No drift yet",
-      h ? `${esc(shortName(h.file))} failed on app ${esc(hv)}, then passed through a bridge the model wrote` : "An old backup on a new app gets a model-written bridge")}
-    ${pt(latest, "c-ok", "Checks the business, not the file", latest?.checks_total ? `Checked: ${latest.checks_passed} of ${latest.checks_total} on the latest` : "Checked on every restore",
-      "Record counts against production, debits = credits, total cost = hours x rate, required fields, links, admin login")}
-  </div>`;
-}
-// The cell's checks in the spec's three groups, every one visible.
-function ovChecks(b) {
-  const d = rg.details[b.id];
-  if (!d) return "";
-  const cs = Object.values(d.cells || {}), c = cs.find(x => ["native", "healed"].includes(x.state)) || cs[0];
-  if (!c?.checks?.length) return "";
-  const seen = new Map();
-  for (const k of c.checks) { const n = String(k.check).split(" (")[0]; seen.set(n, seen.get(n) || k.pass); }
-  const gs = groups([...seen].map(([name, pass]) => ({name, pass})));
-  return `<div class="ck">${gs.map(([g, ks]) => `<div><h3>${esc(g)} <span>${ks.filter(k => k.pass).length} of ${ks.length}</span></h3><ul>
-    ${(g === "Business logic" ? ks : ks.slice(0, 6)).map(k => `<li><b class="${k.pass ? "" : "no"}">${k.pass ? "✓" : "✕"}</b><span>${esc(String(k.name).split(" (")[0].replace(/^rule: /, ""))}</span></li>`).join("")}
-    ${g !== "Business logic" && ks.length > 6 ? `<li><b></b><span>and ${ks.length - 6} more</span></li>` : ""}</ul></div>`).join("")}</div>`;
+  return `<header><h2>${esc(shortName(b.file))}</h2><span class="when">${esc(clock(b.created_at))}</span><div class="st ${c}"><i></i><b>${esc(word)}</b></div></header>${ovChecks(b)}`;
 }
 function ovView() {
-  const ss = rg.summaries.slice().sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""));
-  const ready = ss.filter(b => b.status === "dr_ready").length;
-  // The backup you would restore from (Jonas 15:16 "some way to show whats the latest working").
+  const ss = ovList();
+  if (!ss.length) return "";
   const latest = ss.filter(b => b.status === "dr_ready").at(-1);
-  const sel = ss.find(b => b.id === ovSel.id) || ss.find(b => ["running", "queued"].includes(b.status)) || latest || ss.at(-1);
-  return `<div class="ov">
-    <h1>Every backup proven restorable before you need it.</h1>
-    <p class="promise">Each new backup is restored in a sealed sandbox, checked, healed if its schema drifted, then certified. Production is never touched.</p>
-    ${ss.length ? ovPoints(ss) : ""}
-    ${ss.length ? `<div class="board"><div class="verdict">${ready} of ${ss.length} backups restorable.</div>
+  const sel = ss.find(b => b.id === ovSel.id) || ss.at(-1);
+  ovSel.id = sel.id;
+  return `<div class="ov"><div class="dt" id="dt">${ovDetail(sel)}</div>
     <div class="tl">${ss.map((b, i) => { const [c, word, mod] = OV[ovState(b)] || ["c-idle", b.status, "hollow"];
-      return `<button class="mk ${c}" data-id="${esc(b.id)}" aria-pressed="${b === sel}" aria-label="${esc(shortName(b.file))}: ${esc(word)}">
-        ${b === latest ? `<span class="flag${i > ss.length / 2 ? " r" : ""}">Latest restorable</span>` : ""}<i class="${mod || ""}"></i><span class="n">${esc(shortName(b.file))}</span><span class="w">${esc(word)}</span></button>`; }).join("")}</div>
-    <div class="axis"><span>${esc(clock(ss[0].created_at))}</span><span>${esc(clock(ss.at(-1).created_at))}</span></div>
-    <div class="dt" id="dt">${ovDetail(sel)}</div></div>` : ""}
-  </div>`;
+      return `<button class="mk ${c}${b === latest ? " latest" : ""}" data-id="${esc(b.id)}" style="left:${ss.length > 1 ? i / (ss.length - 1) * 100 : 50}%"
+        aria-pressed="${b === sel}" aria-label="${esc(shortName(b.file))}, ${esc(clock(b.created_at))}: ${esc(word)}"><i class="${mod || ""}"></i></button>`; }).join("")}</div>
+    <svg id="ray" aria-hidden="true"><line></line></svg></div>`;
 }
 function ovPick(id) {
   if (!id || ovSel.id === id) return;
   ovSel.id = id;
-  if (!rg.details[id]) rgDetail(id).then(() => { if (ovSel.id === id && view === "overview") { $("#dt").innerHTML = ovDetail(rg.summaries.find(b => b.id === id)); bindDetail(); } }, () => {});
+  const show = () => { if (ovSel.id === id && $("#dt")) $("#dt").innerHTML = ovDetail(rg.summaries.find(b => b.id === id)); };
   document.querySelectorAll(".mk").forEach(m => m.setAttribute("aria-pressed", m.dataset.id === id));
-  $("#dt").innerHTML = ovDetail(rg.summaries.find(b => b.id === id));
-  bindDetail();
+  show();
+  rgDetail(id).then(show, () => {});
 }
-function bindDetail() {
-  document.querySelectorAll("[data-open]").forEach(a => a.onclick = async e => {
-    e.preventDefault();
-    const s = rg.summaries.find(b => b.id === a.dataset.open), cs = Object.entries(s.cells);
-    rg.sel = {b: s.id, v: (cs.find(([, c]) => c.state === "healed") || cs[0] || [rg.versions.at(-1)])[0]};
-    await rgDetail(s.id, true).catch(err => note(err.message));
-    setView("backups", a.getAttribute("href").split("#")[1]);
-  });
-  $("#again")?.addEventListener("click", async e => {
-    e.target.disabled = true;
-    const r = await fetch(`rg/api/backups/${encodeURIComponent(e.target.dataset.id)}/rerun`, {method: "POST"});
-    if (!r.ok) { note(`Not queued: ${await why(r)}`); e.target.disabled = false; }
-    rgRefresh();
-  });
+// A thin line from the cursor to the nearest mark (Jonas 15:35 "easy to not hover correctly over the dot"): no need to hit it.
+function ovFrame() {
+  ovPtr.frame = 0;
+  const ray = $("#ray");
+  if (!ray) return;
+  let near, d = Infinity;
+  if (ovPtr.on) for (const m of document.querySelectorAll(".mk")) {
+    const r = m.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, e = (x - ovPtr.x) ** 2 + (y - ovPtr.y) ** 2;
+    if (e < d) { d = e; near = {m, x, y}; }
+  }
+  ray.classList.toggle("on", !!near);
+  if (!near) return;
+  const l = ray.firstElementChild;
+  l.setAttribute("x1", ovPtr.x); l.setAttribute("y1", ovPtr.y); l.setAttribute("x2", near.x); l.setAttribute("y2", near.y);
+  ovPick(near.m.dataset.id);
 }
+const ovDraw = () => { ovPtr.frame ||= requestAnimationFrame(ovFrame); };
+// Mouse: anywhere on the page. Touch and pen: on the timeline, so the checks above still scroll.
+const ovPoint = e => {
+  if (view !== "overview" || (e.pointerType !== "mouse" && !e.target.closest?.(".tl"))) return;
+  ovPtr.x = e.clientX; ovPtr.y = e.clientY; ovPtr.on = true; ovDraw();
+};
+addEventListener("pointermove", ovPoint);
+addEventListener("pointerdown", ovPoint);
+addEventListener("pointerup", e => { if (e.pointerType !== "mouse") { ovPtr.on = false; ovDraw(); } });
+document.addEventListener("pointerout", e => { if (!e.relatedTarget) { ovPtr.on = false; ovDraw(); } });
+addEventListener("keydown", e => {
+  if (view !== "overview" || !["ArrowLeft", "ArrowRight"].includes(e.key)) return;
+  const ms = [...document.querySelectorAll(".mk")], i = ms.findIndex(m => m.dataset.id === ovSel.id);
+  const m = ms[Math.max(0, Math.min(ms.length - 1, i + (e.key === "ArrowLeft" ? -1 : 1)))];
+  if (!m) return;
+  e.preventDefault(); ovPtr.on = false; ovDraw(); ovPick(m.dataset.id); m.focus({preventScroll: true});
+});
 
 /* ---------- certificate (both engines carry the same matrix shape) ---------- */
 function certView() {
@@ -757,8 +695,10 @@ function setLive(on) { $("#live").className = "live" + (on ? " on" : ""); $("#li
 function note(t) { $("#note").textContent = t || ""; }
 function draw() {
   document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.view === view));
-  $("#top").hidden = view === "overview" && location.hash !== "#cert";
-  if (view === "overview" && location.hash !== "#cert") { $("#body").innerHTML = ovView(); return bind(); }
+  const one = view === "overview" && location.hash !== "#cert";
+  $(".page").classList.toggle("full", one);
+  $(".bar").hidden = $("#top").hidden = one;
+  if (one) { $("#body").innerHTML = ovView(); if (ovPtr.on) ovDraw(); return bind(); }
   const V = view === "drill" ? drView() : rgView();
   $("#meta").textContent = V.meta || "";
   $("#headline").innerHTML = V.headline || "";
@@ -786,11 +726,7 @@ function matrixCells(r, cols, sel, width) {
     : cols.map((c, i) => cell(xs[i], c, c.label)).join("");
 }
 function bind() {
-  document.querySelectorAll(".mk").forEach(el => { el.onmouseenter = el.onfocus = el.onclick = () => ovPick(el.dataset.id); });
-  document.querySelectorAll(".pt").forEach(el => { el.onmouseenter = el.onclick = () => ovPick(el.dataset.pick); });
-  bindDetail();
-  document.querySelectorAll('a[href^="?view="]').forEach(a => a.onclick = e => {
-    e.preventDefault(); const [v, h] = a.getAttribute("href").slice(6).split("#"); setView(v, h); });
+  document.querySelectorAll(".mk").forEach(el => { el.onfocus = el.onclick = () => ovPick(el.dataset.id); });
   document.querySelectorAll(".cell").forEach(el => el.onclick = async () => {
     const s = {b: el.dataset.b, v: el.dataset.v};
     if (view === "drill") dr.sel = s; else { rg.sel = s; await rgDetail(s.b).catch(e => note(e.message)); }
@@ -828,6 +764,8 @@ async function start() {
     // Each engine loads once; switching views must not restart a drill's live stream.
     if (view === "drill" && !dr.proof && !dr.live) await drLoad();
     if (view !== "drill" && !rg.es) { await rgLoad(); rgStream(); }
+    // Every backup's checks up front, so moving along the timeline never waits on the network.
+    if (view === "overview") await Promise.all(rg.summaries.map(b => rgDetail(b.id).catch(() => {})));
   } catch (e) { note(view === "drill" ? `Drill results unavailable: ${e.message}` : `Backup watcher unavailable: ${e.message}`); }
   setLive(view === "drill" ? !!dr.es : !!rg.es);
   draw();
