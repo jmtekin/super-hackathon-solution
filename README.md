@@ -60,9 +60,14 @@ It installs Docker and Python, builds the sandbox and stand-in images, pulls `po
 `restoreguard.service` (runtime, `127.0.0.1:8600`). Secrets go from `.env` into `/etc/restorer.env` and
 `/etc/restoreguard/` (mode 600) and never into a sandbox. `.env` is gitignored.
 
+HTTPS: set `PUBLIC_HOST` (e.g. `<ip-with-dashes>.sslip.io`) and `WRITE_PASSWORD`. Caddy then gets the
+certificate and serves the console on `https://PUBLIC_HOST/`; the console moves to `127.0.0.1:8530`.
+Reading is public, every write (Run drill, Add .sql, rerun) asks for basic auth `WRITE_USER`.
+
 Frappe target: set `FRAPPE_SOURCE_URL`/`FRAPPE_TEST_URL` and the two `api_key:api_secret` tokens. The
 runtime refuses to start the target if the test URL is on port 80, equals the source, or names
-`demo.local`. Without `FRAPPE_SOURCE_URL` it runs on the stand-in backups only.
+`demo.local`. test.local is restored over the forced-command SSH key in `FRAPPE_SSH_KEY_FILE`, against
+the pinned host key `FRAPPE_SSH_HOST_KEY`. Without `FRAPPE_SOURCE_URL` it runs on the stand-in backups only.
 
 Tests, from the repo root: `python3 -m unittest tests/test_guard.py tests/test_frappe.py` (needs
 `ui/requirements.txt` installed, since the runtime imports the console's model helpers).

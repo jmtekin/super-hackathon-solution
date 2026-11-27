@@ -11,14 +11,15 @@ Each backup goes through one cell:
   checksum -> gzip stream + static scan of the SQL -> full restore into a MariaDB 11.8 sandbox here
   (hardened like guard.Sandbox: no network, read-only root, data on tmpfs, 512 MB) -> row counts per
   doctype vs the source -> Demo Service Request rules, read from the dump's own DocField metadata ->
-  test.local still answers -> its Demo Service Requests are replaced by the backup's through the token
-  API, read back, compared and re-checked against the same rules
+  the real restore on the VM: `bench --site test.local restore` of the same file -> test.local's login
+  page and token API answer -> its row counts per doctype vs the source -> its Demo Service Requests read
+  back, compared with the backup's and re-checked against the same rules
 
-We have no shell on the VM, so `bench --site test.local restore` (the whole site) is out of reach: the
-whole site is proved in the sandbox, the business doctype on test.local. A record test.local lacks has to
-be created, and the app names it from its naming series (format:DSR-{YYYY}-{####}, not renamable); the
-check says when that happened. A backup that fails a check before the replay never reaches test.local,
-so the fault kit runs here only.
+The VM restore goes through a forced-command SSH key (Abdullah's restore_test_site.sh: site test.local
+hardcoded, accepts only one demo.local backup file name, flock against overlapping restores), so this
+runtime can restore test.local and nothing else there. Every restore drops and recreates test.local, so
+the sandbox goes first: a backup that fails a check or carries code never reaches the VM, and the fault
+kit runs here only.
 """
 import asyncio
 import gzip
@@ -39,6 +40,9 @@ CONFIG = Path(os.environ.get("RESTOREGUARD_FRAPPE", guard.HERE / "frappe.json"))
 DB_IMAGE = os.environ.get("RESTOREGUARD_MARIADB_IMAGE", "mariadb:11.8")
 DB_MEMORY = "512m"  # the data dir is tmpfs inside this cap: a full ERPNext site is ~200 MB loaded
 MIN_INTERVAL_S = 0.5  # one call to Abdullah's VM at a time, at most two a second
+RESTORE_TIMEOUT_S = 600  # bench restore + migrate of the whole site on the VM
+# the sandbox, the VM's restore, then ~135 get_count calls at MIN_INTERVAL_S
+CELL_TIMEOUT = guard.CELL_TIMEOUT + RESTORE_TIMEOUT_S + 180
 MAX_SQL_BYTES = 4 << 30
 FILE = re.compile(r"^(\d{8}_\d{6}-[\w.-]+-database)\.sql\.gz$")
 DOCTYPE = re.compile(r"^[\w .-]+$")
@@ -75,6 +79,8 @@ def check_config(cfg):
             raise ValueError(f"frappe.json refused: {why}; restores go only into test.local")
     if not DOCTYPE.match(cfg["doctype"]):
         raise ValueError(f"frappe.json refused: doctype {cfg['doctype']!r}")
+    if cfg["ssh"]["login"].rsplit("@", 1)[-1].lower() != host:
+        raise ValueError(f"frappe.json refused: ssh {cfg['ssh']['login']} is not the test site's host {host}")
     return cfg
 
 
@@ -204,6 +210,22 @@ def load_backup(gz):
             "mtime": gz.stat().st_mtime, "manifest": manifest}
 
 
+def vm_file(cfg, name):
+    """The VM's restore script takes only production's own file names (exit 2 for anything else); a fault
+    copy or a renamed file is refused here before it costs a test.local restore."""
+    site = re.escape(cfg["source"]["site"].replace(".", "_"))
+    return re.fullmatch(rf"\d{{8}}_\d{{6}}-{site}-database\.sql\.gz", name) is not None
+
+
+async def vm_restore(cfg, name):
+    """`bench --site test.local restore` of production's backup `name`, on the VM. Returns (rc, last line)."""
+    s = cfg["ssh"]
+    rc, out, err = await guard._proc("ssh", "-F", "/dev/null", "-i", s["key"], "-o", "BatchMode=yes",
+                                     "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=15",
+                                     "-o", "ServerAliveInterval=30", s["login"], name, timeout=RESTORE_TIMEOUT_S)
+    return rc, guard.airlock._last_line(err.decode(errors="replace")) or guard.airlock._last_line(out.decode(errors="replace"))
+
+
 def target(cfg):
     """The one 'app version' column a Frappe backup is proved on: the configured test site."""
     return {"version": cfg["test"]["site"], "image": DB_IMAGE, "label": f"{cfg['test']['site']} (Frappe)", "cfg": cfg}
@@ -212,16 +234,16 @@ def target(cfg):
 def policy():
     return {"runtime": "docker (hardened)", "image": DB_IMAGE, "network": "none", "cpus": "1", "cpu_shares": 256,
             "memory": DB_MEMORY, "pids_limit": 128, "rootfs": "read-only", "input": "read-only",
-            "data": "tmpfs 400 MB", "capabilities": "all dropped", "user": "999 (mysql)", "timeout_s": guard.CELL_TIMEOUT}
+            "data": "tmpfs 400 MB", "capabilities": "all dropped", "user": "999 (mysql)", "timeout_s": CELL_TIMEOUT}
 
 
 class FrappeCell(guard.Cell):
     def restored_into(self):
         cfg = self.app["cfg"]
         host, port = _hostport(cfg["test"]["url"])
-        return {"instance": f"{cfg['test']['site']} on {host}:{port}, production untouched",
-                "database": f"MariaDB 11.8 sandbox {self.name}, network none (full site restore)",
-                "app": f"{cfg['test']['site']}: {cfg['doctype']} records replayed through its token API",
+        return {"instance": f"{cfg['test']['site']} on Vultr VM {host} (full site restore via bench)",
+                "database": f"MariaDB 11.8 sandbox {self.name}, network none: the same backup, restored here first",
+                "app": f"{cfg['test']['site']} on {host}:{port}: restored by the VM's forced-command script, checked through its token API",
                 "production": f"{cfg['source']['site']}: read only"}
 
 
@@ -244,7 +266,7 @@ class DbSandbox(guard.Sandbox):
         if rc != 0:
             raise RuntimeError(f"sandbox did not start: {err.decode(errors='replace')[-300:]}")
         self.cell.emit({"type": "sandbox", "phase": "started", "name": self.name, "policy": policy(),
-                        "restored_into": self.cell.restored_into()["instance"]})
+                        "restored_into": self.cell.restored_into()["database"]})
         for _ in range(120):  # the entrypoint initialises a data dir and restarts once (~13 s); polled quietly
             if (await guard.docker("exec", self.name, "mariadb", "-uroot", "-e", "SELECT 1", "restored"))[0] == 0:
                 return self
@@ -289,31 +311,11 @@ def rules(fields, rows, existing):
     return out
 
 
-def replay(cfg, fields, rows, before):
-    """Make test.local's records of the doctype exactly the backup's. before = its records now, already
-    in the event log (Frappe also keeps a Deleted Document of each one removed). Returns what changed."""
-    test, doctype = Site(cfg, "test"), cfg["doctype"]
-    path = f"/api/resource/{urllib.parse.quote(doctype)}"
-    have = {d["name"]: d for d in before}
-    want = {r["name"]: r for r in rows}
-    done = {"removed": [have[n] for n in have if n not in want], "updated": [], "created": {}}
-    for n in done["removed"]:
-        test.json(f"{path}/{urllib.parse.quote(n['name'])}", method="DELETE")
-    for n, r in want.items():
-        body = {f: r.get(f) for f in fields}
-        if n in have:
-            test.json(f"{path}/{urllib.parse.quote(n)}", method="PUT", body=body)
-            done["updated"].append(n)
-        else:
-            done["created"][n] = test.json(path, method="POST", body=body)["data"]["name"]
-    return done
-
-
-def compare(fields, rows, got, created):
-    """Backup rows vs test.local's read-back, matched by name (or the name the app gave a re-created one)."""
+def compare(fields, rows, got):
+    """Backup rows vs test.local's read-back, matched by name."""
     by_name, diffs = {d["name"]: d for d in got}, []
     for r in rows:
-        d = by_name.get(created.get(r["name"], r["name"]))
+        d = by_name.get(r["name"])
         if d is None:
             diffs.append(f"{r['name']} missing")
             continue
@@ -385,31 +387,43 @@ async def _cell(cell):
             cell.check(f"rule: {name}", passed, detail)
     if failed := [c["check"] for c in cell.checks if not c["pass"]]:
         return _fail(cell, f"{failed[0]}; not restored into {cfg['test']['site']}")
+    await _vm(cell, fields, rows)
+
+
+async def _vm(cell, fields, rows):
+    """The sandbox passed: restore the same file into test.local on the VM, then check it there."""
+    b, m, cfg = cell.backup, cell.backup["manifest"], cell.app["cfg"]
+    site, doctype, names = cfg["test"]["site"], cfg["doctype"], [f["fieldname"] for f in fields]
+    if not cell.check(f"a {cfg['source']['site']} backup file name (the only kind the VM restores)", vm_file(cfg, b["file"]), b["file"]):
+        return _fail(cell, f"{b['file']} is not a production backup name; not restored into {site}")
+    t = time.monotonic()
+    cell.emit({"type": "restore", "phase": "started", "file": b["file"], "restored_into": cell.restored_into()["instance"]})
+    rc, last = await vm_restore(cfg, b["file"])
+    guard._timed(cell, "vm_restore", t)
+    cell.emit({"type": "restore", "phase": "done", "rc": rc, "s": cell.timings["vm_restore"]})
+    if not cell.check(f"{site} restored on the VM (bench restore + migrate)", rc == 0, f"exit {rc}: {last}" if rc else last):
+        return _fail(cell, f"restore on the VM failed (exit {rc}); {site} may be part restored")
     test = Site(cfg, "test")
     t = time.monotonic()
+    status = (await asyncio.to_thread(test.call, "/login"))[0]
+    cell.check(f"{site} login page answers", status == 200, f"HTTP {status}")
     user = await asyncio.to_thread(test.method, "frappe.auth.get_logged_user")
-    if not cell.check(f"{cfg['test']['site']} app answers (get_logged_user)", user, f"user {user}"):
-        return _fail(cell, f"{cfg['test']['site']} does not answer")
-    before = await asyncio.to_thread(test.records, doctype, names)
-    cell.emit({"type": "replay", "site": cfg["test"]["site"], "phase": "before", "records": before})
-    done = await asyncio.to_thread(replay, cfg, names, rows, before)
-    cell.emit({"type": "replay", "site": cfg["test"]["site"], "phase": "done", "updated": done["updated"],
-               "created": done["created"], "removed": [d["name"] for d in done["removed"]]})
+    if not cell.check(f"{site} token API answers (get_logged_user)", user, f"user {user}"):
+        return _fail(cell, f"{site} does not answer after the restore")
+    counts = await asyncio.to_thread(lambda: {d: test.method("frappe.client.get_count", doctype=d) for d in m["row_counts"]})
+    off = [f"{d}: {n} vs source {m['row_counts'][d]}" for d, n in counts.items() if n != m["row_counts"][d]]
+    cell.check(f"on {site}: row counts match the source ({len(counts)} doctypes)", not off,
+               "; ".join(off[:5]) or f"get_count on {site} vs {cfg['source']['site']} at download")
     got = await asyncio.to_thread(test.records, doctype, names)
-    count = await asyncio.to_thread(test.method, "frappe.client.get_count", doctype=doctype)
     guard._timed(cell, "test_site", t)
-    diffs = compare(names, rows, got, done["created"])
-    renamed = {k: v for k, v in done["created"].items() if k != v}
-    cell.check(f"{cfg['test']['site']} holds the backup's {len(rows)} {doctype} records", not diffs and count == len(rows),
-               "; ".join(diffs[:5]) or f"{len(done['updated'])} updated, {len(done['created'])} created"
-               + (f" (renamed by the naming series: {', '.join(f'{k}->{v}' for k, v in renamed.items())})" if renamed else "")
-               + f", {len(done['removed'])} test-only removed; resource list readable, get_count {count}")
+    diffs = compare(names, rows, got)
+    cell.check(f"{site} holds the backup's {len(rows)} {doctype} records", not diffs, "; ".join(diffs[:5]) or "read back, field by field")
     for name, passed, detail in rules([f for f in fields if f["fieldtype"] != "Link"], got, {}):
-        cell.check(f"on {cfg['test']['site']}: {name}", passed, detail)
+        cell.check(f"on {site}: {name}", passed, detail)
     if failed := [c["check"] for c in cell.checks if not c["pass"]]:
         return _fail(cell, failed[0])
-    cell.state, cell.reason = "native", f"restored: full site in the sandbox, {len(rows)} {doctype} records on {cfg['test']['site']}"
+    cell.state, cell.reason = "native", f"restored: {site} on the VM is the backup (full site via bench), {len(rows)} {doctype} records checked"
 
 
 def run_cell(backup, app, emit=lambda ev: None):
-    return guard.run_cell(backup, app, emit, cell_type=FrappeCell, body=_cell)
+    return guard.run_cell(backup, app, emit, cell_type=FrappeCell, body=_cell, timeout=CELL_TIMEOUT)

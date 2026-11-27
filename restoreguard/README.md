@@ -31,7 +31,8 @@ restore at a configured database or host is refused at startup (`guard.check_app
 ## Frappe target: Abdullah's ERP (`frappe_target.py`, `frappe.json`)
 
 Frappe 16 + ERPNext + demo_app (doctype Demo Service Request) on 70.34.199.143: **demo.local :80 = production,
-read only**; test.local :8080 = DB-isolated clone, the only site written to. Tokens: `.config/restoreguard-frappe.json`.
+read only**; test.local :8080 = DB-isolated clone, the only site written to. Tokens: `.config/restoreguard-frappe.json`;
+restore key `/opt/agent/.ssh/restoreguard_abdullah_ed25519` (600, `frappe.json` `ssh`), host key pinned in `~/.ssh/known_hosts`.
 The watcher reads production's Backups page every 120 s, downloads each new `bench backup` sql.gz from `/backups/`
 into `backups-frappe/` and writes its manifest last: `get_count` per doctype that has rows in the dump (minus the
 self-growing logs in `frappe.json`), counted right after the download. Every call to the VM is serialised, 2/s max.
@@ -43,17 +44,21 @@ self-growing logs in `frappe.json`), counted right after the download. Every cal
 | full site restore into a MariaDB 11.8 sandbox (network none, 512 MB incl. its tmpfs data dir, read-only root, uid 999) | `restore failed` |
 | row counts: Demo Service Request + every counted doctype vs the manifest | `rows match the source` |
 | rules from the dump's own DocField: required fields, Select options, Link targets exist; total_cost = estimated_hours x hourly_rate; hours > 0, rate >= 0 | `rule: <rule>` |
-| test.local: `get_logged_user` 200; its Demo Service Requests made exactly the backup's (PUT by name, POST missing, DELETE test-only; the before-state goes to the event log, Frappe keeps a Deleted Document); read back, compared, `get_count`, rules again | `test.local holds the backup's N records` |
+| file name is production's own (`YYYYMMDD_HHMMSS-demo_local-database.sql.gz`), so fault copies never reach the VM | `not a production backup name` |
+| the real restore, on the VM: `ssh frappe@70.34.199.143 <file>`, whose forced command (`/home/frappe/bin/restore_test_site.sh`, site test.local hardcoded, flock) runs `bench --site test.local restore` of that file + migrate; ~22 s | `restore on the VM failed (exit N)` |
+| test.local: `/login` 200, `get_logged_user` 200, `get_count` of every manifest doctype vs the source, its Demo Service Requests read back field by field, rules again | `<check>` |
 
 API additions (not yet in `../restorer/README.md` Runtime API): `kind` (`postgres`|`frappe`) in every backup
 summary; Frappe backups have one cell, keyed `test.local`, whose `restored_into` is `{instance: "test.local on
-70.34.199.143:8080, production untouched", database, app, production}`; `/health` has `frappe: {source,
-restores_into}`; `/api/matrix` lists `test.local` as a column, cells only where they apply; SSE adds `replay` events.
-A backup that fails any sandbox check never reaches test.local. Refused at startup (`check_config`): a test target on
-port 80, on production's host:port, or named like production; the production client cannot build a non-GET request.
-No shell on the VM, so `bench --site test.local restore` (whole site on test.local) is not used: the whole site is
-proved in the sandbox, the business doctype on test.local. A record test.local lacks is re-created and named by the
-app's naming series (not renamable); the check names the mapping.
+Vultr VM 70.34.199.143 (full site restore via bench)", database, app, production}`; `/health` has `frappe: {source,
+restores_into}`; `/api/matrix` lists `test.local` as a column, cells only where they apply; SSE adds `restore` events
+(`phase` started/done, `rc`, `s`). The Frappe cell's timeout is 960 s (sandbox + VM restore + ~135 `get_count` at 2/s).
+Each restore drops and recreates test.local, so a backup that fails any sandbox check never reaches the VM, and each
+new production backup costs exactly one VM restore (results persist in `state/`, a restart re-runs nothing; rerun = one more). Refused at startup (`check_config`): a test target on
+port 80, on production's host:port, named like production, or an `ssh` login on another host than the test site;
+the production client cannot build a non-GET request. Not checked: that the VM's copy of the file is byte-identical to
+the one checksummed here (the key can run nothing but the restore); it is the file production's Backups page served.
+First full run 2026-11-27 15:04 (`20261127_140556`, by hand): native, 24/24 checks, VM restore 21.8 s, cell 131 s.
 
 Fault kit (`python faults.py backups-frappe/<stem>.sql.gz`, copies in `faults/out-frappe/`), 2026-11-27 14:31 on
 `20261127_140556-demo_local-database`: 7/7 caught, none reached test.local.
@@ -73,7 +78,7 @@ Fault kit (`python faults.py backups-frappe/<stem>.sql.gz`, copies in `faults/ou
 | File | |
 |---|---|
 | `guard.py` | the cell: sandbox, checks, app probe, bridge loop, certificate |
-| `frappe_target.py`, `frappe.json` | Frappe/MariaDB target: read-only fetch from production, MariaDB sandbox, test.local replay |
+| `frappe_target.py`, `frappe.json` | Frappe/MariaDB target: read-only fetch from production, MariaDB sandbox, then the forced-command restore of test.local on the VM and its checks |
 | `api.py` | service: watcher (folders, or mirror of the app's `/backups/` HTTP endpoint), queue, results API, SSE |
 | `contract/manifest.sql`, `contract/rules.sql` | the contract's numbers and rules; the backup job and BackupAirlock run the same SQL |
 | `faults.py` | fault-injection kit + table runner |

@@ -36,7 +36,11 @@ umask 077
 # Frappe target (optional): production is only read, the test site is the only one written. Without
 # FRAPPE_SOURCE_URL there is no /etc/restoreguard/frappe.json and the target stays off.
 if [ -n "${FRAPPE_SOURCE_URL:-}" ]; then
-  : "${FRAPPE_TEST_URL:?}" "${FRAPPE_SOURCE_TOKEN:?}" "${FRAPPE_TEST_TOKEN:?}"
+  : "${FRAPPE_TEST_URL:?}" "${FRAPPE_SOURCE_TOKEN:?}" "${FRAPPE_TEST_TOKEN:?}" "${FRAPPE_SSH_KEY_FILE:?}" "${FRAPPE_SSH_HOST_KEY:?}"
+  # test.local is restored over a forced-command SSH key; the host key is pinned, never learned on first use.
+  install -m 600 "$FRAPPE_SSH_KEY_FILE" /etc/restoreguard/frappe-ssh-key
+  install -d -m 700 "$DEST/.ssh"
+  printf '%s\n' "$FRAPPE_SSH_HOST_KEY" > "$DEST/.ssh/known_hosts"
   python3 - "$SRC/frappe.json" <<'PY'
 import json, os, sys
 cfg = json.load(open(sys.argv[1]))
@@ -44,6 +48,7 @@ env = os.environ
 src, test = env.get("FRAPPE_SOURCE_SITE", "demo.local"), env.get("FRAPPE_TEST_SITE", "test.local")
 cfg["source"] = {"site": src, "url": env["FRAPPE_SOURCE_URL"]}
 cfg["test"] = {"site": test, "url": env["FRAPPE_TEST_URL"]}
+cfg["ssh"] = {"login": env.get("FRAPPE_SSH_LOGIN") or cfg["ssh"]["login"], "key": "/etc/restoreguard/frappe-ssh-key"}
 cfg["tokens"] = "/etc/restoreguard/frappe-tokens.json"
 json.dump({src: env["FRAPPE_SOURCE_TOKEN"], test: env["FRAPPE_TEST_TOKEN"]}, open(cfg["tokens"], "w"))
 json.dump(cfg, open("/etc/restoreguard/frappe.json", "w"), indent=1)

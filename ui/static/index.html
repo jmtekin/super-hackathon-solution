@@ -223,9 +223,10 @@ async function rgLoad() {
   const [list, health] = await Promise.all([getJSON("rg/api/backups"), getJSON("rg/health")]);
   rg.summaries = list;
   rg.versions = health.app_versions;
+  rg.frappe = health.frappe?.restores_into;
   if (!rg.sel && list.length) {
     const b = list.find(b => b.status !== "queued") || list[0];
-    rg.sel = {b: b.id, v: rg.versions[rg.versions.length - 1]};
+    rg.sel = {b: b.id, v: rgTargets(b).at(-1)};
   }
   if (rg.sel) await rgDetail(rg.sel.b);
 }
@@ -234,6 +235,8 @@ async function rgDetail(id, force) {
   if (!s || (!force && rg.details[id] && rg.details[id].status === s.status)) return;
   rg.details[id] = await getJSON(`rg/api/backups/${encodeURIComponent(id)}`);
 }
+// A Frappe backup is proved on its test site only, not on the app versions.
+const rgTargets = b => b.kind === "frappe" && rg.frappe ? [rg.frappe] : rg.versions;
 function rgCell(id, v) {
   const s = rg.summaries.find(b => b.id === id);
   const live = rg.live[`${id}@${v}`];
@@ -257,7 +260,8 @@ function rgView() {
       // The timestamp prefix is in the sub line already; the suffix is what tells the backups apart.
       id: b.id, name: b.file.replace(/^\d{8}T\d{6}Z[-_]/, ""), full: b.file, verdict: b.status,
       sub: [b.created_at && clock(b.created_at), b.schema_version != null && `schema v${b.schema_version}`, mb(b.bytes)].filter(Boolean).join(" · "),
-      cells: Object.fromEntries(rg.versions.map(v => { const c = rgCell(b.id, v); return [v, {state: c.state,
+      cols: b.kind === "frappe" && rg.frappe ? [{id: rg.frappe, label: rg.frappe}] : null,
+      cells: Object.fromEntries(rgTargets(b).map(v => { const c = rgCell(b.id, v); return [v, {state: c.state,
         line: cellLine(c.state, c.reason, c.elapsed_s, b.status === "running")}]; })),
     })),
     sel: rg.sel,
@@ -274,7 +278,7 @@ function rgPanel() {
   const d = rg.details[rg.sel.b], v = rg.sel.v;
   if (!d) return `<div class="panel"><p class="muted">Loading</p></div>`;
   const c = d.cells[v], live = rg.live[`${d.id}@${v}`];
-  const head = `<div class="meta mono">${esc(d.file)}</div><h2>App ${esc(v)}</h2>`;
+  const head = `<div class="meta mono">${esc(d.file)}</div><h2>${d.kind === "frappe" ? "" : "App "}${esc(v)}</h2>`;
   if (!c) {
     const evs = live ? live.events : [];
     return `<div class="panel">${head}<div style="margin-top:8px">${mark(d.status === "queued" ? "queued" : "running")}</div>
@@ -559,8 +563,8 @@ function draw() {
   $("#body").innerHTML = `<div class="main"><div>
     <div class="matrix"><div class="colhead corner">Backup</div>${V.cols.map(c => `<div class="colhead">${esc(c.label)}</div>`).join("")}
     ${V.rows.map(r => `<div class="row"><div class="bk"><div class="name" title="${esc(r.full || r.name)}">${esc(r.name)}</div><div class="sub">${esc(r.sub)}</div>${verdictLine(r.verdict)}</div>
-      ${V.cols.map(c => { const x = r.cells[c.id] || {state: "not_run", line: ""};
-        return `<button class="cell" data-b="${esc(r.id)}" data-v="${esc(c.id)}" aria-pressed="${!!sel && sel.b === r.id && sel.v === c.id}">
+      ${(r.cols || V.cols).map(c => { const x = r.cells[c.id] || {state: "not_run", line: ""};
+        return `<button class="cell" data-b="${esc(r.id)}" data-v="${esc(c.id)}"${r.cols ? ` style="grid-column:span ${V.cols.length}"` : ""} aria-pressed="${!!sel && sel.b === r.id && sel.v === c.id}">
           <div class="app">${esc(c.label)}</div>${mark(x.state)}<div class="d" title="${esc(x.line)}">${esc(x.line)}</div></button>`; }).join("")}</div>`).join("")}
     </div>${V.rows.length ? "" : `<div class="empty">Nothing to show yet.</div>`}</div>
     <div>${view === "drill" ? drPanel() : rgPanel()}</div></div>`;

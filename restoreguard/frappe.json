@@ -1,6 +1,7 @@
 {
  "source": {"site": "demo.local", "url": "http://70.34.199.143"},
  "test": {"site": "test.local", "url": "http://70.34.199.143:8080"},
+ "ssh": {"login": "frappe@70.34.199.143", "key": "/opt/agent/.ssh/restoreguard_abdullah_ed25519"},
  "doctype": "Demo Service Request",
  "tokens": "/opt/agent/.config/restoreguard-frappe.json",
  "uncounted": ["Access Log", "Activity Log", "Comment", "Communication", "Console Log", "Deleted Document",

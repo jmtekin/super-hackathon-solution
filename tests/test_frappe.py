@@ -1,5 +1,7 @@
 """Failure cases of the Frappe target that need no sandbox and no network: production refusal,
-backup reading and scanning, manifest loading, the Demo Service Request rules, the replay compare."""
+backup reading and scanning, manifest loading, the Demo Service Request rules, and the VM step (a fake
+`ssh` on PATH, a fake test site): what reaches the VM, what it is asked, how its answers are checked."""
+import asyncio
 import gzip
 import json
 import os
@@ -7,12 +9,15 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "restoreguard"))
 import frappe_target as ft  # noqa: E402
 
 CFG = {"source": {"site": "demo.local", "url": "http://70.34.199.143"},
-       "test": {"site": "test.local", "url": "http://70.34.199.143:8080"}, "doctype": "Demo Service Request"}
+       "test": {"site": "test.local", "url": "http://70.34.199.143:8080"},
+       "ssh": {"login": "frappe@70.34.199.143", "key": "/opt/agent/.ssh/restoreguard_abdullah_ed25519"},
+       "doctype": "Demo Service Request"}
 FIELDS = [{"fieldname": "title", "fieldtype": "Data", "options": None, "reqd": 1},
           {"fieldname": "customer", "fieldtype": "Link", "options": "Customer", "reqd": 0},
           {"fieldname": "priority", "fieldtype": "Select", "options": "Low\nMedium\nHigh", "reqd": 0},
@@ -59,6 +64,10 @@ class ProdRefusal(unittest.TestCase):
             for method in ("POST", "PUT", "DELETE"):
                 with self.assertRaises(PermissionError):
                     src.call("/api/resource/Demo%20Service%20Request/DSR-2026-0001", method=method, body={})
+
+    def test_ssh_to_another_host_refused(self):
+        with self.assertRaisesRegex(ValueError, "ssh"):
+            ft.check_config({**CFG, "ssh": {**CFG["ssh"], "login": "frappe@10.0.0.9"}})
 
     def test_unsafe_doctype_refused(self):
         with self.assertRaisesRegex(ValueError, "doctype"):
@@ -147,14 +156,128 @@ class Rules(unittest.TestCase):
 class Compare(unittest.TestCase):
     names = [f["fieldname"] for f in FIELDS]
 
-    def test_same_records_by_name_or_new_name(self):
-        got = [{**ROW, "name": "DSR-2026-0007", "estimated_hours": 3}]
-        self.assertEqual(ft.compare(self.names, [ROW], got, {"DSR-2026-0001": "DSR-2026-0007"}), [])
+    def test_same_records(self):
+        self.assertEqual(ft.compare(self.names, [ROW], [{**ROW, "estimated_hours": 3}]), [])
 
     def test_differences(self):
-        diffs = ft.compare(self.names, [ROW], [{**ROW, "title": "Changed"}, {**ROW, "name": "DSR-2026-0009"}], {})
+        diffs = ft.compare(self.names, [ROW], [{**ROW, "title": "Changed"}, {**ROW, "name": "DSR-2026-0009"}])
         self.assertEqual(len(diffs), 2)
-        self.assertEqual(ft.compare(self.names, [ROW], [], {}), ["DSR-2026-0001 missing"])
+        self.assertEqual(ft.compare(self.names, [ROW], []), ["DSR-2026-0001 missing"])
+
+
+FILE = "20261127_140556-demo_local-database.sql.gz"
+# Stands in for ssh: records its argv, prints like the VM script, exits FAKE_RC (or sleeps past the timeout).
+FAKE_SSH = """#!/bin/sh
+printf '%s\n' "$@" > "$FAKE_ARGV"
+[ -n "$FAKE_SLEEP" ] && sleep "$FAKE_SLEEP"
+echo "Restoring test.local from $(eval echo \\${$#})"
+[ "$FAKE_RC" = 0 ] || echo "ERROR: Rejected command/argument." >&2
+exit "$FAKE_RC"
+"""
+
+
+class FakeSite:
+    """test.local after the restore: a login page, the token API, get_count per doctype, the records."""
+
+    def __init__(self, counts, records, login=200):
+        self.counts, self.records_, self.login, self.calls = counts, records, login, []
+
+    def __call__(self, cfg, role):
+        assert role == "test", "the VM step reads only test.local"
+        return self
+
+    def call(self, path, **kw):
+        self.calls.append(path)
+        return self.login, b"", {}
+
+    def method(self, name, **args):
+        self.calls.append(name)
+        return {"frappe.auth.get_logged_user": "Administrator"}.get(name) or self.counts[args["doctype"]]
+
+    def records(self, doctype, fields):
+        self.calls.append(f"records {doctype}")
+        return self.records_
+
+
+class VmStep(unittest.TestCase):
+    counts = {"Demo Service Request": 1, "Customer": 4}
+
+    def setUp(self):
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        self.dir = Path(d.name)
+        (self.dir / "ssh").write_text(FAKE_SSH)
+        (self.dir / "ssh").chmod(0o755)
+        self.argv = self.dir / "argv"
+        self.env = mock.patch.dict(os.environ, {"PATH": f"{self.dir}:{os.environ['PATH']}", "FAKE_ARGV": str(self.argv),
+                                                "FAKE_RC": "0", "FAKE_SLEEP": ""})
+        self.env.start()
+        self.addCleanup(self.env.stop)
+
+    def cell(self, file=FILE):
+        backup = {"id": file[:-7], "file": file, "manifest": {"row_counts": self.counts}}
+        return ft.FrappeCell(backup, ft.target(CFG), lambda ev: None)
+
+    def run_vm(self, cell, site):
+        with mock.patch.object(ft, "Site", site):
+            asyncio.run(ft._vm(cell, FIELDS, [ROW]))
+        return {c["check"]: c for c in cell.checks}
+
+    def test_vm_file_names(self):
+        self.assertTrue(ft.vm_file(CFG, FILE))
+        for bad in ("latest", "20261127_140556-demo_local-bitflip-database.sql.gz", f"../{FILE}", f"{FILE}.part",
+                    "20261127_140556-test_local-database.sql.gz", f"{FILE}\nid", f"x {FILE}", ""):
+            self.assertFalse(ft.vm_file(CFG, bad), bad)
+
+    def test_asks_the_vm_for_exactly_that_file(self):
+        rc, last = asyncio.run(ft.vm_restore(CFG, FILE))
+        self.assertEqual((rc, last), (0, f"Restoring test.local from {FILE}"))
+        argv = self.argv.read_text().splitlines()
+        self.assertEqual(argv[-2:], ["frappe@70.34.199.143", FILE])
+        for opt in ("BatchMode=yes", "StrictHostKeyChecking=yes", "IdentitiesOnly=yes"):
+            self.assertIn(opt, argv)
+
+    def test_vm_refusal_and_timeout(self):
+        os.environ["FAKE_RC"] = "2"
+        self.assertEqual(asyncio.run(ft.vm_restore(CFG, FILE)), (2, "ERROR: Rejected command/argument."))
+        os.environ.update(FAKE_RC="0", FAKE_SLEEP="5")
+        with mock.patch.object(ft, "RESTORE_TIMEOUT_S", 0.5):
+            self.assertEqual(asyncio.run(ft.vm_restore(CFG, FILE))[0], "timeout")
+
+    def test_restored_and_checked(self):
+        site = FakeSite(self.counts, [ROW])
+        cell = self.cell()
+        checks = self.run_vm(cell, site)
+        self.assertEqual(cell.state, "native", cell.reason)
+        self.assertTrue(all(c["pass"] for c in checks.values()), checks)
+        self.assertIn("test.local restored on the VM (bench restore + migrate)", checks)
+        self.assertEqual(cell.restored_into()["instance"], "test.local on Vultr VM 70.34.199.143 (full site restore via bench)")
+        self.assertEqual(set(cell.timings), {"vm_restore", "test_site"})
+
+    def test_production_name_required_before_ssh(self):
+        site = FakeSite(self.counts, [ROW])
+        cell = self.cell("20261127_140556-demo_local-bitflip-database.sql.gz")
+        self.run_vm(cell, site)
+        self.assertEqual(cell.state, "failed")
+        self.assertFalse(self.argv.exists(), "ssh ran for a fault copy")
+        self.assertEqual(site.calls, [])
+
+    def test_vm_refusal_stops_before_test_site(self):
+        os.environ["FAKE_RC"] = "2"
+        site, cell = FakeSite(self.counts, [ROW]), self.cell()
+        checks = self.run_vm(cell, site)
+        self.assertEqual(cell.state, "failed")
+        self.assertIn("exit 2", checks["test.local restored on the VM (bench restore + migrate)"]["detail"])
+        self.assertEqual(site.calls, [])
+
+    def test_wrong_test_site_fails(self):
+        for site, check in ((FakeSite({**self.counts, "Customer": 3}, [ROW]), "on test.local: row counts match the source (2 doctypes)"),
+                            (FakeSite(self.counts, [{**ROW, "total_cost": 1.0}]), "test.local holds the backup's 1 Demo Service Request records"),
+                            (FakeSite(self.counts, [ROW], login=502), "test.local login page answers")):
+            cell = self.cell()
+            checks = self.run_vm(cell, site)
+            self.assertEqual(cell.state, "failed", check)
+            self.assertFalse(checks[check]["pass"], check)
 
 
 if __name__ == "__main__":

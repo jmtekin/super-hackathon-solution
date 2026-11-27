@@ -295,16 +295,16 @@ async def remove_orphans():
         return left
 
 
-async def run_cell(backup, app, emit=lambda ev: None, cell_type=Cell, body=None):
+async def run_cell(backup, app, emit=lambda ev: None, cell_type=Cell, body=None, timeout=CELL_TIMEOUT):
     """Prove one backup on one app version. Never raises; the verdict is in the result.
-    cell_type and body let another target (frappe_target) reuse the lock, timeout and quarantine rules."""
+    cell_type, body and timeout let another target (frappe_target) reuse the lock, timeout and quarantine rules."""
     cell = cell_type(backup, app, emit)
     lock = await asyncio.to_thread(_sandbox_lock)
     try:
-        await asyncio.wait_for((body or _cell)(cell), CELL_TIMEOUT)
+        await asyncio.wait_for((body or _cell)(cell), timeout)
     except asyncio.TimeoutError:
         cell.signals.add("timeout")
-        cell.state, cell.reason = "failed", f"cell exceeded {CELL_TIMEOUT} s"
+        cell.state, cell.reason = "failed", f"cell exceeded {timeout} s"
     except Exception as e:
         cell.state, cell.reason = "failed", f"runtime error: {e}"[:300]
     finally:
