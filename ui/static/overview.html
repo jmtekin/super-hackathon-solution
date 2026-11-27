@@ -124,7 +124,7 @@ figcaption{font-size:12px;line-height:16px;color:var(--ink-2);padding:var(--s3) 
   <p class="err" id="err" hidden></p>
 
   <section class="heal panel" id="heal" hidden>
-    <h2 class="panel-h">Heal: an old backup on the new app version</h2>
+    <h2 class="panel-h" id="h-title">Heal: an old backup on the new app version</h2>
     <div class="ba">
       <div class="node"><div class="k">Before</div><div class="n" id="h-on"></div><div class="v c-bad"><i class="mk"></i><span class="w">Failed</span></div><div class="d" id="h-why"></div></div>
       <div class="arrow"></div>
@@ -198,6 +198,8 @@ async function heal(all) {
     .concat(log.filter(e => e.type === "native").flatMap(e => e.problems || []));
   const after = c.checks.filter(k => !/\(native\)/.test(k.check));
   const model = c.llm_calls?.find(x => x.purpose === "bridge")?.model || "GLM";
+  const older = from.match(/[\d.]+$/)?.[0].localeCompare(to.match(/[\d.]+$/)?.[0], undefined, {numeric: true}) < 0;
+  $("#h-title").textContent = older ? "Heal: an old backup on the new app version" : "Heal: a backup on an app version it was not made for";
   $("#h-on").textContent = `${from} backup on ${to}`;
   $("#h-why").textContent = why.join("; ");
   $("#h-by").textContent = `written by ${model} in ${plural(c.bridges.length, "round")}`;
