@@ -203,6 +203,7 @@ async def drill(run):
                                 | {"stderr_tail": a["stderr"][-400:]} for a in run.attempts],
                    "checks": [{k: c[k] for k in ("check", "pass", "detail")} for c in checks]}
         explanation = (await llm(run, "report", REPORT_SYSTEM, json.dumps(summary, indent=1))).strip()
+        explanation = explanation.replace(" \u2014 ", ", ").replace("\u2014", ", ")
         run.step("Explain evidence", "ok", text=explanation)
     except Exception as e:
         verdict = verdict or {"level": "failed", "headline": "Drill aborted.", "reason": str(e)[:300]}

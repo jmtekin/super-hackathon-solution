@@ -33,7 +33,7 @@ button.run:disabled{opacity:.45;cursor:default}
 .policy div:last-child{border:0}
 .policy em{font-style:normal;color:var(--ok)}
 .policy .hot em{color:var(--bad);font-weight:700}
-.stack{display:grid;gap:20px;align-content:start}
+.stack{display:grid;gap:20px;align-content:start;min-width:0}
 .row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:20px}
 .verdict{display:none;padding:22px 24px;border-radius:12px;border:1px solid}
 .verdict.ok{display:block;background:var(--okbg);border-color:#86efac;color:#14532d}
@@ -54,6 +54,7 @@ ol.tl{list-style:none;margin:0;padding:0}
 .tl .sub{color:var(--mute);font-size:12.5px}
 .tl .t{font:11px var(--mono);color:var(--mute)}
 .tl .chip{font:11px var(--mono);background:#f3f4f6;border-radius:5px;padding:1px 6px;margin-left:6px;color:#374151;font-weight:400}
+.tl li.child{margin-left:28px}
 .tl li.alarm{background:var(--badbg);margin:3px -8px;padding:7px 8px;border-radius:8px;border:0;animation:flash .5s 3}
 .tl li.alarm .name{color:var(--bad);font-family:var(--mono);letter-spacing:.02em}
 .tl li.alarm .ic{background:var(--bad)}
@@ -207,7 +208,6 @@ function onEvent(ev) {
       prev.className = ev.status;
       prev.querySelector(".ic").textContent = ICON[ev.status] || "";
       if (sub) prev.querySelector(".sub").innerHTML = sub;
-      prev.querySelector(".t").textContent = `+${ev.t.toFixed(1)}s`;
     } else {
       steps[ev.name] = li(ev.status, ICON[ev.status] || "", esc(ev.name), sub, ev.t);
     }
@@ -224,7 +224,7 @@ function onEvent(ev) {
   } else if (ev.type === "sandbox") {
     if (ev.phase === "started") {
       $("sbname").textContent = ev.name; term(`$ docker run --network none --cpus 1 --memory 256m --read-only ... ${ev.name}`, "s");
-      li("info", ICON.info, "Sandbox created", `<span class="chip">${esc(ev.name)}</span><span class="chip">network none</span><span class="chip">timeout ${ev.policy.timeout_s} s</span>`, ev.t);
+      li("info child", ICON.info, "Sandbox created", `<span class="chip">${esc(ev.name)}</span><span class="chip">network none</span><span class="chip">timeout ${ev.policy.timeout_s} s</span>`, ev.t);
       sbStart = performance.now(); clearInterval(wallTimer);
       wallTimer = setInterval(() => { const s = (performance.now() - sbStart) / 1000; $("wallv").textContent = `${s.toFixed(1)} / ${timeout} s`; setBar("wallbar", s / timeout, s / timeout > .8); }, 100);
     } else if (ev.phase === "exited") {
@@ -233,17 +233,17 @@ function onEvent(ev) {
       $("cpuv").textContent = "stopped";
     } else {
       term(ev.phase === "destroyed" ? `sandbox destroyed: ${ev.name}` : `WARNING: ${ev.name} still present`, ev.phase === "destroyed" ? "s" : "p");
-      li(ev.phase === "destroyed" ? "ok" : "fail", ev.phase === "destroyed" ? ICON.ok : ICON.fail, ev.phase === "destroyed" ? "Sandbox destroyed" : "Sandbox NOT destroyed", "container removed, removal checked with docker inspect", ev.t);
+      li(ev.phase === "destroyed" ? "ok child" : "fail child", ev.phase === "destroyed" ? ICON.ok : ICON.fail, ev.phase === "destroyed" ? "Sandbox destroyed" : "Sandbox NOT destroyed", "container removed, removal checked with docker inspect", ev.t);
     }
   } else if (ev.type === "log") {
     term(ev.line, ev.stream === "stderr" ? "e" : "");
   } else if (ev.type === "cpu") {
     $("cpuv").textContent = `${ev.pct.toFixed(0)}% of ${ev.cap.toFixed(0)}% cap · ${ev.mem_mb} MB`;
     setBar("cpubar", ev.pct / ev.cap, ev.pct >= ev.cap * .9);
-    if (ev.pct >= ev.cap * .9 && !steps.__cpu) steps.__cpu = Object.assign(li("fail alarm", "!", "CPU: AT CAP", `${ev.pct.toFixed(0)}% of 1 core, throttled by the sandbox, host unaffected`, ev.t));
+    if (ev.pct >= ev.cap * .9 && !steps.__cpu) steps.__cpu = Object.assign(li("fail alarm child", "!", "CPU: AT CAP", `${ev.pct.toFixed(0)}% of 1 core, throttled by the sandbox, host unaffected`, ev.t));
   } else if (ev.type === "policy") {
     term(ev.event, "p");
-    li("fail alarm", "!", esc(ev.event.split(",")[0]), esc(ev.detail || "orchestrator kills the container"), ev.t);
+    li("fail alarm child", "!", esc(ev.event.split(",")[0]), esc(ev.detail || "orchestrator kills the container"), ev.t);
   } else if (ev.type === "check") {
     $("evwrap").classList.remove("hide");
     $("checks").insertAdjacentHTML("beforeend", `<div class="card ck ${ev.pass ? "pass" : "fail"}"><span class="st">${ev.pass ? "PASS" : "FAIL"}</span><b>${esc(ev.check)}</b><div class="sub">${esc(ev.detail)}</div><table>${ev.items.slice(0, 6).map(i => `<tr><td>${esc(String(i.what).slice(0, 26))}</td><td class="${i.pass ? "" : "x"}" style="text-align:right">${esc(Array.isArray(i.got) ? i.got.join(", ") : i.got)}</td></tr>`).join("")}</table></div>`);
@@ -253,6 +253,7 @@ function onEvent(ev) {
 }
 
 async function showVerdict(ev) {
+  document.querySelectorAll("#tl li.running").forEach(el => { el.className = "fail"; el.querySelector(".ic").textContent = ICON.fail; });
   const id = current, p = await (await fetch(`api/runs/${id}/proof.json`)).json();
   const v = $("verdict");
   v.className = "verdict " + (ev.level === "ok" ? "ok" : "bad");
