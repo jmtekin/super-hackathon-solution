@@ -52,7 +52,7 @@ Vultr VM (Ubuntu 24.04, `restorer` checked out next to this directory):
 `VULTR_INFERENCE_KEY=... [RESTOREGUARD_BACKUPS_URL=https://<app-vm>/backups/ BACKUPS_TOKEN=...] [ADMIN_PASSWORD=...] sh install.sh`.
 The stand-in stack itself: `cd standin && cp .env.example .env && docker compose up -d` (backups every 30 min).
 
-Fault kit result 2026-11-27 14:02 (backup `20261127T124924Z_v1`, both app versions):
+Fault kit result 2026-11-27 ~14:00 (backup `20261127T124924Z_v1`, both app versions):
 
 | fault | must | caught by |
 |---|---|---|
