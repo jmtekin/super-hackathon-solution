@@ -76,7 +76,7 @@ def receivables(db):
     bad = [r for r in rows if r[1] != r[2]]
     # The biggest open balances first: a match on 0.00 SEK proves little.
     shown = bad[:4] + sorted((r for r in rows if r[1] == r[2]), key=lambda r: -r[2])[:6 - min(len(bad), 4)]
-    items = [{"what": f"Customer {r[0]} receivable", "expected": _sek(r[2]), "got": _sek(r[1]), "pass": r[1] == r[2]} for r in shown]
+    items = [{"what": f"Customer {r[0]}", "expected": _sek(r[2]), "got": _sek(r[1]), "pass": r[1] == r[2]} for r in shown]
     total = sum(r[2] for r in rows)
     return _check("Customer receivables", bool(rows) and not bad,
                   f"{len(rows)} customers: ledger = open invoices ({_sek(total)} owed)" if not bad else

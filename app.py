@@ -141,9 +141,14 @@ def _script(text):
     return (m.group(1) if m else text).strip() + "\n"
 
 
+def _plain(text):
+    # Model prose is shown on the page; the page uses no em-dashes.
+    return text.replace(" \u2014 ", ", ").replace("\u2014", ", ")
+
+
 def _section(text, tag):
     m = re.search(rf"{tag}:\s*(.*?)(?:```|$)", text, re.S)
-    return m.group(1).strip() if m else ""
+    return _plain(m.group(1).strip()) if m else ""
 
 
 def _sha(data):
@@ -259,8 +264,7 @@ async def drill(run):
 
 async def explain(run, summary):
     run.step("Explain evidence", "running")
-    text = (await llm(run, "report", REPORT_SYSTEM, json.dumps(summary, indent=1))).strip()
-    text = text.replace(" \u2014 ", ", ").replace("\u2014", ", ")
+    text = _plain((await llm(run, "report", REPORT_SYSTEM, json.dumps(summary, indent=1))).strip())
     run.step("Explain evidence", "ok", text=text)
     return text
 
