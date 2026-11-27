@@ -68,13 +68,15 @@ async def _docker(*args):
     return p.returncode, out.decode(errors="replace").strip()
 
 
-async def run(input_dir, script, workdir, timeout, emit):
-    """Run `script` against `input_dir`; `emit(event)` gets live events. Returns the result dict."""
+async def run(input_dir, script, workdir, timeout, emit, files=None):
+    """Run `script` against `input_dir`; `emit(event)` gets live events. Returns the result dict.
+
+    `files` ({name: text}) are extra job files, mounted read-only at /job/<name> next to restore.sh."""
     workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=True)
-    (workdir / "restore.sh").write_text(script)
-    (workdir / "wrapper.sh").write_text(WRAPPER)
-    for f in ("restore.sh", "wrapper.sh"):
+    job = {"restore.sh": script, "wrapper.sh": WRAPPER, **(files or {})}
+    for f, text in job.items():
+        (workdir / f).write_text(text)
         (workdir / f).chmod(0o644)
     name = f"restorer-{uuid.uuid4().hex[:10]}"
     cidfile = workdir / "cid"
@@ -83,8 +85,7 @@ async def run(input_dir, script, workdir, timeout, emit):
             "--pids-limit", PIDS, "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
             "--user", "65534:65534", "--tmpfs", "/work:rw,exec,size=64m,uid=65534",
             "--tmpfs", "/tmp:rw,size=16m", "-v", f"{Path(input_dir).resolve()}:/input/backup:ro",
-            "-v", f"{workdir.resolve()}/restore.sh:/job/restore.sh:ro",
-            "-v", f"{workdir.resolve()}/wrapper.sh:/job/wrapper.sh:ro",
+            *(a for f in job for a in ("-v", f"{workdir.resolve()}/{f}:/job/{f}:ro")),
             IMAGE, "sh", "/job/wrapper.sh"]
     t0 = time.monotonic()
     proc = await asyncio.create_subprocess_exec(*DOCKER, *args, stdout=asyncio.subprocess.PIPE,

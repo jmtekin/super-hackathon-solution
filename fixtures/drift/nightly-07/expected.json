@@ -1,0 +1,102 @@
+{
+  "row_counts": {
+    "customers": 213,
+    "orders": 1548
+  },
+  "row_hashes": {
+    "customers": {
+      "1": "16d0c8f1d74e53570fef37f2bbe31cd2c1539c723f8eefdc80f297bfc8134fa5",
+      "54": "078ec64776d85c1648207c2b52010bde7b462ec5053bf25103236a291b55cf5e",
+      "107": "661e60980fa12c4d2ea2a75b6e3b823dac4a39d0cd61673983fb6d75e9efa779",
+      "160": "bcca809f9fd64692683ff4f33d1927f9a80806c91d4e13b7d74256ea256e6fc5",
+      "213": "2349a182542316dc37e20ab3e54672acad067a0550fa46bf128554a3229499d5"
+    },
+    "orders": {
+      "1": "e72b208c837dacc414d71325eeb26dc34ff849e0367c3d0dd283a65d0738c22a",
+      "425": "cabdf2dd7a607c0fa6e0cf20e0eb5cc26faf8b7df5ea1307b6d177f7bbf2de30",
+      "861": "a568fd27eddfb03fbfc0a3abd8a16bf11100527abb7499e5730147b915bc1301",
+      "1301": "d3febd98a07d7a04ab18f6b985321506b0a0a122c10046c6e0447e4093143921",
+      "1729": "35804007230d45ad41656c3044988c3d32d7a3382430216af67f7029954943f6"
+    }
+  },
+  "schema": {
+    "customers": [
+      [
+        "id",
+        "INTEGER",
+        false
+      ],
+      [
+        "email",
+        "TEXT",
+        true
+      ],
+      [
+        "first_name",
+        "TEXT",
+        true
+      ],
+      [
+        "last_name",
+        "TEXT",
+        true
+      ],
+      [
+        "created_at",
+        "TEXT",
+        true
+      ]
+    ],
+    "orders": [
+      [
+        "id",
+        "INTEGER",
+        false
+      ],
+      [
+        "customer_id",
+        "INTEGER",
+        true
+      ],
+      [
+        "sku",
+        "TEXT",
+        true
+      ],
+      [
+        "total_cents",
+        "INTEGER",
+        true
+      ],
+      [
+        "currency",
+        "TEXT",
+        true
+      ],
+      [
+        "status",
+        "TEXT",
+        true
+      ],
+      [
+        "created_at",
+        "TEXT",
+        true
+      ]
+    ]
+  },
+  "smoke": {
+    "sql": "SELECT c.first_name || ' ' || c.last_name, c.email, COUNT(o.id), SUM(o.total_cents) FROM customers c JOIN orders o ON o.customer_id = c.id WHERE c.id = 42 GROUP BY c.id",
+    "expect": [
+      "Lina Saleh",
+      "lina.saleh42@example.se",
+      10,
+      2663470
+    ]
+  },
+  "table_digests": {
+    "customers": "2f7cdaa4a3db3a99fa699375c53829b068708f47e6756a1a99e88577e51d6624",
+    "orders": "98945ada13a997ce98b4dc6a5763c2792206d21cbb6457ebe5006bcfe4966e48"
+  },
+  "user_version": 2
+}

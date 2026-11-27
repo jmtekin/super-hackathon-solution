@@ -1,0 +1,103 @@
+{
+  "row_counts": {
+    "customers": 222,
+    "orders": 1696
+  },
+  "row_hashes": {
+    "customers": {
+      "1": "16d0c8f1d74e53570fef37f2bbe31cd2c1539c723f8eefdc80f297bfc8134fa5",
+      "56": "79fb7d189cf5677f77abc237db0d2e8fd328421afb9b3b0ca19336d1ba8738ce",
+      "111": "d1c5d2552dbb8cb8a5f63aee6f8219bb5972a4dfc565ce32fd069310432b7602",
+      "166": "b1973bd5dfde5c512d4eba9daf599bdd86466c1b5c130a5b1ad3757144f878b2",
+      "221": "4b0a300de02d809bae2e32f74b00ed591d02cd5b0b027bfcc2dcb534d6e5c6aa",
+      "222": "9c60f22cd7f0a5fc1570e72405f683ab4541177b604b7d1044b3e015c2e31dae"
+    },
+    "orders": {
+      "1": "e72b208c837dacc414d71325eeb26dc34ff849e0367c3d0dd283a65d0738c22a",
+      "450": "ea2b4216bffd32d97ed0dcc729a4b321569271d443dcc18b6f78de1f147f7d20",
+      "914": "983ba8168a9140cfbe17cb90f9d78d97fb6c00ae724cf2cb7960caf54d760af2",
+      "1372": "55cae1b9510191023a6cd1539c486d2b1d4956fd2bcb0f3b7b6a7899794420ec",
+      "1820": "52b8fceea1a06e10a71199fa36bf6d9da187e3a745193820d94ea4f59ab47fd2"
+    }
+  },
+  "schema": {
+    "customers": [
+      [
+        "id",
+        "INTEGER",
+        false
+      ],
+      [
+        "email",
+        "TEXT",
+        true
+      ],
+      [
+        "first_name",
+        "TEXT",
+        true
+      ],
+      [
+        "last_name",
+        "TEXT",
+        true
+      ],
+      [
+        "created_at",
+        "TEXT",
+        true
+      ]
+    ],
+    "orders": [
+      [
+        "id",
+        "INTEGER",
+        false
+      ],
+      [
+        "customer_id",
+        "INTEGER",
+        true
+      ],
+      [
+        "sku",
+        "TEXT",
+        true
+      ],
+      [
+        "total_cents",
+        "INTEGER",
+        true
+      ],
+      [
+        "currency",
+        "TEXT",
+        true
+      ],
+      [
+        "status",
+        "TEXT",
+        true
+      ],
+      [
+        "created_at",
+        "TEXT",
+        true
+      ]
+    ]
+  },
+  "smoke": {
+    "sql": "SELECT c.first_name || ' ' || c.last_name, c.email, COUNT(o.id), SUM(o.total_cents) FROM customers c JOIN orders o ON o.customer_id = c.id WHERE c.id = 42 GROUP BY c.id",
+    "expect": [
+      "Lina Saleh",
+      "lina.saleh42@example.se",
+      10,
+      2663470
+    ]
+  },
+  "table_digests": {
+    "customers": "704d4e5e0156bf0f72b545f2f3f787f2a693e2f9b02c0f6c6e28d0719a5ac93b",
+    "orders": "a443d9090ffeb0abd7b5abf9698ee0502932c122cddb665a9c89eab2debce9fd"
+  },
+  "user_version": 2
+}
