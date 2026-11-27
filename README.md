@@ -77,6 +77,38 @@ Fixtures (`fixtures/build.py`, a seeded day-by-day simulation of the company's y
 
 Env vars: `VULTR_INFERENCE_KEY` (required), `RESTORER_HOST` (default 127.0.0.1; install.sh sets 0.0.0.0), `RESTORER_PORT` (default 8530), `RESTORER_DOCKER` (default `docker`), `RESTORER_IMAGE` (default `restorer-sandbox:1`).
 
+## Runtime API
+
+RestoreGuard (`projects/restoreguard`, next to this repo, imports its LLM helpers) is the always-on runtime: it watches the ERP's
+backups and proves each one on every app version. JSON only; paths are relative (base = wherever it is served, here
+`http://127.0.0.1:8600`). Shapes are stable; fields are only ever added.
+
+| Method + path | Returns |
+|---|---|
+| `GET /health` | `{ok, backups, queued, app_versions: ["1.0.0", ...]}` |
+| `GET /api/backups` | list, newest first: `{id, file, status, reason, created_at, schema_version, app_version, bytes, found_at, started_at, finished_at, elapsed_s, checks_passed, checks_total, cells: {<app_version>: {state, reason, elapsed_s}}}` |
+| `GET /api/backups/{id}` | the list fields plus `manifest` (as the backup job wrote it), `cells: {<app_version>: cell}`, `logs: {<app_version>: [event]}`, `certificate` |
+| `GET /api/backups/{id}/certificate.json` | DR Readiness Certificate (same format as BackupAirlock's matrix proof, `proof_sha256` seals it); 409 until finished |
+| `GET /api/backups/{id}/bridges/{name}` | a bridge migration's SQL (text/plain) |
+| `POST /api/backups/{id}/rerun` | `{queued: id}`; 409 while queued/running |
+| `GET /api/matrix` | `{app_versions: [...], backups: [{id, schema_version, status, cells: [{app_version, state, reason}]}]}` (cells in `app_versions` order) |
+| `GET /api/stream` | SSE, one JSON event per `data:` line (below) |
+
+`status` of a backup: `queued`, `running`, `dr_ready` (restorable on at least one app version), `not_restorable`, `quarantined`,
+`failed` (unreadable manifest; never ran). `state` of a cell: `running`, `native` (restored, app runs on it as is, including the
+app's own forward migrations), `healed` (a GLM bridge migration made it run, checks pass), `failed`, `quarantined` (containment
+signal or static-scan finding), `not_run`.
+
+A cell: `{cell: "<backup>@<app_version>", backup, app_version, state, reason, checks: [{check, pass, detail}], timings: {<step>: s},
+signals: ["network"|"rootfs"|"honey"|"memory"|"timeout"], static_scan: [{line, text, why}], bridges: [{name, round, sha256, sql,
+changes, failure?}], llm_calls: [{purpose, model, latency_s, tokens, fallback}], elapsed_s}`.
+
+Events (SSE and `logs`), all with `cell, backup, app_version, t` (s since the cell started) except `backup`:
+`{type: "check", check, pass, detail}`, `{type: "sandbox", phase: "started"|"destroyed"|"NOT DESTROYED", name, policy?}`,
+`{type: "log", stream, line}`, `{type: "policy", signal, event, detail}`, `{type: "llm", phase: "start"|"done"|"error", purpose,
+model, ...}`, `{type: "bridge", round, name, changes}`, `{type: "verdict", state, reason}`, and per backup
+`{type: "backup", id, status, reason}`.
+
 ## Limits (honest)
 
 - Sandbox is hardened Docker, not a microVM: the build host has no KVM. On a VM with nested virtualisation, swap `sandbox.py`'s `docker run` for Microsandbox/Firecracker; nothing else changes.
