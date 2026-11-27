@@ -674,7 +674,7 @@ function peekPlace() {
   if (!w || !m) return;
   w.style.left = m.style.left; w.style.translate = "";
   const r = $("#peek")?.getBoundingClientRect();
-  if (r) { const dx = Math.max(8 - r.left, 0) + Math.min(innerWidth - 8 - r.right, 0); if (dx) w.style.translate = `${dx}px 0`; }
+  if (r) { const dx = Math.max(8 - r.left, 0) + Math.min(document.documentElement.clientWidth - 8 - r.right, 0); if (dx) w.style.translate = `${dx}px 0`; }
 }
 // The cell to show: the healed one tells the most, then a native pass, else whatever ran.
 const ovCell = d => { const cs = Object.values(d?.cells || {}); return cs.find(c => c.state === "healed") || cs.find(c => c.state === "native") || cs[0]; };
@@ -922,7 +922,7 @@ function ovLabels() {
     else kept.push(r);
   }
   // A centred label near either edge is pulled back inside the page.
-  for (const l of ls) { const r = boxes.get(l), dx = Math.max(4 - r.left, 0) + Math.min(innerWidth - 4 - r.right, 0); if (dx) l.style.translate = `${dx}px 0`; }
+  for (const l of ls) { const r = boxes.get(l), dx = Math.max(4 - r.left, 0) + Math.min(document.documentElement.clientWidth - 4 - r.right, 0); if (dx) l.style.translate = `${dx}px 0`; }
 }
 addEventListener("resize", ovLabels);
 // A running log follows its newest line.
