@@ -116,6 +116,28 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
 .brand{display:flex;align-items:baseline;gap:var(--s3);padding:var(--s4) var(--s7);border-bottom:1px solid var(--line)}
 .brand b{font-size:16px;font-weight:700;letter-spacing:-.01em}
 .brand span{font-size:13px;color:var(--ink-2)}
+/* Run (Jonas 16:17): one primary action, three one-click stories beside it, the parameters in a small panel under it */
+.brand{position:relative}
+.ctl{margin-left:auto;align-self:center;display:flex;align-items:center;gap:var(--s3)}
+.scen{display:flex;gap:2px;padding:2px;border:1px solid var(--line);border-radius:4px}
+.scen button{height:28px;padding:0 var(--s3);border-radius:3px;font-size:13px;color:var(--ink-2);white-space:nowrap}
+.scen button:hover:not(:disabled){background:var(--hover);color:var(--ink)}
+.scen button[aria-pressed=true]{background:var(--selected);color:var(--ink)}
+.scen button:disabled:not([aria-pressed=true]),.ctl .quiet:disabled{opacity:.45;cursor:default}
+.ctl .quiet{height:32px;padding:0 var(--s2);font-size:13px;color:var(--ink-2)}
+.ctl .quiet:hover:not(:disabled){color:var(--ink)}
+.brand .msg{font-size:12px;color:var(--ink-2);max-width:360px;text-align:right}
+.brand .msg.err{color:var(--warn)}
+.runp{position:absolute;right:var(--s7);top:calc(100% + var(--s2));z-index:5;width:400px;max-height:calc(100dvh - 96px);overflow:auto;display:grid;gap:var(--s4);
+  padding:var(--s4);background:var(--surface);border:1px solid var(--line-2);border-radius:4px;box-shadow:0 12px 32px rgba(0,0,0,.45)}
+.runp h3{font-size:12px;line-height:16px;font-weight:600;color:var(--ink-2);margin-bottom:var(--s1)}
+.runp label{display:flex;align-items:center;gap:var(--s2);font-size:13px;line-height:28px;cursor:pointer}
+.runp label i{width:8px;height:8px;border-radius:50%;background:var(--c);flex-shrink:0}
+.runp label small{margin-left:auto;padding-left:var(--s3);font-size:12px;color:var(--strong);white-space:nowrap}
+.runp .bks{max-height:196px;overflow:auto;margin-right:calc(-1 * var(--s2));padding-right:var(--s2)}
+.runp .opts{display:grid;grid-template-columns:1fr 1fr;column-gap:var(--s4)}
+.runp input{accent-color:var(--accent);margin:0}
+.runp footer{display:flex;align-items:center;justify-content:flex-end;gap:var(--s3);padding-top:var(--s3);border-top:1px solid var(--line)}
 .sum{grid-column:1/-1;display:flex;flex-wrap:wrap;column-gap:var(--s5);row-gap:var(--s1);margin-top:calc(var(--s3) - var(--s5));font-size:13px;color:var(--ink-2)}
 .sum strong{color:var(--ink);font-weight:600}
 .dt{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);grid-template-rows:auto auto minmax(0,1fr);column-gap:var(--s6);row-gap:var(--s5);padding:var(--s6) var(--s7) var(--s5);min-height:0}
@@ -222,6 +244,15 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
   .tl{margin:0 var(--s5)}
   .brand{padding:var(--s3) var(--s4)}
   .brand span{display:none}
+  .brand{flex-wrap:wrap;row-gap:var(--s3)}
+  .ctl{display:contents}
+  .ctl .quiet{order:1;margin-left:auto}
+  .ctl .btn{order:1}
+  .scen{order:2;width:100%}
+  .scen button{flex:1;padding:0 var(--s1);font-size:12px}
+  .brand .msg{order:3;width:100%;max-width:none;text-align:left}
+  .brand .msg:empty{display:none}
+  .runp{left:var(--s4);right:var(--s4);width:auto;top:calc(100% + var(--s1))}
   .sum{margin-top:var(--s2)}
 }
 @media print{
@@ -315,7 +346,8 @@ async function rgLoad() {
 const rgTargets = b => b.kind === "frappe" && rg.frappe ? [rg.frappe] : rg.versions;
 async function rgDetail(id, force) {
   const s = rg.summaries.find(b => b.id === id);
-  if (!s || (!force && rg.details[id] && rg.details[id].status === s.status)) return;
+  const d = rg.details[id];
+  if (!s || (!force && d && d.status === s.status && d.finished_at === s.finished_at)) return;
   rg.details[id] = await getJSON(`rg/api/backups/${encodeURIComponent(id)}`);
 }
 function rgCell(id, v) {
@@ -415,7 +447,8 @@ function rgRefresh() {
   clearTimeout(rgTimer);
   rgTimer = setTimeout(async () => {
     rg.summaries = await getJSON("rg/api/backups");
-    if (rg.sel) await rgDetail(rg.sel.b);
+    if (view === "overview") await Promise.all(rg.summaries.map(b => rgDetail(b.id).catch(() => {})));
+    else if (rg.sel) await rgDetail(rg.sel.b);
     if (view !== "drill") draw();
   }, 300);
 }
@@ -724,13 +757,97 @@ function ovDetail(b) {
   const [c, word] = OV[ovState(b)] || ["c-idle", b.status];
   return `<header><h2 title="${esc(b.file)}">${esc(bkName(b))}</h2><span class="when">${esc(clock(b.created_at))}</span><span class="when">from ${esc(bkSource(b))}</span><div class="st ${c}"><i></i><b>${esc(word)}</b></div></header>${ovSum(b)}${ovChecks(b)}${ovTerm(b)}`;
 }
+/* Run: the parameters, and three stories that are each one real run of the newest ERP backup */
+const runP = {open: false, bks: null, targets: null, fault: "", heal: true, scen: null, msg: "", err: false};
+const RUN_FAULTS = [["", "None"], ["bitflip", "Bit flip"], ["truncated", "Truncate"], ["rows-deleted", "Delete rows"], ["poisoned", "Poisoned"]];
+const SCENARIOS = [
+  {key: "tonight", name: "Tonight's backup", story: "The newest ERP backup is restored into test.local and checked",
+   body: b => ({backups: [b.id], targets: ["test.local"], heal: true})},
+  {key: "upgrade", name: "App upgraded", story: "The same backup on the upgraded app in test2.local: the fields moved, GLM heals it",
+   body: b => ({backups: [b.id], targets: ["test2.local"], heal: true})},
+  {key: "bad", name: "Bad backup arrives", story: "A poisoned copy of it arrives and is blocked; the latest restorable stays on the good one",
+   body: b => ({backups: [b.id], targets: ["test.local"], fault: "poisoned", heal: true})},
+];
+const busy = () => rg.summaries.some(b => ["queued", "running"].includes(b.status));
+const newestReal = () => { const ss = ovList().filter(b => !faultOf(b)); return ss.filter(b => b.kind === "frappe").at(-1) || ss.at(-1); };
+function runTargets() {
+  const fr = rg.frappe || [], v = {"test.local": "ERP app v1", "test2.local": "ERP app v2"};
+  return [...fr.map(t => [t, t, v[t] || ""]), ...rg.versions.map(t => [t, `Stand-in ${t}`, ""])];
+}
+function runPanel() {
+  if (!runP.open) return "";
+  const ss = ovList().slice().reverse(), ts = runTargets();
+  runP.bks ||= new Set([newestReal()?.id].filter(Boolean));
+  runP.targets ||= new Set(ts.map(t => t[0]));
+  return `<div class="runp" id="runp" role="dialog" aria-label="Run parameters">
+    <section><h3>Backups to check</h3><div class="bks">${ss.map(b => { const [c] = OV[ovState(b)] || ["c-idle"];
+      return `<label class="${c}"><input type="checkbox" name="bk" value="${esc(b.id)}"${runP.bks.has(b.id) ? " checked" : ""}><i></i>${esc(bkName(b))}<small>${esc(clock(b.created_at))}</small></label>`; }).join("")}</div></section>
+    <section><h3>Restore into</h3><div class="opts">${ts.map(([id, name, sub]) =>
+      `<label title="${esc(sub)}"><input type="checkbox" name="tg" value="${esc(id)}"${runP.targets.has(id) ? " checked" : ""}>${esc(name)}${sub ? `<small>${esc(sub)}</small>` : ""}</label>`).join("")}</div></section>
+    <section><h3>Inject a fault</h3><div class="opts">${RUN_FAULTS.map(([id, name]) =>
+      `<label><input type="radio" name="fault" value="${id}"${runP.fault === id ? " checked" : ""}>${name}</label>`).join("")}</div></section>
+    <section><label><input type="checkbox" name="heal"${runP.heal ? " checked" : ""}>Heal schema drift with AI (GLM on Vultr)</label></section>
+    <footer><button class="btn quiet" id="runp-x">Cancel</button><button class="btn primary" id="runp-go"${busy() ? " disabled" : ""}>Start run</button></footer></div>`;
+}
+function runCtl() {
+  const b = busy();
+  if (!b) runP.scen = null;
+  return `<div class="ctl"><span class="msg${runP.err ? " err" : ""}" id="msg" role="status">${esc(runP.msg)}</span>
+    <div class="scen" role="group" aria-label="Demo scenarios">${SCENARIOS.map(x => `<button data-scen="${x.key}" title="${esc(x.story)}" aria-pressed="${runP.scen === x.key}"${b ? " disabled" : ""}>${esc(x.name)}</button>`).join("")}</div>
+    <button class="quiet" id="reset" title="Remove the copies runs made and put back the results they replaced"${b ? " disabled" : ""}>Reset</button>
+    <button class="btn primary" id="runbtn" aria-expanded="${runP.open}"${b ? " disabled" : ""}>${b ? "Running" : "Run"}</button></div>${runPanel()}`;
+}
+const runMsg = (t, err) => { runP.msg = t || ""; runP.err = !!err; const m = $("#msg"); if (m) { m.textContent = runP.msg; m.classList.toggle("err", runP.err); } };
+async function startRun(body, scen) {
+  runMsg("Starting");
+  const r = await fetch("rg/api/runs", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  if (!r.ok) return runMsg(`Not started: ${await why(r)}`, true);
+  const {queued} = await r.json();
+  runP.open = false; runP.scen = scen || null;
+  ovSel.id = queued[0];
+  runMsg("");
+  rg.summaries = await getJSON("rg/api/backups");
+  draw();
+}
+function bindRun() {
+  $("#runbtn")?.addEventListener("click", () => { runP.open = !runP.open; draw(); });
+  $("#runp-x")?.addEventListener("click", () => { runP.open = false; draw(); });
+  const p = $("#runp");
+  p?.addEventListener("change", e => {
+    const t = e.target, set = {bk: runP.bks, tg: runP.targets}[t.name];
+    if (set) t.checked ? set.add(t.value) : set.delete(t.value);
+    if (t.name === "fault") runP.fault = t.value;
+    if (t.name === "heal") runP.heal = t.checked;
+  });
+  $("#runp-go")?.addEventListener("click", () => {
+    if (!runP.bks.size) return runMsg("Pick at least one backup", true);
+    if (!runP.targets.size) return runMsg("Pick at least one place to restore into", true);
+    startRun({backups: [...runP.bks], targets: [...runP.targets], fault: runP.fault || null, heal: runP.heal});
+  });
+  document.querySelectorAll("[data-scen]").forEach(el => el.onclick = () => {
+    const x = SCENARIOS.find(x => x.key === el.dataset.scen), b = newestReal();
+    if (b) startRun(x.body(b), x.key); else runMsg("No ERP backup to run on yet", true);
+  });
+  $("#reset")?.addEventListener("click", async () => {
+    runMsg("Resetting");
+    const r = await fetch("rg/api/runs/reset", {method: "POST"});
+    if (!r.ok) return runMsg(`Not reset: ${await why(r)}`, true);
+    const {restored} = await r.json();
+    rg.summaries = await getJSON("rg/api/backups");
+    await Promise.all(restored.map(id => rgDetail(id, true).catch(() => {})));
+    ovSel.id = null; runMsg(""); draw();
+  });
+}
+addEventListener("keydown", e => { if (e.key === "Escape" && runP.open) { runP.open = false; draw(); $("#runbtn")?.focus(); } });
+addEventListener("pointerdown", e => { if (runP.open && !e.target.closest?.("#runp, #runbtn")) { runP.open = false; draw(); } });
+
 function ovView() {
   const ss = ovList();
   if (!ss.length) return "";
   const latest = ss.filter(b => b.status === "dr_ready").at(-1);
   const sel = ss.find(b => b.id === ovSel.id) || ss.at(-1);
   ovSel.id = sel.id;
-  return `<div class="ov"><div class="brand"><b>BackupAirlock</b><span>Every backup restored into a sandbox, checked, and healed when the schema moved</span></div><div class="dt" id="dt">${ovDetail(sel)}</div>
+  return `<div class="ov"><div class="brand"><b>BackupAirlock</b><span>Every backup restored into a sandbox, checked, and healed when the schema moved</span>${runCtl()}</div><div class="dt" id="dt">${ovDetail(sel)}</div>
     <div class="band"><div class="tl">${ss.map((b, i) => { const [c, word, mod] = OV[ovState(b)] || ["c-idle", b.status, "hollow"];
       return `<button class="mk ${c}${b === latest ? " latest" : ""}" data-id="${esc(b.id)}" style="left:${ss.length > 1 ? i / (ss.length - 1) * 100 : 50}%"
         aria-pressed="${b === sel}" aria-label="${esc(bkName(b))}, ${esc(clock(b.created_at))}, from ${esc(bkSource(b))}: ${esc(word)}"><i class="${mod || ""}"></i></button>`; }).join("")}
@@ -866,6 +983,7 @@ function matrixCells(r, cols, sel, width) {
     : cols.map((c, i) => cell(xs[i], c, c.label)).join("");
 }
 function bind() {
+  bindRun();
   document.querySelectorAll(".mk").forEach(el => { el.onfocus = el.onclick = () => ovPick(el.dataset.id); });
   document.querySelectorAll(".cell").forEach(el => el.onclick = async () => {
     const s = {b: el.dataset.b, v: el.dataset.v};
