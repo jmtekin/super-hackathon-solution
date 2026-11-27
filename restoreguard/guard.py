@@ -137,6 +137,10 @@ class Cell:
         self.events.append(ev)
         self._emit(ev)
 
+    def step(self, name):
+        """What the cell is doing now, for the console's step line; checks still say what passed."""
+        self.emit({"type": "step", "step": name})
+
     def check(self, name, ok, detail=""):
         self.checks.append({"check": name, "pass": bool(ok), "detail": detail})
         self.emit({"type": "check", "check": name, "pass": bool(ok), "detail": detail})
@@ -164,6 +168,48 @@ async def _proc(*args, stdin=None, timeout=60):
         await p.wait()
         return "timeout", b"", b"timeout"
     return p.returncode, out, err
+
+
+CREDENTIAL = re.compile(r"passw|secret|token|api[_-]?key", re.I)
+
+
+async def _stream(*args, on_line, stdin=None, timeout=60):
+    """Like _proc for a long command whose output the console shows while it runs: stdout and stderr merged,
+    each line (a \\r progress redraw counts as one) handed to on_line as it arrives, a line that may name a
+    credential withheld. Returns (rc, last non-empty line)."""
+    p = await asyncio.create_subprocess_exec(*args, stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
+                                             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+    last = ""
+
+    def line(raw):
+        nonlocal last
+        text = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", raw.decode(errors="replace")).strip()
+        if text:
+            last = "(line withheld: may name a credential)" if CREDENTIAL.search(text) else text[:2000]
+            on_line(last)
+
+    async def pump():
+        if stdin is not None:
+            try:
+                p.stdin.write(stdin)
+                await p.stdin.drain()
+                p.stdin.close()
+            except (BrokenPipeError, ConnectionResetError):
+                pass  # it exited without reading its input: the exit code says why
+        buf = b""
+        while chunk := await p.stdout.read(4096):
+            *done, buf = re.split(rb"[\r\n]", buf + chunk)
+            for raw in done:
+                line(raw)
+        line(buf)
+        return await p.wait()
+
+    try:
+        return await asyncio.wait_for(pump(), timeout), last
+    except asyncio.TimeoutError:
+        p.kill()
+        await p.wait()
+        return "timeout", last or "timeout"
 
 
 def docker(*args, **kw):
@@ -322,12 +368,14 @@ def _timed(cell, name, t):
 
 async def _cell(cell):
     m, b = cell.backup["manifest"], cell.backup
+    cell.step("Verify the file")
     t = time.monotonic()
     digest = await asyncio.to_thread(sha256_file, b["path"])
     _timed(cell, "checksum", t)
     if not cell.check("sha256 matches manifest", digest == m["sha256"], f"file {digest[:16]}, manifest {m['sha256'][:16]}"):
         cell.state, cell.reason = "failed", "checksum mismatch: the dump is not the file the backup job wrote"
         return
+    cell.step("Start the sandbox")
     async with Sandbox(cell) as sb:
         t = time.monotonic()
         rc, cell.findings, err = await sb.scan()
@@ -338,6 +386,7 @@ async def _cell(cell):
         if rc != 0:
             cell.state, cell.reason = "failed", f"dump unreadable: {airlock._last_line(err)}"
             return
+        cell.step("Restore into the sandbox")
         t = time.monotonic()
         await sb.exec("createdb", "-h", "/var/run/postgresql", "-U", "postgres", "restored")
         rc, _, err = await sb.exec("pg_restore", "--exit-on-error", "--no-owner", "-h", "/var/run/postgresql",
@@ -347,6 +396,7 @@ async def _cell(cell):
         if not cell.check("restore completes", rc == 0, airlock._last_line(err)):
             cell.state, cell.reason = "failed", f"restore failed: {airlock._last_line(err)}"
             return
+        cell.step("Check the restored data")
         if not await _contract(cell, sb, "after restore"):
             return
         await _boot_and_bridge(cell, sb)
@@ -384,6 +434,7 @@ async def _contract(cell, sb, when, skip_counts=()):
 async def _app_probe(cell, sb, when):
     """Start (or restart) the app on the restored db; returns (ok, error text)."""
     a = cell.app
+    cell.step(f"Start app {a['version']} on it ({when})")
     await docker("rm", "-f", sb.app_name)
     t = time.monotonic()
     rc, _, err = await docker("run", "-d", "--name", sb.app_name, "--network", f"container:{sb.name}",
@@ -462,6 +513,7 @@ async def _boot_and_bridge(cell, sb):
     prompt = (f"Backup schema (v{cell.backup['manifest']['schema_version']}, restored now):\n{current[:12000]}\n\n"
               f"App {cell.app['version']} expects schema v{cell.app['schema']}; its migrations, in order:\n{target[:8000]}\n\n"
               f"Sample customers rows: {sample[:1000]}\n\nApp error: {error}")
+    cell.step("Heal: the model writes a schema bridge")
     reply = await airlock.llm(cell, "bridge", BRIDGE_SYSTEM, prompt)
     for rnd in range(1, MAX_BRIDGE_ROUNDS + 1):
         sql = airlock._script(reply)

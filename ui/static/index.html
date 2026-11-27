@@ -5,28 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BackupAirlock</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ccircle cx=%278%27 cy=%278%27 r=%276%27 fill=%27%233fb950%27/%3E%3C/svg%3E">
+<link rel="stylesheet" href="airlock.css">
 <style>
-/* Console v7 (one view: timeline at the bottom, checks above; docs/design/first-impression/README.md) on the v5 system. Colour: design/COLOR.md (Radix slate 12-step neutrals, state hues only on marks, links and the one danger word).
-   Spacing: design/SPACING.md (4 8 12 16 24 32 48; inside a group < between groups < between regions).
-   Type 12 / 13 / 14 / 16 / 20. */
-:root{
-  --bg:#111113;--surface:#18191b;--hover:#272a2d;--selected:#2e3135;
-  --line:#363a3f;--line-2:#43484e;--strong:#5a6169;--ink:#edeef0;--ink-2:#c4c8ce;
-  --ok:#3fb950;--heal:#6cb6a8;--warn:#d29922;--bad:#ff9592;--accent:#70b8ff;
-  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;--s7:48px;
-  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  --mono:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
-}
-*{box-sizing:border-box;margin:0;padding:0}
-[hidden]{display:none!important}
-body{background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
-a{color:var(--accent);text-decoration:none}
-a:hover{text-decoration:underline;text-underline-offset:3px}
-button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
-:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* Console v8 (one view: timeline at the bottom, checks above; docs/design/first-impression/README.md). Tokens, type, top bar, panels, buttons: airlock.css (docs/design/v8/README.md). */
 .mono{font-family:var(--mono);font-size:12px}
 .muted{color:var(--ink-2)}
-.page{max-width:1440px;margin:0 auto;padding:var(--s5) var(--s7) var(--s7)}
 
 /* header */
 .bar{display:flex;align-items:center;gap:var(--s5);height:40px}
@@ -43,10 +26,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 h1{font-size:20px;line-height:28px;font-weight:600;margin-top:var(--s1)}
 h1 em{font-style:normal;color:var(--bad)}
 .actions{display:flex;gap:var(--s4);align-items:center;flex-shrink:0;font-size:13px}
-.btn{height:32px;padding:0 var(--s3);border-radius:3px;font-size:13px;font-weight:600;line-height:30px;border:1px solid var(--line-2);color:var(--ink);white-space:nowrap;display:inline-block}
-.btn.primary{background:var(--selected);border-color:var(--strong)}
-.btn:disabled{opacity:.45;cursor:default}
-.btn:hover{text-decoration:none;border-color:var(--strong);background:var(--hover)}
 .note{font-size:12px;color:var(--ink-2);margin-top:var(--s2)}
 .note:empty{display:none}
 
@@ -65,7 +44,7 @@ h1 em{font-style:normal;color:var(--bad)}
 .cell:hover{background:var(--hover)}
 .cell[aria-pressed=true]{background:var(--selected);box-shadow:inset 2px 0 0 var(--strong)}
 .st{display:flex;align-items:center;gap:var(--s2);font-size:13px;font-weight:600;line-height:20px}
-.st i{width:8px;height:8px;border-radius:1px;flex-shrink:0;background:var(--c)}
+.st i{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--c)}
 .st i.hollow{background:none;box-shadow:inset 0 0 0 1.5px var(--c)}
 .st b{font-weight:600}
 .st.c-bad b{color:var(--bad)}
@@ -113,23 +92,20 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
 /* the one view (Jonas 15:35-15:36): checks of the selected backup above, the timeline of backups along the bottom, nothing else */
 .page.full{max-width:none;padding:0}
 .ov{height:100vh;height:100dvh;display:grid;grid-template-rows:auto minmax(0,1fr) auto}
-.brand{display:flex;align-items:baseline;gap:var(--s3);padding:var(--s4) var(--s7);border-bottom:1px solid var(--line)}
-.brand b{font-size:16px;font-weight:700;letter-spacing:-.01em}
-.brand span{font-size:13px;color:var(--ink-2)}
 /* Run (Jonas 16:17): one primary action, three one-click stories beside it, the parameters in a small panel under it */
-.brand{position:relative}
 .ctl{margin-left:auto;align-self:center;display:flex;align-items:center;gap:var(--s3)}
-.scen{display:flex;gap:2px;padding:2px;border:1px solid var(--line);border-radius:4px}
-.scen button{height:28px;padding:0 var(--s3);border-radius:3px;font-size:13px;color:var(--ink-2);white-space:nowrap}
+.scen{display:flex;gap:2px;padding:2px;background:var(--surface);box-shadow:inset 0 0 0 1px var(--line);border-radius:8px}
+.scen button{height:28px;padding:0 var(--s3);border-radius:var(--r1);font-size:13px;font-weight:500;color:var(--ink-2);white-space:nowrap}
 .scen button:hover:not(:disabled){background:var(--hover);color:var(--ink)}
 .scen button[aria-pressed=true]{background:var(--selected);color:var(--ink)}
 .scen button:disabled:not([aria-pressed=true]),.ctl .quiet:disabled{opacity:.45;cursor:default}
 .ctl .quiet{height:32px;padding:0 var(--s2);font-size:13px;color:var(--ink-2)}
 .ctl .quiet:hover:not(:disabled){color:var(--ink)}
-.brand .msg{font-size:12px;color:var(--ink-2);max-width:360px;text-align:right}
-.brand .msg.err{color:var(--warn)}
-.runp{position:absolute;right:var(--s7);top:calc(100% + var(--s2));z-index:5;width:400px;max-height:calc(100dvh - 96px);overflow:auto;display:grid;gap:var(--s4);
-  padding:var(--s4);background:var(--surface);border:1px solid var(--line-2);border-radius:4px;box-shadow:0 12px 32px rgba(0,0,0,.45);font-weight:400}
+.appbar.run{padding:0 var(--s6)}
+.appbar .msg{font-size:12px;color:var(--ink-2);max-width:360px;text-align:right}
+.appbar .msg.err{color:var(--warn)}
+.runp{position:absolute;right:var(--s6);top:calc(100% + var(--s2));z-index:5;width:400px;max-height:calc(100dvh - 96px);overflow:auto;display:grid;gap:var(--s4);
+  padding:var(--s4);background:var(--raised);border:1px solid var(--line-2);border-radius:var(--r2);box-shadow:0 16px 40px rgba(0,0,0,.5);font-weight:400}
 .runp h3{font-size:12px;line-height:16px;font-weight:600;color:var(--ink-2);margin-bottom:var(--s1)}
 .runp label{display:flex;align-items:center;gap:var(--s2);font-size:13px;line-height:28px;cursor:pointer}
 .runp label span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -141,27 +117,29 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
 .runp footer{display:flex;align-items:center;justify-content:flex-end;gap:var(--s3);padding-top:var(--s3);border-top:1px solid var(--line)}
 .sum{grid-column:1/-1;display:flex;flex-wrap:wrap;column-gap:var(--s5);row-gap:var(--s1);margin-top:calc(var(--s3) - var(--s5));font-size:13px;color:var(--ink-2)}
 .sum strong{color:var(--ink);font-weight:600}
-.dt{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);grid-template-rows:auto auto minmax(0,1fr);column-gap:var(--s6);row-gap:var(--s5);padding:var(--s6) var(--s7) var(--s5);min-height:0}
+.dt{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);grid-template-rows:auto auto minmax(0,1fr);column-gap:var(--s6);row-gap:var(--s5);padding:var(--s6) var(--s6) var(--s5);min-height:0}
 .dt header{grid-column:1/-1;display:flex;align-items:baseline;flex-wrap:wrap;column-gap:var(--s4);row-gap:var(--s1)}
-.dt h2{font-size:20px;line-height:28px;font-weight:600;overflow-wrap:anywhere}
+.dt h2{font-size:24px;line-height:32px;font-weight:600;letter-spacing:-.02em;overflow-wrap:anywhere}
 .dt .when{font-size:13px;color:var(--ink-2)}
 .ck{display:grid;align-content:start;gap:var(--s5);overflow:auto;min-height:0;padding-right:var(--s2)}
-.ck h3{font-size:13px;line-height:20px;font-weight:600;padding-bottom:var(--s2);border-bottom:1px solid var(--line)}
+.ck h3{font-size:12px;line-height:16px;font-weight:600;color:var(--ink-2);padding-bottom:var(--s2);border-bottom:1px solid var(--line)}
 .ck ul{list-style:none;margin-top:var(--s2)}
-.ck li{display:grid;grid-template-columns:8px minmax(0,1fr) auto;column-gap:var(--s3);align-items:start;font-size:13px;line-height:24px}
-.ck li i{margin-top:8px;width:8px;height:8px;border-radius:50%;background:var(--c)}
+.ck li{display:grid;grid-template-columns:8px minmax(0,1fr) auto;column-gap:var(--s3);align-items:start;font-size:13px;line-height:20px;padding:6px var(--s2);margin:0 calc(-1 * var(--s2));border-radius:var(--r1)}
+.ck li:hover{background:var(--surface)}
+.ck li i{margin-top:6px;width:8px;height:8px;border-radius:50%;background:var(--c)}
 .ck li.skipped i,.ck li.waiting i{background:none;box-shadow:inset 0 0 0 1.5px var(--c)}
 .ck li.skipped span,.ck li.waiting span{color:var(--ink-2)}
-.term{overflow:auto;min-height:0;background:var(--surface);border-radius:3px;padding:var(--s3) var(--s4);font:12px/20px var(--mono);color:var(--ink-2)}
+.term{overflow:auto;min-height:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--r2);box-shadow:var(--panel-shadow);padding:var(--s3) var(--s4);font:12px/20px var(--mono);color:var(--ink-2)}
 .term>div{display:grid;grid-template-columns:48px minmax(0,1fr);column-gap:var(--s3)}
 .term>div>span:last-child{overflow-wrap:anywhere;white-space:pre-wrap}
 .term .t{text-align:right;color:var(--strong)}
 .term .hot{background:var(--hover);box-shadow:0 0 0 4px var(--hover);color:var(--ink)}
 .term .c-bad{color:var(--bad)}
+.term .step{margin-top:var(--s2);color:var(--ink);font-weight:600}
 .term pre{margin:0 0 var(--s1) 60px;font:inherit;color:var(--strong);white-space:pre-wrap;overflow-wrap:anywhere}
 .ck li b{font-size:12px;font-weight:400;color:var(--ink-2)}
 .ck li b span{color:var(--strong);margin-right:var(--s3)}
-.ck li.hot{background:var(--hover);box-shadow:0 0 0 4px var(--hover)}
+.ck li.hot{background:var(--hover)}
 .strip{display:grid;grid-template-columns:auto minmax(0,1fr) auto;column-gap:var(--s3);row-gap:var(--s1);align-items:center;font-size:12px;line-height:16px;color:var(--ink-2)}
 .lane{position:relative;height:16px}
 .lane::before{content:"";position:absolute;left:0;right:0;top:7px;height:2px;background:var(--line)}
@@ -172,9 +150,9 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
 .axis{display:flex;justify-content:space-between;color:var(--strong)}
 .ck li.done b{color:var(--ok)}
 .ck li.fail b,.ck li.blocked b{color:var(--bad);font-weight:600}
-.ck li.blocked i{width:6px;height:6px;margin:9px 1px 0;box-shadow:0 0 0 2px var(--bg),0 0 0 3.5px var(--c)}
+.ck li.blocked i{width:6px;height:6px;margin:7px 1px 0;box-shadow:0 0 0 2px var(--bg),0 0 0 3.5px var(--c)}
 /* one mark per backup, oldest left, evenly spaced; colour = does it restore; a tick over the latest that does */
-.band{--bg:var(--surface);background:var(--bg)}
+.band{--bg:var(--surface);background:var(--bg);border-top:1px solid var(--line)}
 .tl{position:relative;height:168px;margin:0 var(--s7);touch-action:none}
 .tl::before{content:"";position:absolute;left:0;right:0;top:55px;height:2px;background:var(--line)}
 .mk{position:absolute;top:56px;width:44px;height:44px;margin:-22px 0 0 -22px;display:grid;place-items:center}
@@ -194,9 +172,9 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
 .lb.sel span{color:var(--ink-2)}
 .lb.sel b{display:block}
 /* the restored ERP after this backup's restore, floating above its point; a link to that test copy */
-.peekwrap{position:absolute;bottom:calc(100% - 32px);z-index:4;opacity:0;visibility:hidden;transition:opacity .12s ease-out,visibility 0s .12s}
+.peekwrap{position:absolute;width:0;bottom:calc(100% - 32px);z-index:4;opacity:0;visibility:hidden;transition:opacity .12s ease-out,visibility 0s .12s}
 .peekwrap.on{opacity:1;visibility:visible;transition:opacity .12s ease-out}
-.peek{display:block;width:320px;transform:translateX(-50%);background:var(--surface);border:1px solid var(--line-2);border-radius:4px;overflow:hidden;box-shadow:0 12px 32px rgba(0,0,0,.45);color:var(--ink-2);font-size:12px;line-height:16px}
+.peek{display:block;width:320px;transform:translateX(-50%);background:var(--raised);border:1px solid var(--line-2);border-radius:var(--r2);overflow:hidden;box-shadow:0 12px 32px rgba(0,0,0,.45);color:var(--ink-2);font-size:12px;line-height:16px}
 .peek:hover{text-decoration:none;border-color:var(--strong);color:var(--ink)}
 .peek img{display:block;width:100%;height:auto;aspect-ratio:16/10;background:#fff}
 .peek span{display:block;padding:var(--s2) var(--s3)}
@@ -249,17 +227,17 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
   .dt{display:block;overflow:auto;padding:var(--s5) var(--s4) var(--s4)}
   .ck{overflow:visible;margin-top:var(--s5);padding-right:0}
   .term{margin-top:var(--s5);max-height:50vh}
-  .tl{margin:0 var(--s5)}
-  .brand{padding:var(--s3) var(--s4)}
-  .brand span{display:none}
-  .brand{flex-wrap:wrap;row-gap:var(--s3)}
+  .tl{margin:0 40px}
+  .appbar.run{height:auto;flex-wrap:wrap;column-gap:var(--s3);row-gap:var(--s3);padding:var(--s3) var(--s4)}
+  .appbar.run .brand{display:none}
+  .appbar.run .nav a{padding:0 var(--s2)}
   .ctl{display:contents}
-  .ctl .quiet{order:1;margin-left:auto}
+  .ctl .quiet{order:1;margin-left:auto;padding:0 var(--s1)}
   .ctl .btn{order:1}
   .scen{order:2;width:100%}
-  .scen button{flex:1;padding:0 var(--s1);font-size:12px}
-  .brand .msg{order:3;width:100%;max-width:none;text-align:left}
-  .brand .msg:empty{display:none}
+  .scen button{flex:1 1 auto;min-width:0;padding:0 2px;font-size:12px}
+  .appbar .msg{order:3;width:100%;max-width:none;text-align:left}
+  .appbar .msg:empty{display:none}
   .runp{left:var(--s4);right:var(--s4);width:auto;top:calc(100% + var(--s1))}
   .sum{margin-top:var(--s2)}
 }
@@ -340,8 +318,9 @@ function groups(checks) {
 const rg = {summaries: [], versions: [], details: {}, live: {}, sel: null, es: null};
 
 async function rgLoad() {
-  const [list, health] = await Promise.all([getJSON("rg/api/backups"), getJSON("rg/health")]);
+  const [list, health, config] = await Promise.all([getJSON("rg/api/backups"), getJSON("rg/health"), rg.apps ? null : getJSON("rg/api/config").catch(() => null)]);
   rg.summaries = list;
+  if (config) rg.apps = Object.fromEntries(config.targets.map(t => [t.site, t.app]));
   rg.versions = health.app_versions;
   rg.frappe = health.frappe?.restores_into;
   rg.testUrls = health.frappe?.test_urls || {};
@@ -444,13 +423,17 @@ function rgStream() {
     if (!ev.cell) return;
     const L = rg.live[ev.cell] ||= {events: [], state: "running"};
     if (L.done) { L.events = []; L.done = false; }
+    if (!L.events.length) L.at0 = Date.now() - 1000 * (+ev.t || 0);
     L.events.push(ev); L.t = ev.t;
+    if (ev.type === "step") { L.doing = ev.step; L.doingAt = Date.now(); }
     if (ev.type === "check") L.step = ev.check;
     if (ev.type === "bridge") { L.state = "healing"; L.step = `bridge round ${ev.round}`; }
     if (ev.type === "verdict") { L.done = true; L.state = ev.state; L.step = ev.reason; rgRefresh(); }
-    if (view !== "drill") draw();
+    if (view !== "drill") drawSoon();
   };
 }
+// bench can print dozens of lines a second: one redraw per frame.
+const drawSoon = () => { drawSoon.f ||= requestAnimationFrame(() => { drawSoon.f = 0; draw(); }); };
 let rgTimer;
 function rgRefresh() {
   clearTimeout(rgTimer);
@@ -635,7 +618,8 @@ const evText = e => e.type === "check" ? `${e.pass ? "✓" : "✕"} ${e.check}${
   : e.type === "llm" ? `${e.model} ${e.purpose} ${e.phase}${e.latency_s ? `, ${e.latency_s} s` : ""}`
   : e.type === "bridge" ? `bridge ${e.name}, round ${e.round}`
   : e.type === "verdict" ? `verdict: ${e.state}, ${e.reason}`
-  : e.type === "log" ? `${e.stream}: ${e.line}`
+  : e.type === "step" ? e.step
+  : e.type === "log" ? (e.stream ? `${e.stream}: ${e.line}` : e.line)
   : e.event || e.detail || e.type;
 function eventRows(evs, policy) {
   return `<div class="rows ev">${evs.map(e => {
@@ -690,11 +674,16 @@ function peekPlace() {
   if (!w || !m) return;
   w.style.left = m.style.left; w.style.translate = "";
   const r = $("#peek")?.getBoundingClientRect();
-  if (r) { const dx = Math.max(8 - r.left, 0) + Math.min(innerWidth - 8 - r.right, 0); if (dx) w.style.translate = `${dx}px 0`; }
+  if (r) { const dx = Math.max(8 - r.left, 0) + Math.min(document.documentElement.clientWidth - 8 - r.right, 0); if (dx) w.style.translate = `${dx}px 0`; }
 }
 // The cell to show: the healed one tells the most, then a native pass, else whatever ran.
 const ovCell = d => { const cs = Object.values(d?.cells || {}); return cs.find(c => c.state === "healed") || cs.find(c => c.state === "native") || cs[0]; };
 const VERIFY = /^(sha256|dump readable|static scan|a demo\.local backup file name)/i;
+// Version names for the heal story: the app the backup was made on, and the app it is restored into.
+const ERP = {"demo_app 0.0.1": "ERP v1", "demo_app 2.0.0": "ERP v2"};
+const erpName = a => ERP[String(a).match(/demo_app [\d.]+/)?.[0]];
+const appOf = v => erpName(rg.apps?.[v]) || `app ${v}`;
+const backupApp = d => d.kind === "frappe" ? erpName(d.app_version) || "old ERP" : `app ${d.app_version}`;
 const baseName = n => String(n).split(" (")[0].replace(/^rule: /, "");
 // Verify (before restore) and Restore checks by name, each at its final result (a bridge round overrides the native attempt).
 function ovSplit(c) {
@@ -704,34 +693,46 @@ function ovSplit(c) {
 }
 // Every check under Jonas's three terms (15:35 "Verify / Heal / Restore"). A check that a passing backup of the same kind
 // runs but this one never reached is skipped.
-// The stream's events of the shown cell (any cell of the backup before its details exist).
-const ovLive = (b, c) => Object.values(rg.live).find(L => L.events[0]?.backup === b.id && (!c || L.events[0].cell === c.cell));
+// The stream's events of the shown cell; with no cell, the one running now (a backup's cells run one after another).
+const ovLive = (b, c) => { const ls = Object.values(rg.live).filter(L => L.events[0]?.backup === b.id);
+  return c ? ls.find(L => L.events[0].cell === c.cell) : ls.find(L => !L.done) || ls.at(-1); };
 function ovChecks(b) {
   const run = ["running", "queued"].includes(b.status), done = ovCell(rg.details[b.id]);
   // While it runs, the previous run's results would read as this run's: only the stream's checks count.
-  const L = run && ovLive(b, done), evs = L && !L.done ? L.events : [];
+  const L = run && ovLive(b), evs = L && !L.done ? L.events : [];
   const c = run ? {state: "running", checks: evs.filter(e => e.type === "check"), bridges: evs.filter(e => e.type === "bridge")} : done;
   if (!c) return "";
-  const ref = ovSplit(ovCell(rg.details[rg.summaries.find(x => x.kind === b.kind && x.status === "dr_ready")?.id]));
+  // The names to expect: the same app version's cell of the newest restorable backup of this kind.
+  const refD = rg.details[rg.summaries.find(x => x.kind === b.kind && x.status === "dr_ready")?.id];
+  const ref = ovSplit(L && refD?.cells?.[L.events[0].app_version] || ovCell(refD));
   const missing = run ? "waiting" : "skipped";
   const fail = b.status === "quarantined" ? "blocked" : "fail";
   const list = (m, refm) => [...new Set([...refm.keys(), ...m.keys()])].map(n => [n, m.has(n) ? (m.get(n) ? "done" : fail) : missing]);
   const [v, r] = ovSplit(c);
-  const heal = c.state === "healed" || c.bridges.length
-    ? c.checks.filter(k => !k.pass && /\(native\)/.test(k.check)).map(k => [baseName(k.check) + " on the old schema", "fail"])
-        .concat(c.bridges.map((x, i) => [`bridge round ${x.round}`, i < c.bridges.length - 1 ? "fail" : run ? "waiting" : "done"]))
-    : [["schema bridge", b.status === "dr_ready" ? "skipped" : missing]];
   const C = {done: "c-ok", fail: "c-bad", blocked: "c-bad", skipped: "c-idle", waiting: "c-idle"};
   // When each check ran, from the run log: its last result, a native failure's first, a bridge round's event.
   const log = run ? evs : rg.details[b.id]?.logs?.[Object.keys(rg.details[b.id].cells).find(k => rg.details[b.id].cells[k] === c)] || [], at = new Map();
+  // Healed (Jonas 17:10): the old backup failing on the new app first, then the bridge, then the same backup passing on it.
+  const d = rg.details[b.id], to = appOf(c.app_version ?? L?.events[0]?.app_version), model = c.llm_calls?.find(x => x.purpose === "bridge")?.model || "GLM";
+  const after = c.checks.filter(k => !/\(native\)/.test(k.check));
+  const failed = c.checks.filter(k => !k.pass && /\(native\)/.test(k.check)).map(k => [baseName(k.check) + " on the old schema", "fail", baseName(k.check)])
+    .concat(log.filter(e => e.type === "native").flatMap(e => e.problems || []).map(x => [x, "fail"]));
+  const heal = c.state === "healed" || c.bridges.length
+    ? [["native", "fail", `${d ? backupApp(d) : "Old"} backup on ${to}: failed`], ...failed]
+        .concat(c.bridges.map((x, i) => [`bridge round ${x.round}`, i < c.bridges.length - 1 ? "fail" : run ? "waiting" : "done", `bridge written by ${model}, round ${x.round}`]))
+        .concat(c.state === "healed" ? [["rerun", "done", `same backup on ${to}: restored, ${after.filter(k => k.pass).length} of ${after.length} checks`]] : [])
+    : [["schema bridge", b.status === "dr_ready" ? "skipped" : missing]];
   for (const e of log) {
     if (e.type === "check") { at.set(baseName(e.check), +e.t); if (!e.pass && /\(native\)/.test(e.check) && !at.has(baseName(e.check) + " on the old schema")) at.set(baseName(e.check) + " on the old schema", +e.t); }
     if (e.type === "bridge") at.set(`bridge round ${e.round}`, +e.t);
+    if (e.type === "native") for (const x of ["native", ...e.problems || []]) at.set(x, +e.t);
+    if (e.type === "check" && !e.pass && /\(native\)/.test(e.check) && !at.has("native")) at.set("native", +e.t);
   }
   let i = 0;
-  const gs = [["Verify", list(v, ref[0])], ["Heal", heal], ["Restore", list(r, ref[1])]].map(([g, ks]) => [g, ks.map(([n, st]) => ({n, st, t: at.get(n), i: i++}))]);
+  if (c.state === "healed") at.set("rerun", Math.max(...log.map(e => +e.t || 0)));
+  const gs = [["Verify", list(v, ref[0])], ["Heal", heal], ["Restore", list(r, ref[1])]].map(([g, ks]) => [g, ks.map(([n, st, l]) => ({n, st, l: l || n, t: at.get(n), i: i++}))]);
   return `<div class="ck">${ovStrip(gs, C, Math.max(...log.map(e => +e.t || 0), 0))}${gs.map(([g, ks]) => `<section><h3>${g}</h3><ul>
-    ${ks.map(k => `<li class="${k.st} ${C[k.st]}" data-k="${k.i}" data-n="${esc(k.n)}"><i></i><span title="${esc(k.n)}">${esc(k.n)}</span><b>${k.t != null ? `<span>${sec(k.t)}</span>` : ""}${k.st}</b></li>`).join("")}</ul></section>`).join("")}</div>`;
+    ${ks.map(k => `<li class="${k.st} ${C[k.st]}" data-k="${k.i}" data-n="${esc(k.n)}"><i></i><span title="${esc(k.l)}">${esc(k.l)}</span><b>${k.t != null ? `<span>${sec(k.t)}</span>` : ""}${k.st}</b></li>`).join("")}</ul></section>`).join("")}</div>`;
 }
 // The pass on a time axis (Jonas 16:01 "the smaller timeline ... clear that its related to the checks"): one lane per
 // group, each check a tick where it finished, the lane's bar from its first to its last check.
@@ -760,18 +761,19 @@ document.addEventListener("click", e => { if (e.target.closest?.(".ck")) ovHot(e
 // backup runs, the stream's events.
 function ovTerm(b) {
   const d = rg.details[b.id], c = ovCell(d), key = c && Object.keys(d.cells).find(k => d.cells[k] === c);
-  const live = ovLive(b, c);
-  const evs = live?.events.length && (!live.done || !d?.logs?.[key]) ? live.events : d?.logs?.[key] || [];
+  const run = ["running", "queued"].includes(b.status), live = run ? ovLive(b) : ovLive(b, c);
+  const evs = run ? (live && !live.done ? live.events : []) : live?.events.length && (!live.done || !d?.logs?.[key]) ? live.events : d?.logs?.[key] || [];
   const sql = Object.fromEntries((c?.bridges || []).map(x => [x.name, x.sql]));
   const name = e => e.type === "bridge" ? `bridge round ${e.round}` : e.type !== "check" ? "" : baseName(e.check) + (!e.pass && /\(native\)/.test(e.check) ? " on the old schema" : "");
-  const line = e => `<div class="${e.type === "policy" || e.type === "check" && !e.pass ? "c-bad" : ""}"${name(e) ? ` data-n="${esc(name(e))}"` : ""}><span class="t">${e.t != null ? (+e.t).toFixed(2) : ""}</span><span>${esc(calm(evText(e)))}</span></div>`
+  const line = e => `<div class="${e.type === "policy" || e.type === "check" && !e.pass ? "c-bad" : e.type === "step" ? "step" : ""}"${name(e) ? ` data-n="${esc(name(e))}"` : ""}><span class="t">${e.t != null ? (+e.t).toFixed(2) : ""}</span><span>${esc(calm(evText(e)))}</span></div>`
     + (e.type === "bridge" && sql[e.name] ? `<pre>${esc(sql[e.name])}</pre>` : "");
-  return `<div class="term" id="term"${live && !live.done ? " data-live" : ""}>${evs.length ? evs.map(line).join("") : `<div><span class="t"></span><span>${["running", "queued"].includes(b.status) ? "waiting for the sandbox" : "no log"}</span></div>`}</div>`;
+  return `<div class="term" id="term"${live && !live.done ? " data-live" : ""}>${evs.length ? evs.filter(e => !/^stderr:[\s-]*$/.test(calm(evText(e)))).map(line).join("") : `<div><span class="t"></span><span>${b.status === "queued" ? "queued behind the backup that is running" : run ? "starting" : "no log"}</span></div>`}</div>`;
 }
 // The verdict in numbers, under the name: checks, time, bridge rounds, where it was restored.
 function ovSum(b) {
   const d = rg.details[b.id] || b, c = ovCell(d), run = ["running", "queued"].includes(b.status);
-  if (run || !d.checks_total) return "";
+  if (run) return ovNow(b);
+  if (!d.checks_total) return "";
   const rounds = c?.bridges?.length, into = c?.restored_into?.instance?.replace(/ rg-\w+/, "");
   // Checks and time both of the shown cell (one app version), each check at its final result.
   const key = c && Object.keys(d.cells || {}).find(k => d.cells[k] === c), res = c ? ovSplit(c).flatMap(m => [...m.values()]) : [];
@@ -780,6 +782,17 @@ function ovSum(b) {
     ${rounds ? `<span>schema bridged by ${esc(c.llm_calls?.at(-1)?.model || "the model")} in round ${rounds}</span>` : ""}
     ${into ? `<span>restored into ${esc(into)}</span>` : ""}</p>`;
 }
+// While it runs: what the cell is doing now and for how long, and how long the cell has run (ticked by the clock below).
+function ovNow(b) {
+  const L = ovLive(b), on = L && !L.done && L;
+  if (!on) return `<p class="sum"><span><strong>${b.status === "queued" ? "Queued" : "Starting"}</strong></span></p>`;
+  const app = on.events[0].app_version;
+  return `<p class="sum"><span><strong>${esc(on.doing || "Starting")}</strong>${on.doingAt ? ` <span data-since="${on.doingAt}">${dur(Date.now() - on.doingAt)}</span>` : ""}</span>
+    <span>on ${esc(/^\d/.test(app) ? `app ${app}` : app)}</span><span>running <span data-since="${on.at0}" data-clock>${clk(Date.now() - on.at0)}</span></span></p>`;
+}
+const dur = ms => `${Math.max(0, Math.floor(ms / 1000))} s`;
+const clk = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+setInterval(() => document.querySelectorAll("[data-since]").forEach(el => el.textContent = (el.hasAttribute("data-clock") ? clk : dur)(Date.now() - +el.dataset.since)), 1000);
 function ovDetail(b) {
   const [c, word] = OV[ovState(b)] || ["c-idle", b.status];
   return `<header><h2 title="${esc(b.file)}">${esc(bkName(b))}</h2><span class="when">${esc(clock(b.created_at))}</span><span class="when">from ${esc(bkSource(b))}</span><div class="st ${c}"><i></i><b>${esc(word)}</b></div></header>${ovSum(b)}${ovChecks(b)}${ovTerm(b)}`;
@@ -818,19 +831,22 @@ function runPanel() {
 }
 function runCtl() {
   const b = busy();
-  if (!b) runP.scen = null;
+  if (!b) runP.scen = runP.t0 = null;
+  // Since the click; after a reload, since the runtime started the first backup of the run.
+  const t0 = b && (runP.t0 || 1000 * Math.min(...rg.summaries.map(x => x.status === "running" && x.started_at).filter(Boolean)));
   return `<div class="ctl"><span class="msg${runP.err ? " err" : ""}" id="msg" role="status">${esc(runP.msg)}</span>
     <div class="scen" role="group" aria-label="Demo scenarios">${SCENARIOS.map(x => `<button data-scen="${x.key}" title="${esc(x.story)}" aria-pressed="${runP.scen === x.key}"${b ? " disabled" : ""}>${esc(x.name)}</button>`).join("")}</div>
     <button class="quiet" id="reset" title="Remove the copies runs made and put back the results they replaced"${b ? " disabled" : ""}>Reset</button>
-    <button class="btn primary" id="runbtn" aria-expanded="${runP.open}"${b ? " disabled" : ""}>${b ? "Running" : "Run"}</button></div>${runPanel()}`;
+    <button class="btn primary" id="runbtn" aria-expanded="${runP.open}"${b ? " disabled" : ""}>${b ? `Running${isFinite(t0) ? ` <span data-since="${t0}" data-clock>${clk(Date.now() - t0)}</span>` : ""}` : "Run"}</button></div>${runPanel()}`;
 }
 const runMsg = (t, err) => { runP.msg = t || ""; runP.err = !!err; const m = $("#msg"); if (m) { m.textContent = runP.msg; m.classList.toggle("err", runP.err); } };
 async function startRun(body, scen) {
   runMsg("Starting");
+  const t0 = Date.now();
   const r = await fetch("rg/api/runs", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
   if (!r.ok) return runMsg(`Not started: ${await why(r)}`, true);
   const {queued} = await r.json();
-  runP.open = false; runP.scen = scen || null;
+  runP.open = false; runP.scen = scen || null; runP.t0 = t0;
   ovSel.id = queued[0];
   runMsg("");
   rg.summaries = await getJSON("rg/api/backups");
@@ -874,7 +890,7 @@ function ovView() {
   const latest = ss.filter(b => b.status === "dr_ready").at(-1);
   const sel = ss.find(b => b.id === ovSel.id) || ss.at(-1);
   ovSel.id = sel.id;
-  return `<div class="ov"><div class="brand"><b>BackupAirlock</b><span>Every backup restored into a sandbox, checked, and healed when the schema moved</span>${runCtl()}</div><div class="dt" id="dt">${ovDetail(sel)}</div>
+  return `<div class="ov"><header class="appbar run"><a class="brand" href="overview">BackupAirlock</a><nav class="nav"><a href="overview">Overview</a><a href="timeline" aria-current="page">Timeline</a></nav>${runCtl()}</header><div class="dt" id="dt">${ovDetail(sel)}</div>
     <div class="band"><div class="tl">${ss.map((b, i) => { const [c, word, mod] = OV[ovState(b)] || ["c-idle", b.status, "hollow"];
       return `<button class="mk ${c}${b === latest ? " latest" : ""}" data-id="${esc(b.id)}" style="left:${ss.length > 1 ? i / (ss.length - 1) * 100 : 50}%"
         aria-pressed="${b === sel}" aria-label="${esc(bkName(b))}, ${esc(clock(b.created_at))}, from ${esc(bkSource(b))}: ${esc(word)}"><i class="${mod || ""}"></i></button>`; }).join("")}
@@ -906,7 +922,7 @@ function ovLabels() {
     else kept.push(r);
   }
   // A centred label near either edge is pulled back inside the page.
-  for (const l of ls) { const r = boxes.get(l), dx = Math.max(4 - r.left, 0) + Math.min(innerWidth - 4 - r.right, 0); if (dx) l.style.translate = `${dx}px 0`; }
+  for (const l of ls) { const r = boxes.get(l), dx = Math.max(4 - r.left, 0) + Math.min(document.documentElement.clientWidth - 4 - r.right, 0); if (dx) l.style.translate = `${dx}px 0`; }
 }
 addEventListener("resize", ovLabels);
 // A running log follows its newest line.
