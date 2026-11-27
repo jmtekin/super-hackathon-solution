@@ -86,9 +86,10 @@ backups and proves each one on every app version. JSON only; paths are relative 
 | Method + path | Returns |
 |---|---|
 | `GET /health` | `{ok, backups, queued, app_versions: ["1.0.0", ...]}` |
-| `GET /api/backups` | list, newest first: `{id, file, status, reason, created_at, schema_version, app_version, bytes, found_at, started_at, finished_at, elapsed_s, checks_passed, checks_total, cells: {<app_version>: {state, reason, elapsed_s}}}` |
+| `GET /api/backups` | list, newest first: `{id, file, sha256, status, reason, created_at, schema_version, app_version, bytes, found_at, started_at, finished_at, elapsed_s, checks_passed, checks_total, cells: {<app_version>: {state, reason, elapsed_s}}}` |
 | `GET /api/backups/{id}` | the list fields plus `manifest` (as the backup job wrote it), `cells: {<app_version>: cell}`, `logs: {<app_version>: [event]}`, `certificate` |
 | `GET /api/backups/{id}/certificate.json` | DR Readiness Certificate (same format as BackupAirlock's matrix proof, `proof_sha256` seals it); 409 until finished |
+| `GET /api/backups/{id}/incident.json` | forensic log of a quarantined backup: per app version `restored_into, signals, static_scan, containment_events, errors`; 409 if not quarantined |
 | `GET /api/backups/{id}/bridges/{name}` | a bridge migration's SQL (text/plain) |
 | `POST /api/backups/{id}/rerun` | `{queued: id}`; 409 while queued/running |
 | `GET /api/matrix` | `{app_versions: [...], backups: [{id, schema_version, status, cells: [{app_version, state, reason}]}]}` (cells in `app_versions` order) |

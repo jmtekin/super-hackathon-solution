@@ -286,7 +286,7 @@ function rgPanel() {
   return `<div class="panel">${head}
     <div style="margin-top:8px">${mark(c.state)}</div>
     <p class="lead">${esc(c.reason)}</p>
-    ${targetLine(c.target || c.restore_target, (d.logs[v] || []).find(e => e.type === "sandbox")?.name,
+    ${targetLine(c.restored_into, (d.logs[v] || []).find(e => e.type === "sandbox")?.name,
       (d.logs[v] || []).some(e => e.type === "sandbox" && e.phase === "destroyed"))}
     ${containment(c.signals.map(s => ({signal: s})).concat(), c.static_scan, d.logs[v])}
     ${groups(checks).map(([g, ks]) => checkSection(g, ks)).join("")}
@@ -512,7 +512,8 @@ function eventRows(evs, policy) {
 // Every restore lands in a throwaway TEST instance of the app (own container, own DB, no network), never production.
 // Uses the runtime's explicit target when it reports one, else the sandbox that held the test instance.
 function targetLine(target, sandbox, destroyed) {
-  const t = target || (sandbox ? `test instance ${sandbox}` : "test instance (sandbox)");
+  const t = target ? [target.instance, target.database?.replace(/^.*?(Postgres[^,]*?) \S+(, .*)?$/, "$1$2")].filter(Boolean).join(" · ")
+    : sandbox ? `test instance ${sandbox}` : "test instance (sandbox)";
   return `<dl class="kv target"><dt>restored into</dt><dd>${esc(t)}${destroyed === false ? ", NOT destroyed" : destroyed ? ", destroyed after the checks" : ""}</dd></dl>`;
 }
 const policyLine = p => p ? [p.runtime, `network ${String(p.network).split(" ")[0]}`, `rootfs ${p.rootfs}`, `${p.memory} RAM`,
