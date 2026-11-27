@@ -10,8 +10,8 @@ PORT="${RESTORER_PORT:-80}"
 SRC="$(cd "$(dirname "$0")" && pwd)"
 DEST=/opt/restorer
 
-apt-get update -qq
-apt-get install -y -qq docker.io python3-venv rsync >/dev/null
+apt-get -o DPkg::Lock::Timeout=600 update -qq
+apt-get -o DPkg::Lock::Timeout=600 install -y -qq docker.io python3-venv rsync >/dev/null
 systemctl enable --now docker
 
 id restorer >/dev/null 2>&1 || useradd --system --home "$DEST" --shell /usr/sbin/nologin restorer
@@ -54,4 +54,4 @@ systemctl enable restorer >/dev/null
 systemctl restart restorer
 [ "${RESTORER_HOST:-0.0.0.0}" = 127.0.0.1 ] || { command -v ufw >/dev/null && ufw status | grep -q active && ufw allow "$PORT/tcp" >/dev/null || true; }
 sleep 2
-curl -fsS "http://127.0.0.1:$PORT/health" && echo && echo "Restorer is up: http://$(hostname -I | awk '{print $1}'):$PORT/"
+curl -fsS "http://127.0.0.1:$PORT/health" && echo && echo "Console is up: http://$(hostname -I | awk '{print $1}'):$PORT/"

@@ -21,7 +21,7 @@ sh ui/install.sh
 sh restoreguard/install.sh
 [ -n "${PUBLIC_HOST:-}" ] || exit 0
 
-apt-get install -y -qq caddy >/dev/null
+apt-get -o DPkg::Lock::Timeout=600 install -y -qq caddy >/dev/null
 # Reading is public; anything that is not a read starts work on this VM, so it needs the team password.
 HASH="$(printf "%s\n" "$WRITE_PASSWORD" | caddy hash-password)"
 umask 077

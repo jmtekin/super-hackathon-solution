@@ -12,8 +12,8 @@ SRC="$(cd "$(dirname "$0")" && pwd)"
 DEST=/opt/restoreguard
 PORT="${RESTOREGUARD_PORT:-8600}"
 
-apt-get update -qq
-apt-get install -y -qq docker.io python3-venv rsync >/dev/null
+apt-get -o DPkg::Lock::Timeout=600 update -qq
+apt-get -o DPkg::Lock::Timeout=600 install -y -qq docker.io python3-venv rsync >/dev/null
 systemctl enable --now docker
 id restoreguard >/dev/null 2>&1 || useradd --system --home "$DEST" --shell /usr/sbin/nologin restoreguard
 usermod -aG docker restoreguard
