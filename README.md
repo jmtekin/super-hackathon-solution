@@ -40,7 +40,8 @@ bridge migrations and prose, never the verdict.
 |---|---|
 | `restoreguard/` | the runtime: `api.py` (watcher, queue, JSON/SSE API), `guard.py` (Postgres cell), `frappe_target.py` (Frappe target), `faults.py` (fault kit), `contract/` (manifest + rules SQL shared with the backup job), `standin/` (stand-in Nordvik app until the real ERP replaced it). Details: [restoreguard/README.md](restoreguard/README.md) |
 | `ui/` | the console (`static/index.html`: Backups tab = runtime, Drill tab = compatibility matrix) and its FastAPI app with the BackupAirlock drill, hardened sandbox runner and fixtures. Details: [ui/README.md](ui/README.md) |
-| `tests/` | unit tests of the parts that need no sandbox (production refusal, malformed/missing/unreadable backups, every rule's failure case) |
+| `tests/` | unit tests of the parts that need no sandbox (production refusal, malformed/missing/unreadable backups, every rule's failure case); `tests/e2e/` end-to-end suite against the running runtime |
+| `e2e.sh`, `demo.sh` | e2e suite (20 tests, ~3.5 min, one command); live demo run (~3 min, see Demo script) |
 | `docs/` | team spec, pitch, UI spec checklist, design references and screenshots |
 | `install.sh`, `.env.example` | one-VM install |
 
@@ -67,6 +68,13 @@ Tests, from the repo root: `python3 -m unittest tests/test_guard.py tests/test_f
 `ui/requirements.txt` installed, since the runtime imports the console's model helpers).
 
 ## Demo script (about 3 minutes)
+
+`./demo.sh` drives the Backups tab live: it drops a good backup (DR ready), a corrupted one (not restorable), a
+schema-drift one (GLM bridge heals it on app 1.0.0) and a poisoned one (quarantined) into the runtime's watched folder,
+one at a time, with `PAUSE` s (default 20) of talking time after each verdict; `./demo.sh reset` clears its copies
+without restarting the runtime. Sources: the newest `restoreguard/backups/*_v1` and the fault kit's `faults/out/`
+(set `RG_HOME` if the runtime lives elsewhere). Not in parallel with `./e2e.sh` or `faults.py`.
+
 
 1. **The problem.** Open the console, Backups tab: every backup production made, each with a verdict.
    "Backups that were never restored are hopes, not backups."
