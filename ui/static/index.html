@@ -152,7 +152,7 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
 .ck li.blocked i{width:6px;height:6px;margin:9px 1px 0;box-shadow:0 0 0 2px var(--bg),0 0 0 3.5px var(--c)}
 /* one mark per backup, oldest left, evenly spaced; colour = does it restore; a tick over the latest that does */
 .band{--bg:var(--surface);background:var(--bg)}
-.tl{position:relative;height:152px;margin:0 var(--s7);touch-action:none}
+.tl{position:relative;height:168px;margin:0 var(--s7);touch-action:none}
 .tl::before{content:"";position:absolute;left:0;right:0;top:55px;height:2px;background:var(--line)}
 .mk{position:absolute;top:56px;width:44px;height:44px;margin:-22px 0 0 -22px;display:grid;place-items:center}
 .mk i{width:16px;height:16px;border-radius:50%;background:var(--c);box-shadow:0 0 0 4px var(--bg);transition:transform .12s ease-out}
@@ -620,6 +620,17 @@ const ovState = b => b.status === "dr_ready" ? (Object.values(b.cells).some(c =>
   : b.status === "failed" ? "not_restorable" : b.status;
 const ovList = () => rg.summaries.slice().sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""));
 const ovSel = {id: null};
+// What a backup is, in words (Jonas 16:17 "clear which are the backups"): which system made it, from where, and the fault
+// in it if it is a test copy (the fault kit's, or one a Run injected).
+const FAULT = {"bitflip-stale": "bit-flipped (old checksum)", bitflip: "bit-flipped", truncated: "truncated", "truncated-sql": "truncated",
+  "rows-deleted": "rows deleted", "rule-broken": "rule broken", poisoned: "poisoned", "schema-v2": "upgraded schema"};
+const faultOf = b => b.injected?.fault || (b.id.match(/-(bitflip-stale|bitflip|truncated-sql|truncated|rows-deleted|rule-broken|poisoned|schema-v2)(?:_v\d+$|-database$)/) || [])[1];
+function bkName(b) {
+  const f = faultOf(b), what = b.kind === "frappe" ? "ERP backup" : `Stand-in v${b.schema_version ?? "?"} backup`;
+  return f ? `${what}, ${FAULT[f] || f}` : what;
+}
+const bkSource = b => (b.kind === "frappe" ? (b.id.match(/^\d{8}_\d{6}-(\w+?)(?:-run-|-database|-\w+-database)/)?.[1] || "").replace(/_/g, ".") : "stand-in app")
+  + (b.injected ? ", fault injected by a run" : faultOf(b) ? ", fault-kit copy" : "");
 const ovPtr = {x: 0, y: 0, on: false, frame: 0};
 // The cell to show: the healed one tells the most, then a native pass, else whatever ran.
 const ovCell = d => { const cs = Object.values(d?.cells || {}); return cs.find(c => c.state === "healed") || cs.find(c => c.state === "native") || cs[0]; };
@@ -711,7 +722,7 @@ function ovSum(b) {
 }
 function ovDetail(b) {
   const [c, word] = OV[ovState(b)] || ["c-idle", b.status];
-  return `<header><h2>${esc(shortName(b.file))}</h2><span class="when">${esc(clock(b.created_at))}</span><div class="st ${c}"><i></i><b>${esc(word)}</b></div></header>${ovSum(b)}${ovChecks(b)}${ovTerm(b)}`;
+  return `<header><h2 title="${esc(b.file)}">${esc(bkName(b))}</h2><span class="when">${esc(clock(b.created_at))}</span><span class="when">from ${esc(bkSource(b))}</span><div class="st ${c}"><i></i><b>${esc(word)}</b></div></header>${ovSum(b)}${ovChecks(b)}${ovTerm(b)}`;
 }
 function ovView() {
   const ss = ovList();
@@ -722,10 +733,10 @@ function ovView() {
   return `<div class="ov"><div class="brand"><b>BackupAirlock</b><span>Every backup restored into a sandbox, checked, and healed when the schema moved</span></div><div class="dt" id="dt">${ovDetail(sel)}</div>
     <div class="band"><div class="tl">${ss.map((b, i) => { const [c, word, mod] = OV[ovState(b)] || ["c-idle", b.status, "hollow"];
       return `<button class="mk ${c}${b === latest ? " latest" : ""}" data-id="${esc(b.id)}" style="left:${ss.length > 1 ? i / (ss.length - 1) * 100 : 50}%"
-        aria-pressed="${b === sel}" aria-label="${esc(shortName(b.file))}, ${esc(clock(b.created_at))}: ${esc(word)}"><i class="${mod || ""}"></i></button>`; }).join("")}
+        aria-pressed="${b === sel}" aria-label="${esc(bkName(b))}, ${esc(clock(b.created_at))}, from ${esc(bkSource(b))}: ${esc(word)}"><i class="${mod || ""}"></i></button>`; }).join("")}
     ${ss.map((b, i) => { const [c, word] = OV[ovState(b)] || ["c-idle", b.status];
       return `<div class="lb ${c}${b === sel ? " sel" : ""}${b === latest ? " latest" : ""}" data-id="${esc(b.id)}" style="left:${ss.length > 1 ? i / (ss.length - 1) * 100 : 50}%"
-      aria-hidden="true">${esc(shortName(b.file))}<span>${esc(clock(b.created_at))}</span><b>${esc(word)}</b></div>`; }).join("")}</div></div>
+      aria-hidden="true">${esc(bkName(b))}<span>${esc(clock(b.created_at))}</span><span>${esc(bkSource(b))}</span><b>${esc(word)}</b></div>`; }).join("")}</div></div>
     <svg id="ray" aria-hidden="true"><line></line></svg></div>`;
 }
 function ovPick(id) {
