@@ -41,5 +41,7 @@ chmod 640 /etc/caddy/Caddyfile
 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
 systemctl enable caddy >/dev/null
 systemctl reload-or-restart caddy
-sleep 5
-curl -fsS "https://$PUBLIC_HOST/health" && echo && echo "BackupAirlock is up: https://$PUBLIC_HOST/"
+# The first certificate needs an ACME round trip; give it up to two minutes.
+i=0
+until curl -fs "https://$PUBLIC_HOST/health"; do i=$((i + 1)); [ $i -lt 24 ] || exit 1; sleep 5; done
+echo && echo "BackupAirlock is up: https://$PUBLIC_HOST/"
