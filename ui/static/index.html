@@ -137,6 +137,16 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
 .term .c-bad{color:var(--bad)}
 .term pre{margin:0 0 var(--s1) 60px;font:inherit;color:var(--strong);white-space:pre-wrap;overflow-wrap:anywhere}
 .ck li b{font-size:12px;font-weight:400;color:var(--ink-2)}
+.ck li b span{color:var(--strong);margin-right:var(--s3)}
+.ck li.hot{background:var(--hover);box-shadow:0 0 0 4px var(--hover)}
+.strip{display:grid;grid-template-columns:auto minmax(0,1fr) auto;column-gap:var(--s3);row-gap:var(--s1);align-items:center;font-size:12px;line-height:16px;color:var(--ink-2)}
+.lane{position:relative;height:16px}
+.lane::before{content:"";position:absolute;left:0;right:0;top:7px;height:2px;background:var(--line)}
+.lane em{position:absolute;top:5px;height:6px;min-width:2px;border-radius:1px;background:var(--line-2)}
+.lane i{position:absolute;top:4px;width:8px;height:8px;margin-left:-4px;border-radius:50%;background:var(--c);box-shadow:0 0 0 2px var(--bg)}
+.lane i.hot{transform:scale(1.6);z-index:1}
+.lane-s{text-align:right}
+.axis{display:flex;justify-content:space-between;color:var(--strong)}
 .ck li.fail b{color:var(--ink);font-weight:600}
 .ck li.fail.c-bad b{color:var(--bad)}
 /* one mark per backup, oldest left, evenly spaced; colour = does it restore; a tick over the latest that does */
@@ -637,9 +647,33 @@ function ovChecks(b) {
         .concat(c.bridges.map((x, i) => [`bridge round ${x.round}`, i < c.bridges.length - 1 ? "fail" : run ? "waiting" : "done"]))
     : [["schema bridge", b.status === "dr_ready" ? "skipped" : missing]];
   const fail = b.status === "quarantined" ? "c-bad" : "c-warn", C = {done: "c-ok", fail, skipped: "c-idle", waiting: "c-idle"};
-  return `<div class="ck">${[["Verify", list(v, ref[0])], ["Heal", heal], ["Restore", list(r, ref[1])]].map(([g, ks]) => `<section><h3>${g}</h3><ul>
-    ${ks.map(([n, st]) => `<li class="${st} ${C[st]}"><i></i><span title="${esc(n)}">${esc(n)}</span><b>${st}</b></li>`).join("")}</ul></section>`).join("")}</div>`;
+  // When each check ran, from the run log: its last result, a native failure's first, a bridge round's event.
+  const log = run ? evs : rg.details[b.id]?.logs?.[Object.keys(rg.details[b.id].cells).find(k => rg.details[b.id].cells[k] === c)] || [], at = new Map();
+  for (const e of log) {
+    if (e.type === "check") { at.set(baseName(e.check), +e.t); if (!e.pass && /\(native\)/.test(e.check) && !at.has(baseName(e.check) + " on the old schema")) at.set(baseName(e.check) + " on the old schema", +e.t); }
+    if (e.type === "bridge") at.set(`bridge round ${e.round}`, +e.t);
+  }
+  let i = 0;
+  const gs = [["Verify", list(v, ref[0])], ["Heal", heal], ["Restore", list(r, ref[1])]].map(([g, ks]) => [g, ks.map(([n, st]) => ({n, st, t: at.get(n), i: i++}))]);
+  return `<div class="ck">${ovStrip(gs, C, Math.max(...log.map(e => +e.t || 0), 0))}${gs.map(([g, ks]) => `<section><h3>${g}</h3><ul>
+    ${ks.map(k => `<li class="${k.st} ${C[k.st]}" data-k="${k.i}"><i></i><span title="${esc(k.n)}">${esc(k.n)}</span><b>${k.t != null ? `<span>${sec(k.t)}</span>` : ""}${k.st}</b></li>`).join("")}</ul></section>`).join("")}</div>`;
 }
+// The pass on a time axis (Jonas 16:01 "the smaller timeline ... clear that its related to the checks"): one lane per
+// group, each check a tick where it finished, the lane's bar from its first to its last check.
+function ovStrip(gs, C, T) {
+  if (!T) return "";
+  const x = t => (100 * t / T).toFixed(2);
+  return `<div class="strip">${gs.map(([g, ks]) => { const ts = ks.filter(k => k.t != null).map(k => k.t);
+    return `<span class="lane-n">${g}</span><div class="lane">${ts.length ? `<em style="left:${x(Math.min(...ts))}%;width:${x(Math.max(...ts) - Math.min(...ts))}%"></em>` : ""}
+      ${ks.filter(k => k.t != null).map(k => `<i class="${C[k.st]}" data-k="${k.i}" style="left:${x(k.t)}%" title="${esc(k.n)}, ${sec(k.t)}"></i>`).join("")}</div>
+      <span class="lane-s">${ts.length ? sec(Math.max(...ts) - Math.min(...ts)) : ""}</span>`; }).join("")}
+    <span></span><div class="axis"><span>0 s</span><span>${sec(T)}</span></div><span></span></div>`;
+}
+// Hovering a check lights its tick on the strip, and the other way round.
+document.addEventListener("pointerover", e => {
+  const k = e.target.closest?.("[data-k]")?.dataset.k;
+  document.querySelectorAll(".ck [data-k]").forEach(el => el.classList.toggle("hot", el.dataset.k === k));
+});
 // The runtime's own log of the shown cell, right of the checks (Jonas 15:47 "To the right is cmd output"); while the
 // backup runs, the stream's events.
 function ovTerm(b) {
@@ -656,7 +690,7 @@ function ovSum(b) {
   const d = rg.details[b.id] || b, c = ovCell(d), run = ["running", "queued"].includes(b.status);
   if (run || !d.checks_total) return "";
   const rounds = c?.bridges?.length, into = c?.restored_into?.instance?.replace(/ rg-\w+/, "");
-  return `<p class="sum"><span><strong>${d.checks_passed} of ${d.checks_total}</strong> checks passed</span><span>${sec(d.elapsed_s)}</span>
+  return `<p class="sum"><span><strong>${d.checks_passed} of ${d.checks_total}</strong> checks passed</span><span>${sec(c?.elapsed_s ?? d.elapsed_s)}</span>
     ${rounds ? `<span>schema bridged by ${esc(c.llm_calls?.at(-1)?.model || "the model")} in round ${rounds}</span>` : ""}
     ${into ? `<span>restored into ${esc(into)}</span>` : ""}</p>`;
 }
