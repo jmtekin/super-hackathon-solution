@@ -279,6 +279,22 @@ def _sandbox_lock():
     return f
 
 
+async def remove_orphans():
+    """Removes rg- sandboxes a killed process left behind. Only while the sandbox lock is free: every holder
+    (this service, faults.py) is running the rg- containers that exist, so with the lock free they are orphans."""
+    STATE.mkdir(parents=True, exist_ok=True)
+    with open(STATE / "sandbox.lock", "w") as f:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return []
+        rc, out, _ = await docker("ps", "-aq", "--filter", "name=^rg-")
+        left = out.decode().split() if rc == 0 else []
+        if left:
+            await docker("rm", "-f", *left)
+        return left
+
+
 async def run_cell(backup, app, emit=lambda ev: None, cell_type=Cell, body=None):
     """Prove one backup on one app version. Never raises; the verdict is in the result.
     cell_type and body let another target (frappe_target) reuse the lock, timeout and quarantine rules."""

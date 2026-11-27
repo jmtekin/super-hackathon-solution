@@ -77,6 +77,9 @@ def _mirror():
 
 
 def discover():
+    for bid in [k for k, b in backups.items() if b["status"] not in ("queued", "running") and not os.path.exists(b["path"])]:
+        del backups[bid]  # its dump is gone (retention, a removed test copy): nothing left to prove or restore
+        broadcast({"type": "backup", "id": bid, "status": "removed", "reason": "dump file gone"})
     for d in DIRS:
         for dump in sorted(d.glob("*_v*.dump")):
             if dump.stem in backups or not NAME.match(dump.stem) or not dump.with_suffix(".json").exists():
@@ -131,19 +134,22 @@ async def worker():
         b = backups[bid]
         b.update(status="running", started_at=time.time(), cells={})
         _status(b)
-        results = []
-        runner = frappe_target if b.get("kind") == "frappe" else guard
-        for a in _targets(b):
-            r = await runner.run_cell(b, a, broadcast)
-            results.append(r)
-            events = r.pop("events")
-            (RESULTS / f"{bid}@{a['version']}.events.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
-            b["cells"][a["version"]] = r
-            _save(b)
-        b["certificate"] = guard.certificate(b, results, runner.policy())
-        row = b["certificate"]["matrix"][0]["status"]
-        b["status"] = {"DR READY": "dr_ready", "NOT RESTORABLE": "not_restorable"}.get(row, "quarantined")
-        b["reason"] = "; ".join(f"{r['app_version']}: {r['state']}, {r['reason']}" for r in results)
+        try:
+            results = []
+            runner = frappe_target if b.get("kind") == "frappe" else guard
+            for a in _targets(b):
+                r = await runner.run_cell(b, a, broadcast)
+                results.append(r)
+                events = r.pop("events")
+                (RESULTS / f"{bid}@{a['version']}.events.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
+                b["cells"][a["version"]] = r
+                _save(b)
+            b["certificate"] = guard.certificate(b, results, runner.policy())
+            row = b["certificate"]["matrix"][0]["status"]
+            b["status"] = {"DR READY": "dr_ready", "NOT RESTORABLE": "not_restorable"}.get(row, "quarantined")
+            b["reason"] = "; ".join(f"{r['app_version']}: {r['state']}, {r['reason']}" for r in results)
+        except Exception as e:  # one broken backup must not stop the queue for every backup after it
+            b.update(status="failed", reason=f"runtime error: {e}"[:300])
         b["finished_at"] = time.time()
         _status(b)
 
@@ -156,6 +162,7 @@ def _targets(b):
 async def lifespan(_):
     global queue
     guard.apps()  # a config that could restore into anything but a test instance stops the service here
+    await guard.remove_orphans()
     queue = asyncio.Queue()
     for f in sorted(RESULTS.glob("*.json")) if RESULTS.exists() else []:
         b = json.loads(f.read_text())
@@ -254,8 +261,13 @@ def bridge(bid: str, name: str):
 @app.post("/api/backups/{bid}/rerun")
 def rerun(bid: str):
     b = _get(bid)
-    if b["status"] in ("queued", "running") or not b.get("manifest"):
+    if b["status"] in ("queued", "running"):
         raise HTTPException(409, f"backup is {b['status']}")
+    if not b.get("manifest"):  # unreadable when found (e.g. read mid-write): the manifest may be fixed by now
+        try:
+            b.update((frappe_target if b.get("kind") == "frappe" else guard).load_backup(b["path"]))
+        except ValueError as e:
+            raise HTTPException(409, f"backup is {b['status']}: {e}") from None
     b.update(status="queued", reason="", cells={}, certificate=None, started_at=None, finished_at=None)
     _status(b)
     queue.put_nowait(bid)
