@@ -30,26 +30,16 @@ def _sek(ore):
     return f"{ore / 100:,.2f} SEK"
 
 
-def _guard(name, f):
-    """A restore that lost a table or column fails the check instead of crashing the verifier."""
-    def check(db, exp):
-        try:
-            return f(db)
-        except sqlite3.Error as e:
-            return _check(name, False, f"cannot be read: {e}", [])
-    return check
-
-
 def books_balance(db):
     debit, credit = db.execute("SELECT COALESCE(SUM(debit), 0), COALESCE(SUM(credit), 0) FROM account_move_line").fetchone()
     off = db.execute("SELECT m.name, SUM(l.debit), SUM(l.credit) FROM account_move_line l "
                      "JOIN account_move m ON m.id = l.move_id GROUP BY l.move_id "
                      "HAVING SUM(l.debit) != SUM(l.credit) ORDER BY l.move_id").fetchall()
     ok = debit == credit and not off
-    items = [{"what": "debits", "expected": _sek(credit), "got": _sek(debit), "pass": debit == credit}]
+    items = [{"what": "Debits = credits", "expected": _sek(credit), "got": _sek(debit), "pass": debit == credit}]
     items += [{"what": n, "expected": "debit = credit", "got": f"{_sek(d)} / {_sek(c)}", "pass": False} for n, d, c in off]
     return _check("Books balance", ok, f"debits {_sek(debit)} = credits" if ok else
-                  f"do not balance: debits {_sek(debit)}, credits {_sek(credit)}, off by {_sek(abs(debit - credit))}; "
+                  f"Books do not balance: debits {_sek(debit)}, credits {_sek(credit)}, off by {_sek(abs(debit - credit))}; "
                   f"{len(off)} journal {'entry' if len(off) == 1 else 'entries'} with debit != credit", items)
 
 
@@ -86,7 +76,7 @@ def receivables(db):
     bad = [r for r in rows if r[1] != r[2]]
     # The biggest open balances first: a match on 0.00 SEK proves little.
     shown = bad[:4] + sorted((r for r in rows if r[1] == r[2]), key=lambda r: -r[2])[:6 - min(len(bad), 4)]
-    items = [{"what": f"Customer {r[0]}", "expected": _sek(r[2]), "got": _sek(r[1]), "pass": r[1] == r[2]} for r in shown]
+    items = [{"what": f"Customer {r[0]} receivable", "expected": _sek(r[2]), "got": _sek(r[1]), "pass": r[1] == r[2]} for r in shown]
     total = sum(r[2] for r in rows)
     return _check("Customer receivables", bool(rows) and not bad,
                   f"{len(rows)} customers: ledger = open invoices ({_sek(total)} owed)" if not bad else
@@ -132,9 +122,16 @@ def orphans(db):
                   ", ".join(f"{i['got']:,} {i['what']}" for i in bad), sorted(items, key=lambda i: i["pass"]))
 
 
-BOOKS = [_guard("Books balance", books_balance), _guard("Invoice totals", invoice_totals),
-         _guard("Customer receivables", receivables), _guard("Stock on hand", stock_on_hand),
-         _guard("No orphan lines", orphans)]
+BOOKS = {"Books balance": books_balance, "Invoice totals": invoice_totals, "Customer receivables": receivables,
+         "Stock on hand": stock_on_hand, "No orphan lines": orphans}
+
+
+def _book(name, f, db):
+    # A restore that lost a table or column fails the check instead of crashing the verifier.
+    try:
+        return f(db)
+    except sqlite3.Error as e:
+        return _check(name, False, f"cannot be read: {e}", [])
 
 
 def row_counts(db, exp):
@@ -209,7 +206,7 @@ def run(path, expected):
     except sqlite3.Error as e:
         return [_check("Open restored database", False, str(e), [])]
     try:
-        checks = BOOKS + [row_counts, row_hashes] + ([table_digests] if "table_digests" in expected else []) + [schema, smoke]
-        return [f(db, expected) for f in checks]
+        checks = [row_counts, row_hashes] + ([table_digests] if "table_digests" in expected else []) + [schema, smoke]
+        return [_book(n, f, db) for n, f in BOOKS.items()] + [f(db, expected) for f in checks]
     finally:
         db.close()

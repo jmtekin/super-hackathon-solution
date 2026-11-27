@@ -1,9 +1,10 @@
-"""Restorer control plane: turns a backup into a verified restore report.
+"""Restorer control plane: turns a nightly ERP backup into a verified restore report.
 
 One run = plan (LLM) -> sandbox attempt -> on failure feed stderr back for a
 repair (LLM) -> sandbox again -> deterministic verification -> explanation (LLM)
--> Recovery Proof. A backup chain (fixture "drift") runs a second pipeline:
-every night is restored into the current app in parallel sandboxes, the model
+-> Recovery Proof that the books balance. A backup chain (fixture "drift")
+runs a second pipeline: every night is restored into the current ERP in
+parallel sandboxes, the model
 writes one migration for the nights whose schema is older, and each migrated
 night is checked against a manifest made by a reference migration the model
 never sees. The model only writes scripts and prose; the verdict comes
@@ -39,17 +40,17 @@ MAX_ATTEMPTS = 3
 
 FIXTURES = {
     "recoverable": {"title": "Recoverable, first plan fails",
-                    "goal": "Restore the shop-orders database and prove that orders and users are intact.",
-                    "blurb": "Nightly SQLite dump of the shop app. The catalog is out of date.", "timeout": 60},
+                    "goal": "Restore the ERP database and prove the books balance.",
+                    "blurb": "Nightly ERP backup of Nordvik Handel AB. The catalog is out of date.", "timeout": 60},
     "corrupted": {"title": "Corrupted backup",
-                  "goal": "Restore the shop-orders database and prove that orders and users are intact.",
-                  "blurb": "Restores without a single error. Is the data all there?", "timeout": 60},
+                  "goal": "Restore the ERP database and prove the books balance.",
+                  "blurb": "Restores without a single error. Do the books still balance?", "timeout": 60},
     "compromised": {"title": "Compromised backup",
-                    "goal": "Restore the shop-orders database, run its post-restore hooks, and prove the data is intact.",
+                    "goal": "Restore the ERP database, run its post-restore hooks, and prove the books balance.",
                     "blurb": "Ships a post-restore hook. Nobody has read it.", "timeout": 3},
-    "drift": {"title": "Backup chain with schema drift",
-              "goal": "Prove that every nightly backup still restores into today's shop app.",
-              "blurb": "10 nightly backups. The app's schema changed after night 9.", "timeout": 60, "kind": "chain"},
+    "drift": {"title": "Backup chain across an ERP upgrade",
+              "goal": "Prove that every nightly ERP backup still restores into today's ERP and balances.",
+              "blurb": "10 nightly backups. The ERP was upgraded after night 9.", "timeout": 60, "kind": "chain"},
 }
 
 PLAN_SYSTEM = """You are Restorer's restore planner. Write a POSIX sh script (busybox ash; the sqlite3 CLI, gunzip, tar are available; there is no network) that restores a backup inside a sandbox.
@@ -62,7 +63,7 @@ Reply with exactly two parts: a line starting PLAN: followed by 2 to 4 short bul
 REPAIR_SYSTEM = """You are Restorer's restore repairer. A restore script failed inside the sandbox. Fix it with the smallest change that addresses the error, using only facts from the error output and the file listing. Same rules as before: POSIX sh, set -eu, output to /work/restored.db, no network.
 Reply with a line starting CAUSE: (one sentence), then the full corrected script in one ```sh block."""
 
-MIGRATE_SYSTEM = """You are Restorer's migration writer. Old backups no longer load into the current app because its schema changed. Write one SQLite migration that copies every row from the old schema into the current one.
+MIGRATE_SYSTEM = """You are Restorer's migration writer. Old ERP backups no longer load into the current ERP because an upgrade changed its schema. Write one SQLite migration that copies every row from the old schema into the current one.
 - It runs with the sqlite3 CLI on the restored database, which already has the current schema and is empty. The old backup, loaded into its own schema, is attached as old (refer to old.<table>).
 - Plain SQL only: INSERT INTO ... SELECT with explicit column lists. No CREATE, DROP, ALTER, PRAGMA or ATTACH.
 - Copy every old table. Derive new columns from the old data where the data allows (simple substr/instr expressions); otherwise let the column default apply. No placeholders, no comments.
@@ -71,10 +72,10 @@ Reply with a line starting CHANGES: followed by one short line per schema change
 REPAIR_MIGRATION_SYSTEM = """You are Restorer's migration repairer. A schema migration failed inside the sandbox. Fix it with the smallest change that addresses the error. Same rules: plain SQL, INSERT INTO ... SELECT with explicit column lists, the old database attached as old.
 Reply with a line starting CAUSE: (one sentence), then the full corrected SQL in one ```sql block."""
 
-# The chain's restore scripts are the app's own procedure, not the model's: only
+# The chain's restore scripts are the ERP's own procedure, not the model's: only
 # the migration is generated, so a failure points at the backup or the migration.
 CHAIN_RESTORE = """set -eu
-echo "restore: current app schema"
+echo "restore: current ERP schema"
 sqlite3 -bail /work/restored.db < /job/app_schema.sql
 echo "restore: load backup data"
 sqlite3 -bail /work/restored.db < /input/backup/data.sql
@@ -83,13 +84,13 @@ CHAIN_ADAPT = """set -eu
 echo "stage: backup into its own schema"
 sqlite3 -bail /work/old.db < /input/backup/schema.sql
 sqlite3 -bail /work/old.db < /input/backup/data.sql
-echo "stage: current app schema"
+echo "stage: current ERP schema"
 sqlite3 -bail /work/restored.db < /job/app_schema.sql
 echo "migrate: generated migration"
 { echo "ATTACH '/work/old.db' AS old;"; cat /job/migrate.sql; } | sqlite3 -bail /work/restored.db
 """
 
-REPORT_SYSTEM = """You are Restorer's report writer. Explain the evidence of a backup restore drill to an on-call engineer in 3 short sentences: what happened, what the deterministic checks or sandbox enforcement showed, and what to do next. The verdict is already decided; do not contradict it. Plain words, no markdown, no em-dashes."""
+REPORT_SYSTEM = """You are Restorer's report writer. Explain the evidence of an ERP backup restore drill to the company's finance and IT owners in 3 short sentences: what happened, what the deterministic checks of the books or the sandbox enforcement showed (use the SEK figures), and what to do next. The verdict is already decided; do not contradict it. Plain words, no markdown, no em-dashes."""
 
 app = FastAPI(title="Restorer", docs_url=None, redoc_url=None)
 runs = {}
@@ -240,9 +241,9 @@ async def drill(run):
             good = all(c["pass"] for c in checks)
             run.step("Verification", "ok" if good else "fail",
                      detail=f"{sum(c['pass'] for c in checks)}/{len(checks)} checks passed")
-            verdict = ({"level": "ok", "headline": "Backup verified: restore works and data is intact.",
+            verdict = ({"level": "ok", "headline": "Backup verified: the ERP restores and the books balance.",
                         "reason": f"{len(checks)}/{len(checks)} deterministic checks passed"} if good else
-                       {"level": "corrupt", "headline": "Backup corrupted: it restores, but the data is not what was backed up.",
+                       {"level": "corrupt", "headline": "Backup corrupted: it restores, but the books are not what was backed up.",
                         "reason": "; ".join(c["detail"] for c in checks if not c["pass"])})
         explanation = await explain(run, {
             "fixture": run.cfg["title"], "verdict": verdict,
@@ -335,10 +336,10 @@ async def chain_drill(run):
 
     verdict, explanation, migration, old_v, rounds = None, "", None, None, 0
     try:
-        run.step("Native restore", "running", detail=f"{len(chain)} sandboxes in parallel, current app schema v{app_v}")
+        run.step("Native restore", "running", detail=f"{len(chain)} sandboxes in parallel, current ERP schema v{app_v}")
         broken = [c for c, _ in await wave("native", chain, CHAIN_RESTORE, {})]
         run.step("Native restore", "fail" if broken else "ok",
-                 detail=f"{len(chain) - len(broken)} of {len(chain)} load into the current app"
+                 detail=f"{len(chain) - len(broken)} of {len(chain)} load into the current ERP"
                  + (f"; {len(broken)} incompatible: {_last_line(broken[-1]['result']['stderr'])[:160]}"
                     if broken else ""))
         if broken:
@@ -347,16 +348,16 @@ async def chain_drill(run):
                                    "one migration per old schema is not built yet")
             newest = broken[-1]
             old_schema, old_v = newest["schema"], newest["catalog"]["schema_version"]
-            schema_diff = _diff(old_schema, app_schema, f"schema v{old_v} (backup)", f"schema v{app_v} (current app)")
+            schema_diff = _diff(old_schema, app_schema, f"schema v{old_v} (backup)", f"schema v{app_v} (current ERP)")
             data = (newest["dir"] / "data.sql").read_text().splitlines()
             sample = "\n".join(next(l for l in data if l.startswith(f'INSERT INTO "{t}"'))
                                for t in re.findall(r"CREATE TABLE (\w+)", old_schema))
             context = (f"Old schema (v{old_v}, shipped with the backup):\n```sql\n{old_schema}```\n"
-                       f"Current app schema (v{app_v}):\n```sql\n{app_schema}```\n"
+                       f"Current ERP schema (v{app_v}):\n```sql\n{app_schema}```\n"
                        f"One sample row per old table:\n{sample}\n")
             run.step("Write migration", "running", detail=f"Vultr Serverless Inference reads schema v{old_v} against v{app_v}")
             text = await llm(run, "migration", MIGRATE_SYSTEM,
-                             context + f"\nNative restore of {newest['backup']} into the current app failed:\n"
+                             context + f"\nNative restore of {newest['backup']} into the current ERP failed:\n"
                              f"{newest['result']['stderr'][-1500:]}")
             migration = _script(text)
             # Models repeat the CHANGES: tag or add bullets on every line; the UI wants bare lines.
@@ -405,13 +406,13 @@ async def chain_drill(run):
                  detail=f"{len(good)}/{len(chain)} backups pass every check ({n_pass}/{len(checks)} checks)")
         migrated = sum(c["adapted"] for c in good)
         if len(good) == len(chain):
-            verdict = {"level": "ok", "headline": f"Backup chain verified: all {len(chain)} backups restore into the current app.",
+            verdict = {"level": "ok", "headline": f"Backup chain verified: all {len(chain)} backups restore into the current ERP and balance.",
                        "reason": (f"{migrated} migrated from schema v{old_v} to v{app_v}, " if migrated else "")
                        + f"{len(chain) - migrated} native; {n_pass}/{len(checks)} deterministic checks passed"}
         else:
             bad = [c for c in chain if c not in good]
             verdict = {"level": "failed" if any(not c["result"]["ok"] for c in bad) else "corrupt",
-                       "headline": f"Backup chain broken: {len(bad)} of {len(chain)} backups do not restore into the current app.",
+                       "headline": f"Backup chain broken: {len(bad)} of {len(chain)} backups do not restore into the current ERP.",
                        "reason": "; ".join(f"{c['backup']}: " + ("restore failed" if not c["result"]["ok"] else
                                            ", ".join(k["check"] for k in c["checks"] if not k["pass"])) for c in bad)}
         explanation = await explain(run, {
@@ -524,6 +525,10 @@ def proof_html(run_id: str):
         restored_title = "Backup chain"
     else:
         restored, restored_title = f"<code>sha256 {p['restored_db_sha256'] or 'none'}</code>", "Restored database"
+        books = "".join(f"<h3>{'PASS' if c['pass'] else 'FAIL'} {e(c['check'])}: {e(c['detail'])}</h3><ul>"
+                        + "".join(f"<li>{e(i['what'])}: {e(str(i['got']))}" + (" matches" if i["pass"] else f", expected {e(str(i['expected']))}")
+                                  + "</li>" for i in c["items"]) + "</ul>" for c in p["checks"] if c["check"] in verify.BOOKS)
+        restored += f"<h2>The books</h2>{books}" if books else ""
     body = f"""<!doctype html><meta charset=utf-8><title>Recovery Proof {e(p['run_id'])}</title>
 <style>body{{font:15px/1.5 system-ui,sans-serif;max-width:860px;margin:40px auto;padding:0 20px;color:#0f172a}}
 pre{{background:#0f172a;color:#e2e8f0;padding:12px;border-radius:8px;overflow:auto;font-size:12px}}pre.err{{color:#fca5a5}}

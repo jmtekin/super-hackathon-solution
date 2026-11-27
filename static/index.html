@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Restorer: know your backup works before the outage does</title>
+<title>Restorer: prove the books balance after restore</title>
 <style>
 :root{--bg:#f6f6f3;--card:#fff;--ink:#0d0f12;--mute:#6b7280;--line:#e5e5e0;--ok:#15803d;--okbg:#dcfce7;--bad:#b91c1c;--badbg:#fee2e2;--warn:#b45309;--term:#0d1117;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
 *{box-sizing:border-box}
@@ -96,7 +96,7 @@ pre.diff span{display:block} pre.diff .a{color:var(--ok);background:#f0fdf4} pre
 .night.native .d{background:var(--ok);border-color:var(--ok)} .night.native .st{color:var(--ok)}
 .night.failed .d{background:var(--bad);border-color:var(--bad)} .night.failed .st{color:var(--bad)}
 .night.drift:before{content:"";position:absolute;left:0;top:-4px;height:34px;border-left:2px dashed var(--warn)}
-.night.drift:after{content:"schema change";position:absolute;left:0;top:-18px;transform:translateX(-50%);font:10px var(--mono);color:var(--warn);white-space:nowrap}
+.night.drift:after{content:"ERP upgrade";position:absolute;left:0;top:-18px;transform:translateX(-50%);font:10px var(--mono);color:var(--warn);white-space:nowrap}
 .chain .grid{font:12px var(--mono);border-top:1px solid var(--line)}
 .grid>div{padding:5px 0;border-bottom:1px solid #f1f1ee;text-align:center}
 .grid>.lbl{text-align:left;color:#374151}
@@ -113,12 +113,12 @@ footer{color:var(--mute);font-size:12px;text-align:center;padding:10px 0 30px}
 <body>
 <header>
   <div class="brand"><span></span>Restorer</div><span class="ver">v2</span>
-  <div class="tag">Know your backup works before the outage does.</div>
+  <div class="tag">Nightly ERP backup. Prove the books balance after restore.</div>
   <div class="health" id="health"><i class="dot" id="hdot"></i><span id="htext">Control Plane /health ...</span></div>
 </header>
 <main>
   <aside>
-    <h2>Backup fixture</h2>
+    <h2>ERP backup</h2>
     <div id="fixtures"></div>
     <button class="run" id="run" disabled>Run restore drill</button>
     <h2>Sandbox policy</h2>
@@ -162,7 +162,7 @@ footer{color:var(--mute);font-size:12px;text-align:center;padding:10px 0 30px}
     </div>
   </section>
 </main>
-<footer>Control plane: FastAPI on a Vultr VM. Inference: Vultr Serverless Inference. Every restore runs in a disposable sandbox.</footer>
+<footer>Odoo-compatible: the demo ERP uses Odoo's table names (res_partner, account_move, account_move_line, stock_move, sale_order), on SQLite. Control plane: FastAPI on a Vultr VM. Inference: Vultr Serverless Inference. Every restore runs in a disposable sandbox.</footer>
 <script>
 // Relative API paths need a trailing slash behind the Funnel /restorer prefix.
 if (!location.pathname.endsWith("/")) location.replace(location.pathname + "/" + location.search);
@@ -223,15 +223,16 @@ function setBar(id, frac, cap) {
   $(id).querySelector("i").style.width = Math.min(100, frac * 100) + "%";
   $(id).classList.toggle("cap", !!cap);
 }
-// Backup chain: one column per night; rows are the native restore, the migrated restore and the five checks.
+// Backup chain: one column per night; rows are the native restore, the migrated restore and every check.
 let chain = null;
-const ROWS = [["native", "Native restore"], ["adapt", "Restore + migrate"], ["Row counts", "Row counts"], ["Row hashes (sha256)", "Row hashes"],
-              ["Table digests (sha256)", "Table digests"], ["Schema assertions", "Schema"], ["App smoke query", "Smoke query"]];
+const ROWS = [["native", "Native restore"], ["adapt", "Restore + migrate"], ["Books balance", "Books balance"], ["Invoice totals", "Invoice totals"],
+              ["Customer receivables", "Receivables"], ["Stock on hand", "Stock on hand"], ["No orphan lines", "No orphans"], ["Row counts", "Row counts"],
+              ["Row hashes (sha256)", "Row hashes"], ["Table digests (sha256)", "Table digests"], ["Schema assertions", "Schema"], ["ERP smoke query", "Smoke query"]];
 const DATE = iso => new Date(iso).toLocaleDateString("en-GB", {day: "numeric", month: "short", timeZone: "UTC"});
 function chainInit(ev) {
   chain = {phase: "native", cols: Object.fromEntries(ev.backups.map((b, i) => [b.backup, i])), running: 0, destroyed: 0};
   $("chain").classList.remove("hide");
-  $("chaintitle").textContent = `Backup chain · current app schema v${ev.app_version}`;
+  $("chaintitle").textContent = `Nightly ERP backups · current ERP schema v${ev.app_version}`;
   $("strip").innerHTML = `<div></div>` + ev.backups.map((b, i) => `<div class="night${i && b.schema_version !== ev.backups[i - 1].schema_version ? " drift" : ""}" id="n-${b.backup}"><i class="d"></i><b>#${i + 1}</b>${DATE(b.taken_at)}<span class="st">schema v${b.schema_version}</span></div>`).join("");
   $("grid").innerHTML = ROWS.map(([k, label]) => `<div class="lbl">${label === "Schema" ? `Schema v${ev.app_version}` : label}</div>` + ev.backups.map(b => `<div id="g-${CSS.escape(k)}-${b.backup}" class="na">·</div>`).join("")).join("");
   $("chainerr").textContent = "";
