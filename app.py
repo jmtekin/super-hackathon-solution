@@ -869,6 +869,54 @@ table{{border-collapse:collapse;width:100%}}td{{border-bottom:1px solid #e2e8f0;
     return HTMLResponse(body, headers={"Content-Disposition": f'attachment; filename="{'dr-certificate' if p.get('matrix') else 'recovery-proof'}-{run_id}.html"'})
 
 
+@app.get("/api/runs")
+def list_runs(fixture: str = "matrix", limit: int = 10):
+    """Finished runs of one fixture, newest first, so the console opens on the last result instead of a blank grid."""
+    out = []
+    for d in sorted(RUNS.glob("2*"), reverse=True):
+        p = d / "proof.json"
+        if p.is_file() and (proof := json.loads(p.read_text())).get("fixture") == fixture:
+            out.append({"run_id": d.name, "generated_at": proof["generated_at"], "verdict": proof["verdict"]})
+            if len(out) >= limit:
+                break
+    active = [r.id for r in runs.values() if not r.done and r.fixture == fixture]
+    return {"active": active, "runs": out}
+
+
+RESTOREGUARD = os.environ.get("RESTOREGUARD_URL", "127.0.0.1:8600")
+
+
+@app.api_route("/rg/{path:path}", methods=["GET", "POST"])
+async def restoreguard(path: str, request: Request):
+    """The console reads the RestoreGuard runtime (backups watcher, results API, SSE) through here: it listens on
+    localhost only, and one public origin keeps the page free of CORS. GET and POST /api/backups/{id}/rerun only."""
+    if not (path.startswith("api/") or path == "health") or (request.method == "POST" and not path.endswith("/rerun")):
+        raise HTTPException(404, "not proxied")
+    host, port = RESTOREGUARD.rsplit(":", 1)
+    try:
+        reader, writer = await asyncio.wait_for(asyncio.open_connection(host, int(port)), 3)
+    except (OSError, asyncio.TimeoutError):
+        raise HTTPException(502, "RestoreGuard runtime is not reachable")
+    # HTTP/1.0: no chunked encoding, the runtime closes the socket at the end of the body, SSE streams through.
+    writer.write(f"{request.method} /{path} HTTP/1.0\r\nHost: {host}\r\nContent-Length: 0\r\n\r\n".encode())
+    await writer.drain()
+    head = (await reader.readuntil(b"\r\n\r\n")).decode("latin-1").split("\r\n")
+    status = int(head[0].split()[1])
+    headers = dict(h.split(": ", 1) for h in head[1:] if ": " in h)
+    ctype = headers.get("content-type", "application/json")
+
+    async def body():
+        try:
+            while chunk := await reader.read(65536):
+                yield chunk
+        finally:
+            writer.close()
+
+    extra = {k: v for k, v in headers.items() if k.lower() == "content-disposition"}
+    return StreamingResponse(body(), status_code=status, media_type=ctype,
+                             headers={**extra, "Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host=os.environ.get("RESTORER_HOST", "127.0.0.1"), port=int(os.environ.get("RESTORER_PORT", "8530")))
