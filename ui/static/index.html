@@ -172,7 +172,7 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
 .lb.sel span{color:var(--ink-2)}
 .lb.sel b{display:block}
 /* the restored ERP after this backup's restore, floating above its point; a link to that test copy */
-.peekwrap{position:absolute;bottom:calc(100% - 32px);z-index:4;opacity:0;visibility:hidden;transition:opacity .12s ease-out,visibility 0s .12s}
+.peekwrap{position:absolute;width:0;bottom:calc(100% - 32px);z-index:4;opacity:0;visibility:hidden;transition:opacity .12s ease-out,visibility 0s .12s}
 .peekwrap.on{opacity:1;visibility:visible;transition:opacity .12s ease-out}
 .peek{display:block;width:320px;transform:translateX(-50%);background:var(--raised);border:1px solid var(--line-2);border-radius:var(--r2);overflow:hidden;box-shadow:0 12px 32px rgba(0,0,0,.45);color:var(--ink-2);font-size:12px;line-height:16px}
 .peek:hover{text-decoration:none;border-color:var(--strong);color:var(--ink)}
