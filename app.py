@@ -58,6 +58,7 @@ PLAN_SYSTEM = """You are Restorer's restore planner. Write a POSIX sh script (bu
 - Write the restored SQLite database to /work/restored.db. /work is the only writable directory.
 - Follow the catalog exactly, including every post_restore_hooks entry (run each with sh after the database is restored).
 - Keep it minimal: start with set -eu, no existence checks, no fallbacks, no guessing alternative paths. Echo one short line before each step.
+- Only restore. Do not query or check the data: Restorer verifies the books itself, outside the sandbox.
 Reply with exactly two parts: a line starting PLAN: followed by 2 to 4 short bullet lines, then the script in one ```sh block."""
 
 REPAIR_SYSTEM = """You are Restorer's restore repairer. A restore script failed inside the sandbox. Fix it with the smallest change that addresses the error, using only facts from the error output and the file listing. Same rules as before: POSIX sh, set -eu, output to /work/restored.db, no network.
@@ -244,7 +245,7 @@ async def drill(run):
             verdict = ({"level": "ok", "headline": "Backup verified: the ERP restores and the books balance.",
                         "reason": f"{len(checks)}/{len(checks)} deterministic checks passed"} if good else
                        {"level": "corrupt", "headline": "Backup corrupted: it restores, but the books are not what was backed up.",
-                        "reason": "; ".join(c["detail"] for c in checks if not c["pass"])})
+                        "reason": "; ".join(f"{c['check']}: {c['detail']}" for c in checks if not c["pass"])})
         explanation = await explain(run, {
             "fixture": run.cfg["title"], "verdict": verdict,
             "attempts": [{k: a.get(k) for k in ("n", "exit", "elapsed", "network_denied", "timed_out")}

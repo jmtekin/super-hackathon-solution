@@ -37,9 +37,9 @@ def books_balance(db):
                      "HAVING SUM(l.debit) != SUM(l.credit) ORDER BY l.move_id").fetchall()
     ok = debit == credit and not off
     items = [{"what": "Debits = credits", "expected": _sek(credit), "got": _sek(debit), "pass": debit == credit}]
-    items += [{"what": n, "expected": "debit = credit", "got": f"{_sek(d)} / {_sek(c)}", "pass": False} for n, d, c in off]
+    items += [{"what": n, "expected": "debit = credit", "got": f"{_sek(d)} / {_sek(c)}", "pass": False} for n, d, c in off[:5]]
     return _check("Books balance", ok, f"debits {_sek(debit)} = credits" if ok else
-                  f"Books do not balance: debits {_sek(debit)}, credits {_sek(credit)}, off by {_sek(abs(debit - credit))}; "
+                  f"debits {_sek(debit)}, credits {_sek(credit)}, off by {_sek(abs(debit - credit))}; "
                   f"{len(off)} journal {'entry' if len(off) == 1 else 'entries'} with debit != credit", items)
 
 
@@ -55,7 +55,7 @@ def invoice_totals(db):
         FROM account_move m LEFT JOIN account_move_line l ON l.move_id = m.id
         WHERE m.move_type = 'out_invoice' AND m.state = 'posted' GROUP BY m.id ORDER BY m.id""").fetchall()
     bad = [r for r in rows if not (r[1] == r[4] and r[2] == r[5] and r[3] == r[1] + r[2] == r[6] and not r[7])]
-    items = [{"what": r[0], "expected": _sek(r[3]), "got": f"lines {_sek(r[4] + r[5])}", "pass": False} for r in bad]
+    items = [{"what": r[0], "expected": _sek(r[3]), "got": f"lines {_sek(r[4] + r[5])}", "pass": False} for r in bad[:5]]
     items += [{"what": r[0], "expected": _sek(r[3]), "got": _sek(r[3]), "pass": True} for r in rows[::max(1, len(rows) // 3)]]
     return _check("Invoice totals", bool(rows) and not bad,
                   f"{len(rows):,} invoices: total = lines + 25 % VAT" if not bad else

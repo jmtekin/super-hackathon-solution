@@ -77,7 +77,8 @@ pre.diff span{display:block} pre.diff .a{color:var(--ok);background:#f0fdf4} pre
 .ck.pass .st{color:var(--ok)} .ck.fail .st{color:var(--bad)}
 .ck b{display:block;margin:2px 0 4px}
 .ck table{width:100%;font:11px var(--mono);border-collapse:collapse;margin-top:6px}
-.ck td{padding:2px 0;border-top:1px solid #f1f1ee}
+.ck table{table-layout:fixed}
+.ck td{padding:2px 0;border-top:1px solid #f1f1ee;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ck td.x{color:var(--bad)}
 .ev{font:12px var(--mono)}
 .ev div{display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px dashed var(--line)}
