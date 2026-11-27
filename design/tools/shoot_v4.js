@@ -29,5 +29,20 @@ const [base, dir] = process.argv.slice(2);
       await p.close();
     }
   }
+  // Live drill: press Run drill through the public page, shoot mid-run and when it is sealed.
+  if (process.env.LIVE) {
+    const p = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    p.on('pageerror', e => console.log('live pageerror', e.message));
+    await p.goto(base + '?view=drill');
+    await p.waitForSelector('#run');
+    await p.click('#run');
+    await p.waitForTimeout(7000);
+    await p.screenshot({ path: `${dir}/drill-live-1440.png`, fullPage: true });
+    await p.waitForFunction(() => !document.querySelector('#run')?.disabled, null, { timeout: 90000 });
+    await p.waitForTimeout(1500);
+    await p.screenshot({ path: `${dir}/drill-sealed-1440.png`, fullPage: true });
+    console.log('live headline:', await p.locator('#headline').textContent());
+    await p.close();
+  }
   await browser.close();
 })();

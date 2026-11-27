@@ -123,7 +123,7 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
   .matrix{grid-template-columns:1fr 1fr}
   .matrix > .colhead{display:none}
   .cell .app{display:block}
-  .cell .d{white-space:normal}
+  .cell .d{white-space:normal;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
   .bk{grid-column:1 / 3;padding:12px 0 0}
   .cell{margin:8px 0 4px}
   .panel{margin-top:24px;padding:16px}
@@ -254,7 +254,8 @@ function rgView() {
     actions: rg.sel && rg.details[rg.sel.b]?.certificate ? `<a class="btn" href="#cert">Certificate</a>` : "",
     cols: rg.versions.map(v => ({id: v, label: `App ${v}`})),
     rows: ss.map(b => ({
-      id: b.id, name: b.file, verdict: b.status,
+      // The timestamp prefix is in the sub line already; the suffix is what tells the backups apart.
+      id: b.id, name: b.file.replace(/^\d{8}T\d{6}Z[-_]/, ""), full: b.file, verdict: b.status,
       sub: [b.created_at && clock(b.created_at), b.schema_version != null && `schema v${b.schema_version}`, mb(b.bytes)].filter(Boolean).join(" · "),
       cells: Object.fromEntries(rg.versions.map(v => { const c = rgCell(b.id, v); return [v, {state: c.state,
         line: cellLine(c.state, c.reason, c.elapsed_s, b.status === "running")}]; })),
@@ -422,7 +423,7 @@ function drPanel() {
   if (dr.live) {
     const L = dr.live, bid = L.backups.find(x => x.file === b)?.id, aid = L.apps.find(x => x.title === v)?.id;
     const c = L.cells[`${bid}|${aid}`] || {state: "running"};
-    const evs = L.events.filter(e => e.backup === bid && e.app === aid && e.type !== "cpu" && e.type !== "matrix");
+    const evs = L.events.filter(e => e.backup === bid && e.app === aid && e.type !== "cpu" && e.type !== "matrix" && !(e.type === "log" && e.stream === "stdout"));
     const pol = evs.filter(e => e.type === "policy");
     return `<div class="panel">${head}<div style="margin-top:8px">${mark(c.state === "drift" && c.bridge ? "healing" : c.state)}</div>
       ${targetLine(null, evs.find(e => e.type === "sandbox")?.name)}
@@ -556,7 +557,7 @@ function draw() {
   const sel = V.sel;
   $("#body").innerHTML = `<div class="main"><div>
     <div class="matrix"><div class="colhead corner">Backup</div>${V.cols.map(c => `<div class="colhead">${esc(c.label)}</div>`).join("")}
-    ${V.rows.map(r => `<div class="row"><div class="bk"><div class="name" title="${esc(r.name)}">${esc(r.name)}</div><div class="sub">${esc(r.sub)}</div>${verdictLine(r.verdict)}</div>
+    ${V.rows.map(r => `<div class="row"><div class="bk"><div class="name" title="${esc(r.full || r.name)}">${esc(r.name)}</div><div class="sub">${esc(r.sub)}</div>${verdictLine(r.verdict)}</div>
       ${V.cols.map(c => { const x = r.cells[c.id] || {state: "not_run", line: ""};
         return `<button class="cell" data-b="${esc(r.id)}" data-v="${esc(c.id)}" aria-pressed="${!!sel && sel.b === r.id && sel.v === c.id}">
           <div class="app">${esc(c.label)}</div>${mark(x.state)}<div class="d" title="${esc(x.line)}">${esc(x.line)}</div></button>`; }).join("")}</div>`).join("")}

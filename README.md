@@ -57,7 +57,7 @@ Fixtures (`fixtures/build.py`, a seeded day-by-day simulation of the company's y
 | `apps/suite.py` | the business-logic suite run against the booted app |
 | `sandbox.py` | hardened Docker runner, live CPU/memory from the container cgroup |
 | `verify.py` | the deterministic checks: five on the books, five against the manifest |
-| `static/index.html` | the single-page UI (relative paths, works under any prefix) |
+| `static/index.html` | the console (relative paths, works under any prefix): tabs Backups (RestoreGuard runtime via `/rg/*`) and Drill; checklist design/SPEC-CHECKLIST.md |
 | `fixtures/build.py` | simulates the ERP, builds the matrix dumps + the four drill fixtures + their manifests, incl. the reference v1 to v2 migration |
 | `sandbox.Dockerfile` | sandbox image `restorer-sandbox:2` (alpine + sqlite, python3, curl, honey `/root/.env`) |
 | `install.sh` | one-command install on a Vultr VM |
@@ -95,11 +95,11 @@ backups and proves each one on every app version. JSON only; paths are relative 
 | `GET /api/stream` | SSE, one JSON event per `data:` line (below) |
 
 `status` of a backup: `queued`, `running`, `dr_ready` (restorable on at least one app version), `not_restorable`, `quarantined`,
-`failed` (unreadable manifest; never ran). `state` of a cell: `running`, `native` (restored, app runs on it as is, including the
+`failed` (unreadable manifest; never ran). Every restore goes into a throwaway test instance (own Postgres container, no network, the app version under test inside it), never into production; the certificate names it per app version (`restored_into`). `state` of a cell: `running`, `native` (restored, app runs on it as is, including the
 app's own forward migrations), `healed` (a GLM bridge migration made it run, checks pass), `failed`, `quarantined` (containment
 signal or static-scan finding), `not_run`.
 
-A cell: `{cell: "<backup>@<app_version>", backup, app_version, state, reason, checks: [{check, pass, detail}], timings: {<step>: s},
+A cell: `{cell: "<backup>@<app_version>", backup, app_version, restored_into: {instance: "test instance rg-…", database, app, dsn}, state, reason, checks: [{check, pass, detail}], timings: {<step>: s},
 signals: ["network"|"rootfs"|"honey"|"memory"|"timeout"], static_scan: [{line, text, why}], bridges: [{name, round, sha256, sql,
 changes, failure?}], llm_calls: [{purpose, model, latency_s, tokens, fallback}], elapsed_s}`.
 
