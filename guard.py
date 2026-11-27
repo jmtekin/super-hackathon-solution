@@ -143,7 +143,7 @@ class Cell:
     def restored_into(self):
         return {"instance": f"test instance {self.name}", "database": f"Postgres 16 sandbox {self.name}, network none",
                 "app": f"{self.app.get('image')} as {self.name}-app, in the sandbox's network namespace",
-                "dsn": TEST_DSN, "production_touched": False}
+                "dsn": TEST_DSN}
 
     def result(self):
         return {"cell": self.id, "backup": self.backup["id"], "app_version": self.app["version"],
