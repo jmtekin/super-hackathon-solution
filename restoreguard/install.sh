@@ -8,7 +8,7 @@ set -eu
 [ "$(id -u)" = 0 ] || { echo "run as root" >&2; exit 1; }
 : "${VULTR_INFERENCE_KEY:?set VULTR_INFERENCE_KEY (Vultr Serverless Inference API key)}"
 SRC="$(cd "$(dirname "$0")" && pwd)"
-[ -f "$SRC/../restorer/app.py" ] || { echo "projects/restorer must sit next to restoreguard" >&2; exit 1; }
+[ -f "$SRC/../ui/app.py" ] || { echo "ui/ (the console app) must sit next to restoreguard/" >&2; exit 1; }
 DEST=/opt/restoreguard
 PORT="${RESTOREGUARD_PORT:-8600}"
 
@@ -19,7 +19,7 @@ id restoreguard >/dev/null 2>&1 || useradd --system --home "$DEST" --shell /usr/
 usermod -aG docker restoreguard
 mkdir -p "$DEST/restoreguard" "$DEST/restorer"
 rsync -a --delete --exclude .git --exclude state --exclude backups --exclude faults/out "$SRC"/ "$DEST/restoreguard"/
-rsync -a --delete --exclude .git --exclude .venv --exclude runs --exclude shots "$SRC/../restorer"/ "$DEST/restorer"/
+rsync -a --delete --exclude .git --exclude .venv --exclude runs --exclude shots "$SRC/../ui"/ "$DEST/restorer"/
 python3 -m venv "$DEST/.venv"
 "$DEST/.venv/bin/pip" install -q -r "$DEST/restorer/requirements.txt"
 docker pull -q postgres:16-alpine

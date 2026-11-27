@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "restoreguard"))
 import frappe_target as ft  # noqa: E402
 
 CFG = {"source": {"site": "demo.local", "url": "http://70.34.199.143"},

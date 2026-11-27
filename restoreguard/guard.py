@@ -34,7 +34,7 @@ import uuid
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, os.environ.get("RESTORER_DIR", str(HERE.parent / "restorer")))
+sys.path.insert(0, os.environ.get("RESTORER_DIR", str(HERE.parent / "ui")))
 import app as airlock  # noqa: E402  BackupAirlock: llm(), _script, _section, _plain, _sha
 import sandbox as airlock_sandbox  # noqa: E402  containment signal patterns
 

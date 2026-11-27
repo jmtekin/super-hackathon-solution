@@ -26,7 +26,7 @@ Sandbox: `--network none`, 1 CPU at cpu-shares 256, 384 MB (app 128 MB), pids 12
 data on a 200 MB tmpfs, all capabilities dropped, uid 70, 180 s per cell, removed in every outcome (checked). One
 sandbox at a time box-wide (`state/sandbox.lock`), so the fault kit and the service never overlap.
 `apps.json` lists the app versions (image, schema, port, migrations path); any key or value that could point a
-restore at a configured database or host is refused at startup (`guard.check_app`, tests in `tests/`).
+restore at a configured database or host is refused at startup (`guard.check_app`, tests in `../tests/`).
 
 ## Frappe target: Abdullah's ERP (`frappe_target.py`, `frappe.json`)
 
@@ -87,7 +87,7 @@ This VPS (`restoreguard.service`, 127.0.0.1:8600, watches `backups/` and `faults
 ```sh
 sh standin/run_here.sh backups            # STAND-IN: seed, traffic, backup v1, upgrade to 2.0.0, traffic, backup v2 (~75 s)
 python faults.py backups/<ts>_v1.dump     # makes 6 faulty copies in faults/out/, runs them, prints the table
-python -m unittest tests/test_guard.py tests/test_frappe.py
+python -m unittest tests/test_guard.py tests/test_frappe.py   (from the repo root)
 ```
 Vultr VM (Ubuntu 24.04, `restorer` checked out next to this directory):
 `VULTR_INFERENCE_KEY=... [RESTOREGUARD_BACKUPS_URL=https://<app-vm>/backups/ BACKUPS_TOKEN=...] [ADMIN_PASSWORD=...] sh install.sh`.

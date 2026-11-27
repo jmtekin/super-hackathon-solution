@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "restoreguard"))
 import guard  # noqa: E402
 
 GOOD = {"version": "1.0.0", "image": "nordvik-standin:1.0.0", "schema": 1, "port": 8000, "migrations": "/app/migrations"}
