@@ -1,0 +1,66 @@
+/* BackupAirlock design system v8, shared by Overview, Timeline and Settings (docs/design/v8/README.md).
+   References: Linear (layered graphite surfaces, Inter, quiet chrome), Vercel dashboard (one top bar, hairline panels),
+   Grafana / Datadog (dense mono logs and time axes, state colour only on marks).
+   Neutrals: one cool graphite ramp. State hues only on marks, the done/fail word and the one danger word.
+   Type 12 / 13 / 14 / 16 / 20 / 28 (Inter). Space 4 8 12 16 24 32 48 64. Radius 6 controls, 10 panels. */
+@font-face{font-family:"Inter";src:url("inter.woff2") format("woff2");font-weight:100 900;font-display:swap}
+:root{
+  --bg:#0d0e10;--surface:#141518;--raised:#1a1c20;--hover:#212329;--selected:#272a31;
+  --line:#24262b;--line-2:#30333a;--strong:#7b818b;--ink:#ecedef;--ink-2:#a3a8b0;
+  --ok:#3fb950;--heal:#4fb3a1;--warn:#d29922;--bad:#f0706a;--accent:#7cacf8;
+  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;--s7:48px;--s8:64px;
+  --r1:6px;--r2:10px;
+  --sans:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
+  --panel-shadow:inset 0 1px 0 rgba(255,255,255,.035),0 1px 2px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+[hidden]{display:none!important}
+html{background:var(--bg)}
+body{background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans);font-feature-settings:"cv11","ss03";font-variant-numeric:tabular-nums;
+  -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline;text-underline-offset:3px}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--r1)}
+
+/* one top bar on every page: wordmark, the three pages, page actions on the right */
+/* the bar's edges sit on the content column's edges (1280 px column, 32 px gutter) */
+.appbar{display:flex;align-items:center;gap:var(--s6);height:56px;padding:0 max(var(--s6),calc((100% - 1280px) / 2 + var(--s6)));border-bottom:1px solid var(--line);background:var(--bg);position:relative;z-index:6}
+.appbar .brand{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600;letter-spacing:-.01em;color:var(--ink);white-space:nowrap}
+.appbar .brand:hover{text-decoration:none}
+/* the mark: a chamber (outer square) holding a verified backup (inner square) */
+.appbar .brand::before{content:"";width:16px;height:16px;border-radius:4px;box-shadow:inset 0 0 0 1.5px var(--ink-2),inset 0 0 0 4px var(--bg),inset 0 0 0 8px var(--ok)}
+.nav{display:flex;gap:2px}
+.nav a{height:32px;line-height:32px;padding:0 var(--s3);border-radius:var(--r1);color:var(--ink-2);font-size:13px;font-weight:500}
+.nav a:hover{color:var(--ink);background:var(--hover);text-decoration:none}
+.nav a[aria-current=page]{color:var(--ink);background:var(--raised);box-shadow:inset 0 0 0 1px var(--line-2)}
+
+/* content column for the reading pages */
+.page{max-width:1280px;margin:0 auto;padding:var(--s7) var(--s6) var(--s8)}
+h1{font-size:28px;line-height:36px;font-weight:600;letter-spacing:-.02em}
+.lead{font-size:16px;line-height:24px;color:var(--ink-2);margin-top:var(--s2);max-width:60ch}
+
+/* the one raised surface */
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r2);box-shadow:var(--panel-shadow);min-width:0}
+.panel-h{display:flex;align-items:baseline;justify-content:space-between;gap:var(--s4);padding:var(--s3) var(--s4);border-bottom:1px solid var(--line);font-size:13px;line-height:20px;font-weight:600}
+.panel-h span{font-weight:400;color:var(--strong);font-size:12px}
+
+/* buttons: one primary per screen */
+.btn{display:inline-flex;align-items:center;height:32px;padding:0 var(--s3);border-radius:var(--r1);font-size:13px;font-weight:500;line-height:1;white-space:nowrap;
+  color:var(--ink);background:var(--raised);box-shadow:inset 0 0 0 1px var(--line-2);transition:background .12s}
+.btn:hover:not(:disabled){background:var(--hover);text-decoration:none}
+/* primary = the strongest neutral fill, never brighter than the text (DESIGN-LESSONS 11-27) */
+.btn.primary{background:var(--selected);box-shadow:inset 0 0 0 1px #474b55;font-weight:600}
+.btn.primary:hover:not(:disabled){background:#30343c}
+.btn:disabled{opacity:.45;cursor:default}
+.btn:active:not(:disabled){transform:translateY(1px)}
+
+@media (max-width:640px){
+  .appbar{gap:var(--s4);padding:0 var(--s4)}
+  .appbar .brand{font-size:0;gap:0}
+  .nav a{padding:0 10px}
+  .page{padding:var(--s6) var(--s4) var(--s7)}
+  h1{font-size:22px;line-height:30px}
+  .lead{font-size:14px;line-height:22px}
+}

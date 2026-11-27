@@ -5,28 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BackupAirlock</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ccircle cx=%278%27 cy=%278%27 r=%276%27 fill=%27%233fb950%27/%3E%3C/svg%3E">
+<link rel="stylesheet" href="airlock.css">
 <style>
-/* Console v7 (one view: timeline at the bottom, checks above; docs/design/first-impression/README.md) on the v5 system. Colour: design/COLOR.md (Radix slate 12-step neutrals, state hues only on marks, links and the one danger word).
-   Spacing: design/SPACING.md (4 8 12 16 24 32 48; inside a group < between groups < between regions).
-   Type 12 / 13 / 14 / 16 / 20. */
-:root{
-  --bg:#111113;--surface:#18191b;--hover:#272a2d;--selected:#2e3135;
-  --line:#363a3f;--line-2:#43484e;--strong:#5a6169;--ink:#edeef0;--ink-2:#c4c8ce;
-  --ok:#3fb950;--heal:#6cb6a8;--warn:#d29922;--bad:#ff9592;--accent:#70b8ff;
-  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;--s7:48px;
-  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  --mono:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
-}
-*{box-sizing:border-box;margin:0;padding:0}
-[hidden]{display:none!important}
-body{background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
-a{color:var(--accent);text-decoration:none}
-a:hover{text-decoration:underline;text-underline-offset:3px}
-button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
-:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* Console v8 (one view: timeline at the bottom, checks above; docs/design/first-impression/README.md). Tokens, type, top bar, panels, buttons: airlock.css (docs/design/v8/README.md). */
 .mono{font-family:var(--mono);font-size:12px}
 .muted{color:var(--ink-2)}
-.page{max-width:1440px;margin:0 auto;padding:var(--s5) var(--s7) var(--s7)}
 
 /* header */
 .bar{display:flex;align-items:center;gap:var(--s5);height:40px}
@@ -43,10 +26,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 h1{font-size:20px;line-height:28px;font-weight:600;margin-top:var(--s1)}
 h1 em{font-style:normal;color:var(--bad)}
 .actions{display:flex;gap:var(--s4);align-items:center;flex-shrink:0;font-size:13px}
-.btn{height:32px;padding:0 var(--s3);border-radius:3px;font-size:13px;font-weight:600;line-height:30px;border:1px solid var(--line-2);color:var(--ink);white-space:nowrap;display:inline-block}
-.btn.primary{background:var(--selected);border-color:var(--strong)}
-.btn:disabled{opacity:.45;cursor:default}
-.btn:hover{text-decoration:none;border-color:var(--strong);background:var(--hover)}
 .note{font-size:12px;color:var(--ink-2);margin-top:var(--s2)}
 .note:empty{display:none}
 
@@ -65,7 +44,7 @@ h1 em{font-style:normal;color:var(--bad)}
 .cell:hover{background:var(--hover)}
 .cell[aria-pressed=true]{background:var(--selected);box-shadow:inset 2px 0 0 var(--strong)}
 .st{display:flex;align-items:center;gap:var(--s2);font-size:13px;font-weight:600;line-height:20px}
-.st i{width:8px;height:8px;border-radius:1px;flex-shrink:0;background:var(--c)}
+.st i{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--c)}
 .st i.hollow{background:none;box-shadow:inset 0 0 0 1.5px var(--c)}
 .st b{font-weight:600}
 .st.c-bad b{color:var(--bad)}
@@ -113,23 +92,20 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
 /* the one view (Jonas 15:35-15:36): checks of the selected backup above, the timeline of backups along the bottom, nothing else */
 .page.full{max-width:none;padding:0}
 .ov{height:100vh;height:100dvh;display:grid;grid-template-rows:auto minmax(0,1fr) auto}
-.brand{display:flex;align-items:baseline;gap:var(--s3);padding:var(--s4) var(--s7);border-bottom:1px solid var(--line)}
-.brand b{font-size:16px;font-weight:700;letter-spacing:-.01em}
-.brand span{font-size:13px;color:var(--ink-2)}
 /* Run (Jonas 16:17): one primary action, three one-click stories beside it, the parameters in a small panel under it */
-.brand{position:relative}
 .ctl{margin-left:auto;align-self:center;display:flex;align-items:center;gap:var(--s3)}
-.scen{display:flex;gap:2px;padding:2px;border:1px solid var(--line);border-radius:4px}
-.scen button{height:28px;padding:0 var(--s3);border-radius:3px;font-size:13px;color:var(--ink-2);white-space:nowrap}
+.scen{display:flex;gap:2px;padding:2px;background:var(--surface);box-shadow:inset 0 0 0 1px var(--line);border-radius:8px}
+.scen button{height:28px;padding:0 var(--s3);border-radius:var(--r1);font-size:13px;font-weight:500;color:var(--ink-2);white-space:nowrap}
 .scen button:hover:not(:disabled){background:var(--hover);color:var(--ink)}
 .scen button[aria-pressed=true]{background:var(--selected);color:var(--ink)}
 .scen button:disabled:not([aria-pressed=true]),.ctl .quiet:disabled{opacity:.45;cursor:default}
 .ctl .quiet{height:32px;padding:0 var(--s2);font-size:13px;color:var(--ink-2)}
 .ctl .quiet:hover:not(:disabled){color:var(--ink)}
-.brand .msg{font-size:12px;color:var(--ink-2);max-width:360px;text-align:right}
-.brand .msg.err{color:var(--warn)}
-.runp{position:absolute;right:var(--s7);top:calc(100% + var(--s2));z-index:5;width:400px;max-height:calc(100dvh - 96px);overflow:auto;display:grid;gap:var(--s4);
-  padding:var(--s4);background:var(--surface);border:1px solid var(--line-2);border-radius:4px;box-shadow:0 12px 32px rgba(0,0,0,.45);font-weight:400}
+.appbar.run{padding:0 var(--s6)}
+.appbar .msg{font-size:12px;color:var(--ink-2);max-width:360px;text-align:right}
+.appbar .msg.err{color:var(--warn)}
+.runp{position:absolute;right:var(--s6);top:calc(100% + var(--s2));z-index:5;width:400px;max-height:calc(100dvh - 96px);overflow:auto;display:grid;gap:var(--s4);
+  padding:var(--s4);background:var(--raised);border:1px solid var(--line-2);border-radius:var(--r2);box-shadow:0 16px 40px rgba(0,0,0,.5);font-weight:400}
 .runp h3{font-size:12px;line-height:16px;font-weight:600;color:var(--ink-2);margin-bottom:var(--s1)}
 .runp label{display:flex;align-items:center;gap:var(--s2);font-size:13px;line-height:28px;cursor:pointer}
 .runp label span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -141,18 +117,19 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
 .runp footer{display:flex;align-items:center;justify-content:flex-end;gap:var(--s3);padding-top:var(--s3);border-top:1px solid var(--line)}
 .sum{grid-column:1/-1;display:flex;flex-wrap:wrap;column-gap:var(--s5);row-gap:var(--s1);margin-top:calc(var(--s3) - var(--s5));font-size:13px;color:var(--ink-2)}
 .sum strong{color:var(--ink);font-weight:600}
-.dt{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);grid-template-rows:auto auto minmax(0,1fr);column-gap:var(--s6);row-gap:var(--s5);padding:var(--s6) var(--s7) var(--s5);min-height:0}
+.dt{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);grid-template-rows:auto auto minmax(0,1fr);column-gap:var(--s6);row-gap:var(--s5);padding:var(--s6) var(--s6) var(--s5);min-height:0}
 .dt header{grid-column:1/-1;display:flex;align-items:baseline;flex-wrap:wrap;column-gap:var(--s4);row-gap:var(--s1)}
-.dt h2{font-size:20px;line-height:28px;font-weight:600;overflow-wrap:anywhere}
+.dt h2{font-size:24px;line-height:32px;font-weight:600;letter-spacing:-.02em;overflow-wrap:anywhere}
 .dt .when{font-size:13px;color:var(--ink-2)}
 .ck{display:grid;align-content:start;gap:var(--s5);overflow:auto;min-height:0;padding-right:var(--s2)}
-.ck h3{font-size:13px;line-height:20px;font-weight:600;padding-bottom:var(--s2);border-bottom:1px solid var(--line)}
+.ck h3{font-size:12px;line-height:16px;font-weight:600;color:var(--ink-2);padding-bottom:var(--s2);border-bottom:1px solid var(--line)}
 .ck ul{list-style:none;margin-top:var(--s2)}
-.ck li{display:grid;grid-template-columns:8px minmax(0,1fr) auto;column-gap:var(--s3);align-items:start;font-size:13px;line-height:24px}
-.ck li i{margin-top:8px;width:8px;height:8px;border-radius:50%;background:var(--c)}
+.ck li{display:grid;grid-template-columns:8px minmax(0,1fr) auto;column-gap:var(--s3);align-items:start;font-size:13px;line-height:20px;padding:6px var(--s2);margin:0 calc(-1 * var(--s2));border-radius:var(--r1)}
+.ck li:hover{background:var(--surface)}
+.ck li i{margin-top:6px;width:8px;height:8px;border-radius:50%;background:var(--c)}
 .ck li.skipped i,.ck li.waiting i{background:none;box-shadow:inset 0 0 0 1.5px var(--c)}
 .ck li.skipped span,.ck li.waiting span{color:var(--ink-2)}
-.term{overflow:auto;min-height:0;background:var(--surface);border-radius:3px;padding:var(--s3) var(--s4);font:12px/20px var(--mono);color:var(--ink-2)}
+.term{overflow:auto;min-height:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--r2);box-shadow:var(--panel-shadow);padding:var(--s3) var(--s4);font:12px/20px var(--mono);color:var(--ink-2)}
 .term>div{display:grid;grid-template-columns:48px minmax(0,1fr);column-gap:var(--s3)}
 .term>div>span:last-child{overflow-wrap:anywhere;white-space:pre-wrap}
 .term .t{text-align:right;color:var(--strong)}
@@ -162,7 +139,7 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
 .term pre{margin:0 0 var(--s1) 60px;font:inherit;color:var(--strong);white-space:pre-wrap;overflow-wrap:anywhere}
 .ck li b{font-size:12px;font-weight:400;color:var(--ink-2)}
 .ck li b span{color:var(--strong);margin-right:var(--s3)}
-.ck li.hot{background:var(--hover);box-shadow:0 0 0 4px var(--hover)}
+.ck li.hot{background:var(--hover)}
 .strip{display:grid;grid-template-columns:auto minmax(0,1fr) auto;column-gap:var(--s3);row-gap:var(--s1);align-items:center;font-size:12px;line-height:16px;color:var(--ink-2)}
 .lane{position:relative;height:16px}
 .lane::before{content:"";position:absolute;left:0;right:0;top:7px;height:2px;background:var(--line)}
@@ -173,9 +150,9 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
 .axis{display:flex;justify-content:space-between;color:var(--strong)}
 .ck li.done b{color:var(--ok)}
 .ck li.fail b,.ck li.blocked b{color:var(--bad);font-weight:600}
-.ck li.blocked i{width:6px;height:6px;margin:9px 1px 0;box-shadow:0 0 0 2px var(--bg),0 0 0 3.5px var(--c)}
+.ck li.blocked i{width:6px;height:6px;margin:7px 1px 0;box-shadow:0 0 0 2px var(--bg),0 0 0 3.5px var(--c)}
 /* one mark per backup, oldest left, evenly spaced; colour = does it restore; a tick over the latest that does */
-.band{--bg:var(--surface);background:var(--bg)}
+.band{--bg:var(--surface);background:var(--bg);border-top:1px solid var(--line)}
 .tl{position:relative;height:168px;margin:0 var(--s7);touch-action:none}
 .tl::before{content:"";position:absolute;left:0;right:0;top:55px;height:2px;background:var(--line)}
 .mk{position:absolute;top:56px;width:44px;height:44px;margin:-22px 0 0 -22px;display:grid;place-items:center}
@@ -197,7 +174,7 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
 /* the restored ERP after this backup's restore, floating above its point; a link to that test copy */
 .peekwrap{position:absolute;bottom:calc(100% - 32px);z-index:4;opacity:0;visibility:hidden;transition:opacity .12s ease-out,visibility 0s .12s}
 .peekwrap.on{opacity:1;visibility:visible;transition:opacity .12s ease-out}
-.peek{display:block;width:320px;transform:translateX(-50%);background:var(--surface);border:1px solid var(--line-2);border-radius:4px;overflow:hidden;box-shadow:0 12px 32px rgba(0,0,0,.45);color:var(--ink-2);font-size:12px;line-height:16px}
+.peek{display:block;width:320px;transform:translateX(-50%);background:var(--raised);border:1px solid var(--line-2);border-radius:var(--r2);overflow:hidden;box-shadow:0 12px 32px rgba(0,0,0,.45);color:var(--ink-2);font-size:12px;line-height:16px}
 .peek:hover{text-decoration:none;border-color:var(--strong);color:var(--ink)}
 .peek img{display:block;width:100%;height:auto;aspect-ratio:16/10;background:#fff}
 .peek span{display:block;padding:var(--s2) var(--s3)}
@@ -250,17 +227,17 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
   .dt{display:block;overflow:auto;padding:var(--s5) var(--s4) var(--s4)}
   .ck{overflow:visible;margin-top:var(--s5);padding-right:0}
   .term{margin-top:var(--s5);max-height:50vh}
-  .tl{margin:0 var(--s5)}
-  .brand{padding:var(--s3) var(--s4)}
-  .brand span{display:none}
-  .brand{flex-wrap:wrap;row-gap:var(--s3)}
+  .tl{margin:0 40px}
+  .appbar.run{height:auto;flex-wrap:wrap;column-gap:var(--s3);row-gap:var(--s3);padding:var(--s3) var(--s4)}
+  .appbar.run .brand{display:none}
+  .appbar.run .nav a{padding:0 var(--s2)}
   .ctl{display:contents}
-  .ctl .quiet{order:1;margin-left:auto}
+  .ctl .quiet{order:1;margin-left:auto;padding:0 var(--s1)}
   .ctl .btn{order:1}
   .scen{order:2;width:100%}
-  .scen button{flex:1;padding:0 var(--s1);font-size:12px}
-  .brand .msg{order:3;width:100%;max-width:none;text-align:left}
-  .brand .msg:empty{display:none}
+  .scen button{flex:1 1 auto;min-width:0;padding:0 2px;font-size:12px}
+  .appbar .msg{order:3;width:100%;max-width:none;text-align:left}
+  .appbar .msg:empty{display:none}
   .runp{left:var(--s4);right:var(--s4);width:auto;top:calc(100% + var(--s1))}
   .sum{margin-top:var(--s2)}
 }
@@ -775,7 +752,7 @@ function ovTerm(b) {
   const name = e => e.type === "bridge" ? `bridge round ${e.round}` : e.type !== "check" ? "" : baseName(e.check) + (!e.pass && /\(native\)/.test(e.check) ? " on the old schema" : "");
   const line = e => `<div class="${e.type === "policy" || e.type === "check" && !e.pass ? "c-bad" : e.type === "step" ? "step" : ""}"${name(e) ? ` data-n="${esc(name(e))}"` : ""}><span class="t">${e.t != null ? (+e.t).toFixed(2) : ""}</span><span>${esc(calm(evText(e)))}</span></div>`
     + (e.type === "bridge" && sql[e.name] ? `<pre>${esc(sql[e.name])}</pre>` : "");
-  return `<div class="term" id="term"${live && !live.done ? " data-live" : ""}>${evs.length ? evs.map(line).join("") : `<div><span class="t"></span><span>${b.status === "queued" ? "queued behind the backup that is running" : run ? "starting" : "no log"}</span></div>`}</div>`;
+  return `<div class="term" id="term"${live && !live.done ? " data-live" : ""}>${evs.length ? evs.filter(e => !/^stderr:[\s-]*$/.test(calm(evText(e)))).map(line).join("") : `<div><span class="t"></span><span>${b.status === "queued" ? "queued behind the backup that is running" : run ? "starting" : "no log"}</span></div>`}</div>`;
 }
 // The verdict in numbers, under the name: checks, time, bridge rounds, where it was restored.
 function ovSum(b) {
@@ -898,7 +875,7 @@ function ovView() {
   const latest = ss.filter(b => b.status === "dr_ready").at(-1);
   const sel = ss.find(b => b.id === ovSel.id) || ss.at(-1);
   ovSel.id = sel.id;
-  return `<div class="ov"><div class="brand"><b>BackupAirlock</b><span>Every backup restored into a sandbox, checked, and healed when the schema moved</span>${runCtl()}</div><div class="dt" id="dt">${ovDetail(sel)}</div>
+  return `<div class="ov"><header class="appbar run"><a class="brand" href="overview">BackupAirlock</a><nav class="nav"><a href="overview">Overview</a><a href="timeline" aria-current="page">Timeline</a><a href="settings">Settings</a></nav>${runCtl()}</header><div class="dt" id="dt">${ovDetail(sel)}</div>
     <div class="band"><div class="tl">${ss.map((b, i) => { const [c, word, mod] = OV[ovState(b)] || ["c-idle", b.status, "hollow"];
       return `<button class="mk ${c}${b === latest ? " latest" : ""}" data-id="${esc(b.id)}" style="left:${ss.length > 1 ? i / (ss.length - 1) * 100 : 50}%"
         aria-pressed="${b === sel}" aria-label="${esc(bkName(b))}, ${esc(clock(b.created_at))}, from ${esc(bkSource(b))}: ${esc(word)}"><i class="${mod || ""}"></i></button>`; }).join("")}
