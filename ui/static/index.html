@@ -113,7 +113,23 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
 .ov{margin-top:var(--s7)}
 .ov h1{font-size:40px;line-height:48px;letter-spacing:-.01em;margin:0;max-width:26ch;text-wrap:balance}
 .promise{font-size:16px;line-height:24px;color:var(--ink-2);max-width:60ch;margin-top:var(--s3)}
-.board{margin-top:var(--s7);padding-top:var(--s6);border-top:1px solid var(--line)}
+.board{margin-top:var(--s6);padding-top:var(--s6);border-top:1px solid var(--line)}
+/* the three things it proves (Jonas 15:21 "3 strong points"), each backed by the watcher's own numbers */
+.pts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s5);margin:var(--s6) calc(-1 * var(--s3)) 0}
+.pt{text-align:left;padding:var(--s3);border-radius:3px;min-width:0}
+.pt:hover{background:var(--hover)}
+.pt b{display:flex;align-items:center;gap:var(--s2);font-size:16px;line-height:24px;font-weight:600}
+.pt b i{width:10px;height:10px;border-radius:50%;background:var(--c);flex-shrink:0}
+.pt .k{display:block;font-size:14px;line-height:20px;margin-top:var(--s1)}
+.pt .e{display:block;font-size:13px;line-height:20px;color:var(--ink-2)}
+.ck{grid-column:1 / -1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s5);margin-top:var(--s5)}
+.ck h3{font-size:13px;line-height:20px;font-weight:600}
+.ck h3 span{font-weight:400;color:var(--ink-2)}
+.ck ul{list-style:none;margin-top:var(--s1)}
+.ck li{font-size:13px;line-height:20px;color:var(--ink-2);display:flex;gap:var(--s2);min-width:0}
+.ck li b{color:var(--ok);font-weight:700;width:12px;flex-shrink:0}
+.ck li b.no{color:var(--bad)}
+.ck li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .verdict{font-size:24px;line-height:32px;font-weight:600;text-wrap:balance}
 .verdict em{font-style:normal;color:var(--bad)}
 /* one rail, one mark per backup, oldest left; the mark carries the verdict, the rest waits for hover */
@@ -199,6 +215,8 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
   .ov h1{font-size:28px;line-height:36px}
   .verdict{font-size:20px;line-height:28px}
   .tl{margin-top:var(--s6)}
+  .pts,.ck{grid-template-columns:1fr;gap:var(--s2)}
+  .ck{gap:var(--s4)}
   .mk{padding-right:0}
   .mk .n,.mk .w{display:none}
   .dt{display:block;min-height:0}
@@ -251,12 +269,12 @@ const getJSON = async u => { const r = await fetch(u); if (!r.ok) throw new Erro
 
 // One vocabulary for both engines. Healed is ready (it restores, with the bridge); red is only ever quarantine.
 const STATES = {
-  native:      ["c-ok",   "Ready", "native"],
-  healed:      ["c-ok",   "Ready", "healed"],
+  native:      ["c-ok",   "Restored", ""],
+  healed:      ["c-heal", "Healed", ""],
   drift:       ["c-warn", "Drift", ""],
   healing:     ["c-warn", "Drift", "healing"],
   failed:      ["c-warn", "Not restorable", ""],
-  quarantined: ["c-bad",  "Quarantined", ""],
+  quarantined: ["c-bad",  "Blocked", ""],
   running:     ["c-run",  "Running", "", true],
   queued:      ["c-idle", "Queued", "", true],
   not_run:     ["c-idle", "Not run", "", true],
@@ -323,7 +341,7 @@ function rgView() {
     meta: `Watched backups · Nordvik Handel ERP (stand-in app) · ${ss.length} backups watched · each restored into a throwaway test instance, never production`,
     headline: !ss.length ? "No backups yet. The watcher picks up each new dump and its manifest."
       : `${ready.length} of ${done.length} backups DR ready` + (newest ? `; newest ${clock(newest.created_at)}` : "") + "."
-        + (q.length ? ` <em>${q.length} quarantined: do not restore.</em>` : ""),
+        + (q.length ? ` <em>${q.length} blocked: do not restore.</em>` : ""),
     actions: rg.sel && rg.details[rg.sel.b]?.certificate ? `<a href="#cert">Certificate</a>` : "",
     cols: rg.versions.map(v => ({id: v, label: `App ${v}`})),
     rows: ss.map(b => ({
@@ -479,7 +497,7 @@ function drView() {
   }));
   const ready = p.matrix.filter(m => m.status === "DR READY"), q = p.matrix.filter(m => m.status.startsWith("QUARANTINED"));
   base.meta = `Drill · test instances only · Nordvik Handel ERP · ${clock(p.generated_at.replace(/(\d\d)(\d\d)$/, "$1:$2"))} · ${sec(p.elapsed_s)}`;
-  base.headline = `${ready.length} of ${p.matrix.length} backups DR ready.` + (q.length ? ` <em>${q.map(m => esc(m.backup)).join(", ")} quarantined: do not restore.</em>` : "");
+  base.headline = `${ready.length} of ${p.matrix.length} backups DR ready.` + (q.length ? ` <em>${q.map(m => esc(m.backup)).join(", ")} blocked: do not restore.</em>` : "");
   return base;
 }
 function drActions(running) {
@@ -596,7 +614,7 @@ const policyLine = p => p ? [p.runtime, `network ${String(p.network).split(" ")[
 const STAGES = ["Received", "Sealed sandbox", "Checks", "Drift healed", "Test copy", "Certificate"];
 // Colour = does this backup work (Jonas 15:16 "colors for if its working"); healed works too, in a calmer tone.
 const OV = {
-  ready: ["c-ok", "Restorable"], healed: ["c-heal", "Restorable, healed"], not_restorable: ["c-warn", "Not restorable"],
+  ready: ["c-ok", "Restored"], healed: ["c-heal", "Healed"], not_restorable: ["c-warn", "Not restorable"],
   quarantined: ["c-bad", "Blocked"], running: ["c-run", "In the airlock", "run"], queued: ["c-idle", "Queued", "hollow"],
 };
 const ovState = b => b.status === "dr_ready" ? (Object.values(b.cells).some(c => c.state === "healed") ? "healed" : "ready")
@@ -607,7 +625,7 @@ function ovSteps(b) {
   const healed = Object.values(b.cells).some(c => c.state === "healed");
   if (b.status === "quarantined") return [["done"], ["stop", "Blocked"], ["none"], ["none"], ["none"], ["none"]];
   if (["not_restorable", "failed"].includes(b.status)) return [["done"], ["done"], ["stop", "Failed"], ["none"], ["none"], ["none"]];
-  if (b.status === "dr_ready") return [["done"], ["done"], ["done"], healed ? ["done", "bridge passed"] : ["skip", "not needed"], ["done"], ["end", "Issued"]];
+  if (b.status === "dr_ready") return [["done"], ["done"], ["done", "Restored"], healed ? ["done", "Healed"] : ["skip", "not needed"], ["done"], ["end", "Issued"]];
   if (b.status === "queued") return [["done"], ["pending"], ["pending"], ["pending"], ["pending"], ["pending"]];
   const L = Object.entries(rg.live).filter(([k]) => k.startsWith(b.id + "@")).map(([, v]) => v);
   const heal = L.some(l => l.state === "healing"), checking = L.some(l => l.events.some(e => e.type === "check"));
@@ -619,11 +637,11 @@ function ovSteps(b) {
 function ovWhy(b) {
   if (b.status === "quarantined") {
     const n = (String(b.reason).match(/containment: ([^;]*)/)?.[1] || "").split(", ").filter(Boolean).length;
-    return n ? `${n} attacks contained, nothing left the sandbox` : "Executable lines in the dump, never restored";
+    return n ? `Blocked before restore: ${n} attacks caught, nothing left the sandbox` : "Blocked before restore: code in the dump";
   }
   if (b.status === "dr_ready") {
     const cs = Object.entries(b.cells), ok = cs.filter(([, c]) => ["native", "healed"].includes(c.state));
-    return `Restores on ${ok.length} of ${cs.length} app version${cs.length > 1 ? "s" : ""}` + (cs.some(([, c]) => c.state === "healed") ? ", schema drift healed by a bridge" : "");
+    return `Restored on ${ok.length} of ${cs.length} app version${cs.length > 1 ? "s" : ""}, ${b.checks_passed} of ${b.checks_total} checks passed` + (cs.some(([, c]) => c.state === "healed") ? `. Healed: schema drift bridged by the model` : "");
   }
   return shortReason(String(b.reason || "").replace(/^[\w.]+: \w+, /, ""));
 }
@@ -636,7 +654,38 @@ function ovDetail(b) {
       <div class="st ${c}"><i></i><b>${esc(word)}</b></div><p class="why">${esc(ovWhy(b))}</p>
       <div class="links"><button class="btn primary" id="again" data-id="${esc(b.id)}" ${busy ? "disabled" : ""}>${["running", "queued"].includes(b.status) ? "Restoring" : "Restore again"}</button>
         <a href="?view=backups" data-open="${esc(b.id)}">Evidence</a>${b.status === "dr_ready" ? `<a href="?view=backups#cert" data-open="${esc(b.id)}">Certificate</a>` : ""}</div></div>
-    <ol class="path">${steps.map(([st, label], i) => `<li class="stg ${st} ${path}${["done", "stop", "end", "skip", "active"].includes(steps[i + 1]?.[0]) ? " lit" : ""}"><span class="sh">${STAGES[i]}</span><i></i>${label ? `<span class="lb">${esc(label)}</span>` : ""}</li>`).join("")}</ol>`;
+    <ol class="path">${steps.map(([st, label], i) => `<li class="stg ${st} ${path}${["done", "stop", "end", "skip", "active"].includes(steps[i + 1]?.[0]) ? " lit" : ""}"><span class="sh">${STAGES[i]}</span><i></i>${label ? `<span class="lb">${esc(label)}</span>` : ""}</li>`).join("")}</ol>
+    ${ovChecks(b)}`;
+}
+function ovPoints(ss) {
+  const latest = ss.filter(b => b.status === "dr_ready").at(-1);
+  const healed = ss.filter(b => Object.values(b.cells).some(c => c.state === "healed"));
+  const h = healed.at(-1), hv = h && Object.entries(h.cells).find(([, c]) => c.state === "healed")?.[0];
+  const q = ss.filter(b => b.status === "quarantined"), qb = q.at(-1);
+  const attacks = qb ? (String(qb.reason).match(/containment: ([^;]*)/)?.[1] || "").split(", ").filter(Boolean) : [];
+  const scan = qb && /static-scan/.test(qb.reason) ? ["code in the dump"] : [];
+  const pt = (b, c, title, k, e) => `<button class="pt ${c}" data-pick="${esc(b?.id || "")}"><b><i></i>${title}</b><span class="k">${k}</span><span class="e">${e}</span></button>`;
+  return `<div class="pts">
+    ${pt(latest, "c-ok", "Restored, not just backed up", latest?.checks_total ? `Restored: ${latest.checks_passed} of ${latest.checks_total} checks passed` : "Every backup restored",
+      "Data counts, money rules, foreign keys, the app boots and logs in")}
+    ${pt(h, "c-heal", "Heals schema drift", healed.length ? `Healed: ${healed.length} old backup${healed.length > 1 ? "s" : ""}` : "No drift yet",
+      h ? `${esc(shortName(h.file))} failed on app ${esc(hv)}, then passed through a bridge the model wrote` : "An old backup on a new app gets a model-written bridge")}
+    ${pt(qb, "c-bad", "Blocks poisoned backups", q.length ? `Blocked: ${q.length} before restore` : "None found",
+      attacks.length ? `Caught: ${esc(attacks.concat(scan).join(", "))}. Nothing left the sandbox` : "Exfiltration, writes outside the sandbox, memory bombs")}
+  </div>`;
+}
+// The cell's checks in the spec's three groups, every one visible.
+function ovChecks(b) {
+  const d = rg.details[b.id];
+  if (!d) return "";
+  const cs = Object.values(d.cells || {}), c = cs.find(x => ["native", "healed"].includes(x.state)) || cs[0];
+  if (!c?.checks?.length) return "";
+  const seen = new Map();
+  for (const k of c.checks) { const n = String(k.check).split(" (")[0]; seen.set(n, seen.get(n) || k.pass); }
+  const gs = groups([...seen].map(([name, pass]) => ({name, pass})));
+  return `<div class="ck">${gs.map(([g, ks]) => `<div><h3>${esc(g)} <span>${ks.filter(k => k.pass).length} of ${ks.length}</span></h3><ul>
+    ${ks.slice(0, 6).map(k => `<li><b class="${k.pass ? "" : "no"}">${k.pass ? "✓" : "✕"}</b><span>${esc(String(k.name).split(" (")[0])}</span></li>`).join("")}
+    ${ks.length > 6 ? `<li><b></b><span>and ${ks.length - 6} more</span></li>` : ""}</ul></div>`).join("")}</div>`;
 }
 function ovView() {
   const ss = rg.summaries.slice().sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""));
@@ -647,6 +696,7 @@ function ovView() {
   return `<div class="ov">
     <h1>Every backup proven restorable before you need it.</h1>
     <p class="promise">Each new backup is restored in a sealed sandbox, checked, healed if its schema drifted, then certified. Production is never touched.</p>
+    ${ss.length ? ovPoints(ss) : ""}
     ${ss.length ? `<div class="board"><div class="verdict">${ready} of ${ss.length} backups restorable.${q ? ` <em>${q} poisoned backup${q > 1 ? "s" : ""} blocked.</em>` : ""}</div>
     <div class="tl">${ss.map((b, i) => { const [c, word, mod] = OV[ovState(b)] || ["c-idle", b.status, "hollow"];
       return `<button class="mk ${c}" data-id="${esc(b.id)}" aria-pressed="${b === sel}" aria-label="${esc(shortName(b.file))}: ${esc(word)}">
@@ -656,8 +706,9 @@ function ovView() {
   </div>`;
 }
 function ovPick(id) {
-  if (ovSel.id === id) return;
+  if (!id || ovSel.id === id) return;
   ovSel.id = id;
+  if (!rg.details[id]) rgDetail(id).then(() => { if (ovSel.id === id && view === "overview") { $("#dt").innerHTML = ovDetail(rg.summaries.find(b => b.id === id)); bindDetail(); } }, () => {});
   document.querySelectorAll(".mk").forEach(m => m.setAttribute("aria-pressed", m.dataset.id === id));
   $("#dt").innerHTML = ovDetail(rg.summaries.find(b => b.id === id));
   bindDetail();
@@ -739,6 +790,7 @@ function matrixCells(r, cols, sel, width) {
 }
 function bind() {
   document.querySelectorAll(".mk").forEach(el => { el.onmouseenter = el.onfocus = el.onclick = () => ovPick(el.dataset.id); });
+  document.querySelectorAll(".pt").forEach(el => { el.onmouseenter = el.onclick = () => ovPick(el.dataset.pick); });
   bindDetail();
   document.querySelectorAll('a[href^="?view="]').forEach(a => a.onclick = e => {
     e.preventDefault(); const [v, h] = a.getAttribute("href").slice(6).split("#"); setView(v, h); });

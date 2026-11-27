@@ -10,6 +10,8 @@ Concepts (1440, real data of drill 14:41):
 
 Overview = title, one-line promise, verdict sentence, one rail of the watched backups (oldest left), a mark per backup coloured by whether it works (green restores natively, teal restores through a healed bridge, amber not restorable, red blocked), "Latest restorable" flag, details of the hovered/tapped mark below with its path through the six stages and the one action (Restore again). Evidence and Certificate open the Backups view one click deeper; the Drill tab is unchanged.
 
+Three points (Jonas 15:21 "3 strong points that we really drive into the judges brains", "each must be confirmed 3 times"): Restored, not just backed up / Heals schema drift / Blocks poisoned backups. Each lands three times in one vocabulary (Restored, Healed, Blocked): the point with the watcher's live numbers above the rail, the mark's word on the rail, and the hovered backup's details (verdict, path labels, checks in the spec's three groups, every check visible); the Backups view and certificate use the same words.
+
 Critic rounds:
 1. Judge with 10 seconds (tracks build, 1440/390): stage colours not applied (CSS variable order), rail lines struck through labels, last label overflowed the grid. Fixed.
 2. Click path (timeline): mark -> Evidence -> Backups view with the cell selected; latest restorable -> Certificate -> certificate; poisoned mark -> contained attacks + static scan one click deeper. Fixed: lines drawn past a stop, a "Queued" label on backups that were not queued, orphan word in the 390 title (text-wrap: balance).
