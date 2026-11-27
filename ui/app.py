@@ -37,7 +37,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse, RedirectResponse
 
 import sandbox
 import verify
@@ -718,9 +718,10 @@ def timeline():
     return FileResponse(HERE / "static" / "index.html")
 
 
-@app.get("/settings", response_class=HTMLResponse)
+@app.get("/settings")
 def settings():
-    return FileResponse(HERE / "static" / "settings.html")
+    # Settings was folded into the Overview's facts strip (Jonas 17:10 "Remove settings").
+    return RedirectResponse("overview", status_code=302)
 
 
 @app.get("/airlock.css")

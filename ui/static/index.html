@@ -318,8 +318,9 @@ function groups(checks) {
 const rg = {summaries: [], versions: [], details: {}, live: {}, sel: null, es: null};
 
 async function rgLoad() {
-  const [list, health] = await Promise.all([getJSON("rg/api/backups"), getJSON("rg/health")]);
+  const [list, health, config] = await Promise.all([getJSON("rg/api/backups"), getJSON("rg/health"), rg.apps ? null : getJSON("rg/api/config").catch(() => null)]);
   rg.summaries = list;
+  if (config) rg.apps = Object.fromEntries(config.targets.map(t => [t.site, t.app]));
   rg.versions = health.app_versions;
   rg.frappe = health.frappe?.restores_into;
   rg.testUrls = health.frappe?.test_urls || {};
@@ -678,6 +679,11 @@ function peekPlace() {
 // The cell to show: the healed one tells the most, then a native pass, else whatever ran.
 const ovCell = d => { const cs = Object.values(d?.cells || {}); return cs.find(c => c.state === "healed") || cs.find(c => c.state === "native") || cs[0]; };
 const VERIFY = /^(sha256|dump readable|static scan|a demo\.local backup file name)/i;
+// Version names for the heal story: the app the backup was made on, and the app it is restored into.
+const ERP = {"demo_app 0.0.1": "ERP v1", "demo_app 2.0.0": "ERP v2"};
+const erpName = a => ERP[String(a).match(/demo_app [\d.]+/)?.[0]];
+const appOf = v => erpName(rg.apps?.[v]) || `app ${v}`;
+const backupApp = d => d.kind === "frappe" ? erpName(d.app_version) || "old ERP" : `app ${d.app_version}`;
 const baseName = n => String(n).split(" (")[0].replace(/^rule: /, "");
 // Verify (before restore) and Restore checks by name, each at its final result (a bridge round overrides the native attempt).
 function ovSplit(c) {
@@ -703,21 +709,30 @@ function ovChecks(b) {
   const fail = b.status === "quarantined" ? "blocked" : "fail";
   const list = (m, refm) => [...new Set([...refm.keys(), ...m.keys()])].map(n => [n, m.has(n) ? (m.get(n) ? "done" : fail) : missing]);
   const [v, r] = ovSplit(c);
-  const heal = c.state === "healed" || c.bridges.length
-    ? c.checks.filter(k => !k.pass && /\(native\)/.test(k.check)).map(k => [baseName(k.check) + " on the old schema", "fail"])
-        .concat(c.bridges.map((x, i) => [`bridge round ${x.round}`, i < c.bridges.length - 1 ? "fail" : run ? "waiting" : "done"]))
-    : [["schema bridge", b.status === "dr_ready" ? "skipped" : missing]];
   const C = {done: "c-ok", fail: "c-bad", blocked: "c-bad", skipped: "c-idle", waiting: "c-idle"};
   // When each check ran, from the run log: its last result, a native failure's first, a bridge round's event.
   const log = run ? evs : rg.details[b.id]?.logs?.[Object.keys(rg.details[b.id].cells).find(k => rg.details[b.id].cells[k] === c)] || [], at = new Map();
+  // Healed (Jonas 17:10): the old backup failing on the new app first, then the bridge, then the same backup passing on it.
+  const d = rg.details[b.id], to = appOf(c.app_version ?? L?.events[0]?.app_version), model = c.llm_calls?.find(x => x.purpose === "bridge")?.model || "GLM";
+  const after = c.checks.filter(k => !/\(native\)/.test(k.check));
+  const failed = c.checks.filter(k => !k.pass && /\(native\)/.test(k.check)).map(k => [baseName(k.check) + " on the old schema", "fail", baseName(k.check)])
+    .concat(log.filter(e => e.type === "native").flatMap(e => e.problems || []).map(x => [x, "fail"]));
+  const heal = c.state === "healed" || c.bridges.length
+    ? [["native", "fail", `${d ? backupApp(d) : "Old"} backup on ${to}: failed`], ...failed]
+        .concat(c.bridges.map((x, i) => [`bridge round ${x.round}`, i < c.bridges.length - 1 ? "fail" : run ? "waiting" : "done", `bridge written by ${model}, round ${x.round}`]))
+        .concat(c.state === "healed" ? [["rerun", "done", `same backup on ${to}: restored, ${after.filter(k => k.pass).length} of ${after.length} checks`]] : [])
+    : [["schema bridge", b.status === "dr_ready" ? "skipped" : missing]];
   for (const e of log) {
     if (e.type === "check") { at.set(baseName(e.check), +e.t); if (!e.pass && /\(native\)/.test(e.check) && !at.has(baseName(e.check) + " on the old schema")) at.set(baseName(e.check) + " on the old schema", +e.t); }
     if (e.type === "bridge") at.set(`bridge round ${e.round}`, +e.t);
+    if (e.type === "native") for (const x of ["native", ...e.problems || []]) at.set(x, +e.t);
+    if (e.type === "check" && !e.pass && /\(native\)/.test(e.check) && !at.has("native")) at.set("native", +e.t);
   }
   let i = 0;
-  const gs = [["Verify", list(v, ref[0])], ["Heal", heal], ["Restore", list(r, ref[1])]].map(([g, ks]) => [g, ks.map(([n, st]) => ({n, st, t: at.get(n), i: i++}))]);
+  if (c.state === "healed") at.set("rerun", Math.max(...log.map(e => +e.t || 0)));
+  const gs = [["Verify", list(v, ref[0])], ["Heal", heal], ["Restore", list(r, ref[1])]].map(([g, ks]) => [g, ks.map(([n, st, l]) => ({n, st, l: l || n, t: at.get(n), i: i++}))]);
   return `<div class="ck">${ovStrip(gs, C, Math.max(...log.map(e => +e.t || 0), 0))}${gs.map(([g, ks]) => `<section><h3>${g}</h3><ul>
-    ${ks.map(k => `<li class="${k.st} ${C[k.st]}" data-k="${k.i}" data-n="${esc(k.n)}"><i></i><span title="${esc(k.n)}">${esc(k.n)}</span><b>${k.t != null ? `<span>${sec(k.t)}</span>` : ""}${k.st}</b></li>`).join("")}</ul></section>`).join("")}</div>`;
+    ${ks.map(k => `<li class="${k.st} ${C[k.st]}" data-k="${k.i}" data-n="${esc(k.n)}"><i></i><span title="${esc(k.l)}">${esc(k.l)}</span><b>${k.t != null ? `<span>${sec(k.t)}</span>` : ""}${k.st}</b></li>`).join("")}</ul></section>`).join("")}</div>`;
 }
 // The pass on a time axis (Jonas 16:01 "the smaller timeline ... clear that its related to the checks"): one lane per
 // group, each check a tick where it finished, the lane's bar from its first to its last check.
@@ -875,7 +890,7 @@ function ovView() {
   const latest = ss.filter(b => b.status === "dr_ready").at(-1);
   const sel = ss.find(b => b.id === ovSel.id) || ss.at(-1);
   ovSel.id = sel.id;
-  return `<div class="ov"><header class="appbar run"><a class="brand" href="overview">BackupAirlock</a><nav class="nav"><a href="overview">Overview</a><a href="timeline" aria-current="page">Timeline</a><a href="settings">Settings</a></nav>${runCtl()}</header><div class="dt" id="dt">${ovDetail(sel)}</div>
+  return `<div class="ov"><header class="appbar run"><a class="brand" href="overview">BackupAirlock</a><nav class="nav"><a href="overview">Overview</a><a href="timeline" aria-current="page">Timeline</a></nav>${runCtl()}</header><div class="dt" id="dt">${ovDetail(sel)}</div>
     <div class="band"><div class="tl">${ss.map((b, i) => { const [c, word, mod] = OV[ovState(b)] || ["c-idle", b.status, "hollow"];
       return `<button class="mk ${c}${b === latest ? " latest" : ""}" data-id="${esc(b.id)}" style="left:${ss.length > 1 ? i / (ss.length - 1) * 100 : 50}%"
         aria-pressed="${b === sel}" aria-label="${esc(bkName(b))}, ${esc(clock(b.created_at))}, from ${esc(bkSource(b))}: ${esc(word)}"><i class="${mod || ""}"></i></button>`; }).join("")}
