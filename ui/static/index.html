@@ -3,143 +3,214 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BackupAirlock: which backup restores into which app version</title>
+<title>BackupAirlock: every backup proven restorable before you need it</title>
 <style>
-/* Console: graphite, hairlines, 2-4 px radii, status = small mark + word. One accent (selection, focus, links).
-   State hues: ready green, drift / not restorable amber, quarantined red (danger only). Grey = not decided yet.
-   Type 12 / 13 / 14 / 16 / 20. Space 4 8 12 16 24 32 48. */
+/* Console v6 (first impression: Overview view, docs/design/FIRST-IMPRESSION.md) on the v5 system. Colour: design/COLOR.md (Radix slate 12-step neutrals, state hues only on marks, links and the one danger word).
+   Spacing: design/SPACING.md (4 8 12 16 24 32 48; inside a group < between groups < between regions).
+   Type 12 / 13 / 14 / 16 / 20. */
 :root{
-  --bg:#101418;--surface:#151a1f;--raise:#1b2127;--code:#0c1013;
-  --line:#242b32;--line-2:#333c45;--ink:#e3e6ea;--ink-2:#b7bec6;--muted:#879099;
-  --ok:#6fbf8e;--warn:#d4a55a;--bad:#e0706a;--accent:#86a9e6;
+  --bg:#111113;--surface:#18191b;--hover:#272a2d;--selected:#2e3135;
+  --line:#363a3f;--line-2:#43484e;--strong:#5a6169;--ink:#edeef0;--ink-2:#c4c8ce;
+  --ok:#3fb950;--heal:#6cb6a8;--warn:#d29922;--bad:#ff9592;--accent:#70b8ff;
+  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;--s7:48px;
   --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --mono:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
 }
 *{box-sizing:border-box;margin:0;padding:0}
+[hidden]{display:none!important}
 body{background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
 a{color:var(--accent);text-decoration:none}
 a:hover{text-decoration:underline;text-underline-offset:3px}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .mono{font-family:var(--mono);font-size:12px}
-.muted{color:var(--muted)}
-.page{max-width:1440px;margin:0 auto;padding:24px 48px 48px}
+.muted{color:var(--ink-2)}
+.page{max-width:1440px;margin:0 auto;padding:var(--s5) var(--s7) var(--s7)}
 
 /* header */
-.bar{display:flex;align-items:center;gap:24px;height:40px}
-.brand{font-weight:600;font-size:14px;letter-spacing:.01em}
-.tabs{display:flex;gap:4px}
-.tabs button{height:32px;padding:0 12px;border-radius:3px;color:var(--muted);font-size:13px}
-.tabs button[aria-selected=true]{color:var(--ink);background:var(--raise)}
-.live{margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}
-.live i{width:6px;height:6px;border-radius:1px;background:var(--line-2)}
+.bar{display:flex;align-items:center;gap:var(--s5);height:40px}
+.brand{font-weight:600;font-size:14px}
+.tabs{display:flex;gap:var(--s1)}
+.tabs button{height:32px;padding:0 var(--s3);border-radius:3px;color:var(--ink-2);font-size:13px}
+.tabs button:hover{background:var(--hover)}
+.tabs button[aria-selected=true]{color:var(--ink);background:var(--selected)}
+.live{margin-left:auto;display:flex;align-items:center;gap:var(--s2);color:var(--ink-2);font-size:12px}
+.live i{width:6px;height:6px;border-radius:1px;background:var(--strong)}
 .live.on i{background:var(--ok)}
-.top{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;margin-top:24px;padding-bottom:24px;border-bottom:1px solid var(--line)}
-.meta{font-size:12px;color:var(--muted)}
-h1{font-size:20px;line-height:28px;font-weight:600;margin-top:4px}
+.top{display:flex;justify-content:space-between;align-items:flex-end;gap:var(--s5);margin-top:var(--s6)}
+.meta{font-size:12px;color:var(--ink-2)}
+h1{font-size:20px;line-height:28px;font-weight:600;margin-top:var(--s1)}
 h1 em{font-style:normal;color:var(--bad)}
-.actions{display:flex;gap:8px;align-items:center;flex-shrink:0}
-.btn{height:32px;padding:0 12px;border-radius:3px;font-size:13px;font-weight:600;line-height:30px;border:1px solid var(--line-2);color:var(--ink);white-space:nowrap;display:inline-block}
-.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.actions{display:flex;gap:var(--s4);align-items:center;flex-shrink:0;font-size:13px}
+.btn{height:32px;padding:0 var(--s3);border-radius:3px;font-size:13px;font-weight:600;line-height:30px;border:1px solid var(--line-2);color:var(--ink);white-space:nowrap;display:inline-block}
+.btn.primary{background:var(--selected);border-color:var(--strong)}
 .btn:disabled{opacity:.45;cursor:default}
-.btn:hover{text-decoration:none}
-.note{font-size:12px;color:var(--muted);margin-top:8px}
+.btn:hover{text-decoration:none;border-color:var(--strong);background:var(--hover)}
+.note{font-size:12px;color:var(--ink-2);margin-top:var(--s2)}
 .note:empty{display:none}
 
-/* main grid: matrix 7 columns, panel 5 */
-.main{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,5fr);gap:32px;margin-top:24px;align-items:start}
-.colhead{font:11px/16px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding-bottom:8px}
-.matrix{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr);column-gap:8px}
+/* main grid: matrix 7 columns, panel 5; both start on the content-top line */
+.main{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,5fr);gap:var(--s7);margin-top:var(--s7);align-items:start}
+.colhead{font:12px/16px var(--mono);color:var(--ink-2);text-transform:uppercase;letter-spacing:.06em;padding:0 var(--s4) var(--s2)}
+.colhead.corner{padding-left:0}
+.matrix{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr)}
 .matrix > .row{display:contents}
-.bk{padding:12px 12px 12px 0;border-top:1px solid var(--line);min-width:0}
-.bk .name{font:600 13px/20px var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bk .sub{font-size:12px;color:var(--muted);margin-top:2px}
-.bk .v{margin-top:6px;font-size:12px;font-weight:600}
-.cell{margin:8px 0;padding:10px 12px;border:1px solid var(--line);border-radius:3px;background:var(--surface);text-align:left;min-width:0;display:block;width:100%}
-.cell{display:flex;flex-direction:column;justify-content:flex-start}
-.cell:hover{border-color:var(--line-2)}
-.cell[aria-pressed=true]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
-.st{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;line-height:20px}
+/* one row rhythm: same hairline, same top padding, same 13/20 first line, so name and status share a baseline */
+.bk,.cell{padding:var(--s3) var(--s4);border-top:1px solid var(--line);min-width:0}
+.bk{padding-left:0}
+.bk .name{font-size:13px;line-height:20px;font-weight:600;overflow-wrap:anywhere}
+.bk .sub{font-size:12px;line-height:16px;color:var(--ink-2);margin-top:var(--s1)}
+.cell{text-align:left;width:100%;display:flex;flex-direction:column;justify-content:flex-start}
+.cell:hover{background:var(--hover)}
+.cell[aria-pressed=true]{background:var(--selected);box-shadow:inset 2px 0 0 var(--strong)}
+.st{display:flex;align-items:center;gap:var(--s2);font-size:13px;font-weight:600;line-height:20px}
 .st i{width:8px;height:8px;border-radius:1px;flex-shrink:0;background:var(--c)}
 .st i.hollow{background:none;box-shadow:inset 0 0 0 1.5px var(--c)}
-.st b{color:var(--c);font-weight:600}
+.st b{font-weight:600}
+.st.c-bad b{color:var(--bad)}
 .st span{font-weight:400;color:var(--ink-2)}
-.cell .d{font-size:12px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cell .app{display:none;font:11px/16px var(--mono);color:var(--muted);margin-bottom:4px}
-.c-ok{--c:var(--ok)}.c-warn{--c:var(--warn)}.c-bad{--c:var(--bad)}.c-idle{--c:var(--muted)}.c-run{--c:var(--ink)}
-.empty{padding:24px 0;color:var(--muted);border-top:1px solid var(--line)}
+.cell .d{font-size:12px;line-height:16px;color:var(--ink-2);margin-top:var(--s1)}
+.cell .app{display:none;font:12px/16px var(--mono);color:var(--ink-2);margin-bottom:var(--s1)}
+.c-ok{--c:var(--ok)}.c-heal{--c:var(--heal)}.c-warn{--c:var(--warn)}.c-bad{--c:var(--bad)}.c-idle{--c:var(--strong)}.c-run{--c:var(--ink)}
 
-/* panel */
-.panel{border:1px solid var(--line);border-radius:4px;background:var(--surface);padding:24px;min-width:0}
+/* panel: no card; its text starts on the panel column's edge */
+.panel{min-width:0}
 .panel h2{font-size:16px;line-height:24px;font-weight:600;overflow-wrap:anywhere}
-.panel h2 .mono{font-size:14px}
-.panel .lead{margin-top:4px;color:var(--ink-2);font-size:13px}
-.panel section{margin-top:24px}
-.panel h3{font:11px/16px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding-bottom:8px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:12px}
-.rows > div{display:grid;grid-template-columns:16px minmax(0,1fr) minmax(0,1fr);column-gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px;line-height:20px}
+.panel h2 .muted{font-weight:400}
+.panel .st{margin-top:var(--s2)}
+.panel .lead{margin-top:var(--s1);color:var(--ink-2);font-size:13px}
+.panel .lead:empty{display:none}
+.panel section{margin-top:var(--s6)}
+.panel h3 span + span{text-transform:none}
+.panel h3{font:12px/16px var(--mono);color:var(--ink-2);text-transform:uppercase;letter-spacing:.06em;padding-bottom:var(--s2);display:flex;justify-content:space-between;gap:var(--s3)}
+.rows > div{display:grid;grid-template-columns:16px minmax(0,1fr) minmax(0,1fr);column-gap:var(--s2);padding:var(--s2) 0;border-top:1px solid var(--line);font-size:13px;line-height:20px}
 .rows .m{font-weight:700}
 .rows .ok{color:var(--ok)}.rows .no{color:var(--bad)}.rows .warn{color:var(--warn)}
-.rows .d{color:var(--muted);overflow-wrap:anywhere}
-.rows .n small{color:var(--muted);font-size:12px}
+.rows .d{color:var(--ink-2);overflow-wrap:anywhere}
+.rows .n small{color:var(--ink-2);font-size:12px}
 .rows.ev > div{grid-template-columns:48px minmax(0,1fr)}
-.rows.ev .t{font:12px/20px var(--mono);color:var(--muted)}
-.rows.ev .st{align-items:flex-start;font-weight:400}
+.rows.ev .t{font:12px/20px var(--mono);color:var(--ink-2)}
+.rows.ev .st{align-items:flex-start;font-weight:400;margin-top:0}
 .rows.ev .st i{margin-top:6px}
 .rows.ev .st .muted{display:block}
 .rows.ev span{overflow-wrap:anywhere;min-width:0}
-.code{margin-top:8px;background:var(--code);border-radius:3px;padding:12px;font:12px/20px var(--mono);color:var(--ink-2);white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto}
-.kv{display:grid;grid-template-columns:auto 1fr;column-gap:16px;row-gap:4px;margin-top:8px;font-size:12px}
-.kv dt{color:var(--muted)}
-.kv dd{font-family:var(--mono);overflow-wrap:anywhere}
-.kv.target{margin-top:8px;padding:8px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
-.links{display:flex;flex-wrap:wrap;gap:16px;margin-top:12px;font-size:13px}
-.timing{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) 56px;column-gap:12px;align-items:center;font-size:12px;padding:4px 0}
-.timing .s{text-align:right;font-family:var(--mono)}
-.timing .b i{display:block;height:4px;border-radius:1px;background:var(--line-2)}
-details summary{cursor:pointer;color:var(--accent);font-size:13px;margin-top:12px}
+.code{margin-top:var(--s2);background:var(--surface);border-radius:3px;padding:var(--s3);font:12px/20px var(--mono);color:var(--ink-2);white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto}
+.kv{display:grid;grid-template-columns:auto 1fr;column-gap:var(--s4);row-gap:var(--s1);font-size:12px}
+.kv dt{color:var(--ink-2)}
+.kv dd{overflow-wrap:anywhere}
+.kv.target{margin-top:var(--s4)}
+.links{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s4);margin-top:var(--s6);font-size:13px}
+section .links{margin-top:var(--s3)}
+.timing{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) 56px;column-gap:var(--s3);align-items:center;font-size:12px;padding:var(--s1) 0}
+.timing .s{text-align:right}
+.timing .b i{display:block;height:4px;border-radius:1px;background:var(--strong)}
+details summary{cursor:pointer;color:var(--accent);font-size:13px;margin-top:var(--s6)}
 details.grp summary{list-style:none;margin:0}
 details.grp summary::-webkit-details-marker{display:none}
-details.grp summary h3{color:var(--muted)}
 details.grp summary h3 b{color:var(--ok);font-weight:400}
 
+/* overview (Jonas 15:16 "timeline design, much simpler, versions from left to right, on hover, details appear") */
+.ov{margin-top:var(--s7)}
+.ov h1{font-size:40px;line-height:48px;letter-spacing:-.01em;margin:0;max-width:26ch;text-wrap:balance}
+.promise{font-size:16px;line-height:24px;color:var(--ink-2);max-width:60ch;margin-top:var(--s3)}
+.board{margin-top:var(--s7);padding-top:var(--s6);border-top:1px solid var(--line)}
+.verdict{font-size:24px;line-height:32px;font-weight:600;text-wrap:balance}
+.verdict em{font-style:normal;color:var(--bad)}
+/* one rail, one mark per backup, oldest left; the mark carries the verdict, the rest waits for hover */
+.tl{position:relative;display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);margin-top:var(--s7)}
+.tl::before{content:"";position:absolute;left:10px;right:0;top:9px;height:2px;background:var(--line)}
+.mk{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:var(--s2);padding:0 var(--s3) var(--s2) 0;text-align:left;min-width:0}
+.mk i{width:20px;height:20px;border-radius:50%;background:var(--c);box-shadow:0 0 0 4px var(--bg)}
+.mk i.hollow{background:var(--bg);box-shadow:inset 0 0 0 2px var(--c),0 0 0 4px var(--bg)}
+.mk[aria-pressed=true] i{box-shadow:0 0 0 4px var(--bg),0 0 0 6px var(--ink-2)}
+.mk[aria-pressed=true] i.hollow{box-shadow:inset 0 0 0 2px var(--c),0 0 0 4px var(--bg),0 0 0 6px var(--ink-2)}
+.mk .flag{position:absolute;bottom:100%;left:0;margin-bottom:var(--s3);font-size:12px;line-height:16px;font-weight:600;white-space:nowrap;padding-left:var(--s2);border-left:2px solid var(--c)}
+/* in the right half the flag hangs left from the mark so it never leaves the page */
+.mk .flag.r{left:auto;right:calc(100% - 20px);padding:0 var(--s2) 0 0;border-left:0;border-right:2px solid var(--c);text-align:right}
+@media (min-width:901px){.mk .flag.r{right:auto;left:0;padding:0 0 0 var(--s2);border-right:0;border-left:2px solid var(--c);text-align:left}}
+.mk .n{font-size:13px;line-height:20px;font-weight:600;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:var(--s1)}
+.mk .w{font-size:12px;line-height:16px;color:var(--ink-2)}
+.mk.c-bad .w{color:var(--bad)}
+.mk:hover .n{text-decoration:underline;text-underline-offset:3px}
+.axis{display:flex;justify-content:space-between;font-size:12px;color:var(--ink-2);margin-top:var(--s3)}
+/* details of the hovered (or tapped) backup */
+.dt{display:grid;grid-template-columns:minmax(0,4fr) minmax(0,8fr);gap:var(--s7);margin-top:var(--s6);padding-top:var(--s5);border-top:1px solid var(--line);min-height:168px}
+.dt h2{font-size:16px;line-height:24px;font-weight:600;overflow-wrap:anywhere}
+.dt .when{font-size:13px;color:var(--ink-2)}
+.dt .st{margin-top:var(--s3)}
+.dt .why{font-size:13px;color:var(--ink-2);margin-top:var(--s1)}
+.dt .links{margin-top:var(--s5)}
+.path{list-style:none;display:grid;grid-template-columns:repeat(5,minmax(0,1fr)) minmax(0,1.3fr)}
+.stg{position:relative;display:grid;grid-template-rows:16px 12px auto;row-gap:var(--s2)}
+.stg::before{content:"";position:absolute;left:6px;right:0;top:29px;height:2px;background:var(--line)}
+.stg:last-child::before,.stg.stop::before,.stg.none::before{display:none}
+.stg.lit::before{background:var(--c)}
+.stg .sh{font-size:12px;line-height:16px;color:var(--ink-2)}
+.stg i{position:relative;width:12px;height:12px;border-radius:50%;background:var(--bg);box-shadow:inset 0 0 0 2px var(--line-2)}
+.stg.done i,.stg.stop i,.stg.end i{background:var(--c);box-shadow:none}
+.stg.skip i,.stg.active i{box-shadow:inset 0 0 0 2px var(--c)}
+.stg .lb{font-size:13px;line-height:20px;color:var(--ink-2)}
+.stg.stop .lb,.stg.end .lb{color:var(--ink);font-weight:600}
+.stg.stop.c-bad .lb{color:var(--bad)}
+.stg.none i{visibility:hidden}
+@media (prefers-reduced-motion:no-preference){
+  .stg.active i,.mk i.run{animation:beat 1.2s ease-in-out infinite}
+}
+@keyframes beat{50%{transform:scale(1.3)}}
+
 /* certificate */
-.cert{max-width:880px;margin-top:24px}
-.cert .head{display:flex;justify-content:space-between;align-items:flex-start;gap:24px}
+.cert{max-width:880px;margin-top:var(--s7)}
+.cert .head{display:flex;justify-content:space-between;align-items:flex-start;gap:var(--s5)}
 .cert h2{font-size:20px;line-height:28px;font-weight:600}
-.cert table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
-.cert th{font:11px/16px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;text-align:left;padding:8px 12px 8px 0;border-bottom:1px solid var(--line-2)}
-.cert td{padding:8px 12px 8px 0;border-bottom:1px solid var(--line);vertical-align:top}
-.cert section{margin-top:32px}
-.cert .stamp{font-size:13px;margin-top:4px}
+.cert table{width:100%;border-collapse:collapse;margin-top:var(--s2);font-size:13px}
+.cert th{font:12px/16px var(--mono);color:var(--ink-2);text-transform:uppercase;letter-spacing:.06em;text-align:left;padding:var(--s2) var(--s3) var(--s2) 0;border-bottom:1px solid var(--line-2)}
+.cert td{padding:var(--s2) var(--s3) var(--s2) 0;border-bottom:1px solid var(--line);vertical-align:top}
+.cert section{margin-top:var(--s6)}
+.cert .kv{margin-top:var(--s2)}
+.cert .colhead{padding-left:0}
+.cert .stamp{font-size:13px;margin-top:var(--s1)}
 
 @media (max-width:900px){
-  .page{padding:16px}
-  .bar{gap:12px}
+  .page{padding:var(--s4)}
+  .bar{gap:var(--s3)}
   .live span{display:none}
   .top{display:block}
-  .actions{margin-top:16px;flex-wrap:wrap}
+  .actions{margin-top:var(--s4);flex-wrap:wrap}
   h1{font-size:18px;line-height:26px}
-  .main{display:block}
-  .matrix{grid-template-columns:1fr 1fr}
+  .main{display:block;margin-top:var(--s6)}
+  /* cells bleed 12 px into the page margin so all text stays on the 16 px page edge */
+  .matrix{grid-template-columns:1fr 1fr;margin:0 calc(-1 * var(--s3))}
   .matrix > .colhead{display:none}
   .cell .app{display:block}
-  .cell .d{white-space:normal;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
-  .bk{grid-column:1 / 3;padding:12px 0 0}
-  .cell{margin:8px 0 4px}
-  .panel{margin-top:24px;padding:16px}
+  .bk{grid-column:1 / 3;padding:var(--s3) var(--s3) 0}
+  .cell{border-top:0;padding:var(--s2) var(--s3) var(--s3)}
+  .panel{margin-top:var(--s7)}
   .rows > div{grid-template-columns:16px minmax(0,1fr)}
   .rows .d{grid-column:2}
   .cert .head{display:block}
-  .cert .head .actions{margin-top:12px}
+  .cert .head .actions{margin-top:var(--s3)}
   .cert table,.cert tbody,.cert tr,.cert td{display:block}
   .cert tr:first-child{display:none}
-  .cert tr{padding:8px 0;border-bottom:1px solid var(--line)}
+  .cert tr{padding:var(--s2) 0;border-bottom:1px solid var(--line)}
   .cert td{border:0;padding:2px 0;overflow-wrap:anywhere}
   .cert td:empty{display:none}
   .timing{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) 48px}
+  .ov{margin-top:var(--s6)}
+  .ov h1{font-size:28px;line-height:36px}
+  .verdict{font-size:20px;line-height:28px}
+  .tl{margin-top:var(--s6)}
+  .mk{padding-right:0}
+  .mk .n,.mk .w{display:none}
+  .dt{display:block;min-height:0}
+  .path{grid-template-columns:1fr;margin-top:var(--s5);row-gap:var(--s2)}
+  .stg{grid-template-columns:12px auto 1fr;grid-template-rows:none;column-gap:var(--s3);align-items:center}
+  .stg::before{display:none}
+  .stg .sh{grid-column:2;font-size:13px;line-height:20px}
+  .stg i{grid-column:1;grid-row:1}
+  .stg .lb{grid-column:3}
 }
 @media print{
-  :root{--bg:#fff;--surface:#fff;--raise:#fff;--code:#f4f4f2;--line:#ddd;--line-2:#bbb;--ink:#111;--ink-2:#333;--muted:#555;--ok:#1d6b3e;--warn:#7a5200;--bad:#a3201a;--accent:#111}
+  :root{--bg:#fff;--surface:#f4f4f2;--hover:#fff;--selected:#fff;--line:#ddd;--line-2:#bbb;--strong:#999;--ink:#111;--ink-2:#444;--ok:#1d6b3e;--warn:#7a5200;--bad:#a3201a;--accent:#111}
   .bar,.top,.no-print{display:none}
   .page{padding:0}
 }
@@ -150,12 +221,13 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
   <div class="bar">
     <span class="brand">BackupAirlock</span>
     <div class="tabs" role="tablist">
+      <button role="tab" data-view="overview">Overview</button>
       <button role="tab" data-view="backups">Backups</button>
       <button role="tab" data-view="drill">Drill</button>
     </div>
     <div class="live" id="live"><i></i><span>offline</span></div>
   </div>
-  <div class="top">
+  <div class="top" id="top">
     <div style="min-width:0">
       <div class="meta" id="meta"></div>
       <h1 id="headline">Loading</h1>
@@ -169,9 +241,12 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
 "use strict";
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
-const mb = n => n == null ? "" : (n / 1048576).toFixed(n < 10485760 ? 2 : 1) + " MB";
-const sec = s => s == null ? "" : `${(+s).toFixed(1)} s`;
+// Units join their number with a no-break space so "23.6 s" never wraps to a line of its own.
+const mb = n => n == null ? "" : (n / 1048576).toFixed(n < 10485760 ? 2 : 1) + "\u00a0MB";
+const sec = s => s == null ? "" : `${(+s).toFixed(1)}\u00a0s`;
 const clock = d => new Date(d).toLocaleString("en-GB", {timeZone: "Europe/Stockholm", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"});
+// A refused write explains itself: the console's JSON detail, or the VM's sign-in wall (Caddy answers 401 with no body).
+const why = async r => r.status === 401 ? "sign in with the team password first" : (await r.json().catch(() => ({}))).detail || `${r.status} ${r.statusText}`;
 const getJSON = async u => { const r = await fetch(u); if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 120)}`); return r.json(); };
 
 // One vocabulary for both engines. Healed is ready (it restores, with the bridge); red is only ever quarantine.
@@ -186,19 +261,10 @@ const STATES = {
   queued:      ["c-idle", "Queued", "", true],
   not_run:     ["c-idle", "Not run", "", true],
 };
-const VERDICTS = {
-  ready: ["c-ok", "DR ready"], dr_ready: ["c-ok", "DR ready"], quarantined: ["c-bad", "Quarantined, do not restore"],
-  not_restorable: ["c-warn", "Not restorable"], failed: ["c-warn", "Not restorable"],
-  running: ["c-run", "Running"], queued: ["c-idle", "Queued"],
-};
 function mark(state, extra) {
   const [cls, word, tag, hollow] = STATES[state] || ["c-idle", state, ""];
   const t = extra ?? tag;
   return `<div class="st ${cls}"><i class="${hollow ? "hollow" : ""}"></i><b>${esc(word)}</b>${t ? `<span>${esc(t)}</span>` : ""}</div>`;
-}
-function verdictLine(v) {
-  const [cls, word] = VERDICTS[v] || ["c-idle", v];
-  return `<div class="v st ${cls}"><b>${esc(word)}</b></div>`;
 }
 // Uppercase policy events ("NETWORK: DENIED, ...") read as shouting; keep the words, drop the caps.
 const calm = s => String(s || "").replace(/^([A-Z][A-Z /-]+):/, (_, p) => p.charAt(0) + p.slice(1).toLowerCase() + ":")
@@ -216,7 +282,7 @@ function groups(checks) {
   return Object.entries(out).filter(([, v]) => v.length);
 }
 
-/* ---------- Backups view: the BackupAirlock runtime (watched ERP backups) ---------- */
+/* ---------- Backups view: the backup watcher runtime (watched ERP backups) ---------- */
 const rg = {summaries: [], versions: [], details: {}, live: {}, sel: null, es: null};
 
 async function rgLoad() {
@@ -225,41 +291,44 @@ async function rgLoad() {
   rg.versions = health.app_versions;
   rg.frappe = health.frappe?.restores_into;
   if (!rg.sel && list.length) {
-    const b = list.find(b => b.status !== "queued") || list[0];
+    const b = list.find(b => ["dr_ready", "quarantined", "not_restorable"].includes(b.status)) || list[0];
     rg.sel = {b: b.id, v: rgTargets(b).at(-1)};
   }
   if (rg.sel) await rgDetail(rg.sel.b);
 }
+// A Frappe backup is proved on the team's test site, not on the stand-in app versions.
+const rgTargets = b => b.kind === "frappe" && rg.frappe ? [rg.frappe] : rg.versions;
 async function rgDetail(id, force) {
   const s = rg.summaries.find(b => b.id === id);
   if (!s || (!force && rg.details[id] && rg.details[id].status === s.status)) return;
   rg.details[id] = await getJSON(`rg/api/backups/${encodeURIComponent(id)}`);
 }
-// A Frappe backup is proved on its test site only, not on the app versions.
-const rgTargets = b => b.kind === "frappe" && rg.frappe ? [rg.frappe] : rg.versions;
 function rgCell(id, v) {
   const s = rg.summaries.find(b => b.id === id);
   const live = rg.live[`${id}@${v}`];
   if (s.status === "running" && live && !s.cells[v]) return {state: live.state || "running", reason: live.step, elapsed_s: live.t};
   if (s.cells[v]) return s.cells[v];
+  // Refused before any sandbox (e.g. an incomplete manifest): the backup's own reason fills every cell.
+  if (["failed", "not_restorable"].includes(s.status)) return {state: "failed", reason: s.reason};
   return {state: s.status === "queued" || s.status === "running" ? s.status : "not_run", reason: ""};
 }
+// The timestamp prefix is in the sub line already; the suffix is what tells the backups apart.
+const shortName = f => f.replace(/^\d{8}[T_]\d{6}Z?[-_]/, "");
 function rgView() {
   const ss = rg.summaries;
   const done = ss.filter(b => !["queued", "running"].includes(b.status));
   const ready = done.filter(b => b.status === "dr_ready"), q = done.filter(b => b.status === "quarantined");
   const newest = ready.slice().sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))[0];
   return {
-    meta: `BackupAirlock · Nordvik Handel ERP (stand-in app) · ${ss.length} backups watched · each restored into a throwaway test instance, never production`,
+    meta: `Watched backups · Nordvik Handel ERP (stand-in app) · ${ss.length} backups watched · each restored into a throwaway test instance, never production`,
     headline: !ss.length ? "No backups yet. The watcher picks up each new dump and its manifest."
       : `${ready.length} of ${done.length} backups DR ready` + (newest ? `; newest ${clock(newest.created_at)}` : "") + "."
         + (q.length ? ` <em>${q.length} quarantined: do not restore.</em>` : ""),
-    actions: rg.sel && rg.details[rg.sel.b]?.certificate ? `<a class="btn" href="#cert">Certificate</a>` : "",
+    actions: rg.sel && rg.details[rg.sel.b]?.certificate ? `<a href="#cert">Certificate</a>` : "",
     cols: rg.versions.map(v => ({id: v, label: `App ${v}`})),
     rows: ss.map(b => ({
-      // The timestamp prefix is in the sub line already; the suffix is what tells the backups apart.
-      id: b.id, name: b.file.replace(/^\d{8}T\d{6}Z[-_]/, ""), full: b.file, verdict: b.status,
-      sub: [b.created_at && clock(b.created_at), b.schema_version != null && `schema v${b.schema_version}`, mb(b.bytes)].filter(Boolean).join(" · "),
+      id: b.id, name: shortName(b.file), full: b.file,
+      sub: [b.created_at && clock(b.created_at), b.schema_version != null && `schema ${/^\d/.test(b.schema_version) ? "v" : ""}${b.schema_version}`, mb(b.bytes)].filter(Boolean).join(" · "),
       cols: b.kind === "frappe" && rg.frappe ? [{id: rg.frappe, label: rg.frappe}] : null,
       cells: Object.fromEntries(rgTargets(b).map(v => { const c = rgCell(b.id, v); return [v, {state: c.state,
         line: [b.kind === "frappe" && v, cellLine(c.state, c.reason, c.elapsed_s, b.status === "running")].filter(Boolean).join(" · ")}]; })),
@@ -271,40 +340,41 @@ function cellLine(state, reason, s, running) {
   if (running && ["running", "queued"].includes(state)) return reason ? `${reason}` : "waiting for a sandbox";
   if (state === "healed") return `bridge migration · ${sec(s)}`;
   if (state === "native") return `${sec(s)}`;
-  return [reason, sec(s)].filter(Boolean).join(" · ");
+  if (state === "quarantined") return `${String(reason).replace(/^containment: ([^;]*).*$/, "$1").split(", ").length} attacks contained`;
+  return [shortReason(reason), sec(s)].filter(Boolean).join(" · ");
 }
+// The cell names the failure in a few words; the panel carries the tool's full message.
+const shortReason = r => String(r || "").split("; ")[0].replace(/^([^(:]*?): .*$/, "$1").replace(/\d{4,}/g, n => (+n).toLocaleString("en"));
 function rgPanel() {
   if (!rg.sel) return "";
   const d = rg.details[rg.sel.b], v = rg.sel.v;
   if (!d) return `<div class="panel"><p class="muted">Loading</p></div>`;
   const c = d.cells[v], live = rg.live[`${d.id}@${v}`];
-  const head = `<div class="meta mono">${esc(d.file)}</div><h2>${d.kind === "frappe" ? "" : "App "}${esc(v)}</h2>`;
+  const head = `<h2>${esc(shortName(d.file))} <span class="muted">on ${d.kind === "frappe" ? "" : "app "}${esc(v)}</span></h2>`;
   if (!c) {
     const evs = live ? live.events : [];
-    return `<div class="panel">${head}<div style="margin-top:8px">${mark(d.status === "queued" ? "queued" : "running")}</div>
+    if (!["queued", "running"].includes(d.status)) return `<div class="panel">${head}${mark(["failed", "not_restorable"].includes(d.status) ? "failed" : "not_run")}${d.reason ? `<p class="lead">${esc(d.reason)}</p>` : ""}</div>`;
+    return `<div class="panel">${head}${mark(d.status === "queued" ? "queued" : "running")}
       ${evs.length ? `<section><h3><span>Live</span><span>${sec(live.t)}</span></h3>${eventRows(evs)}</section>`
-        : `<p class="lead">Each backup is proved on one app version at a time, in a fresh sandbox.</p>`}</div>`;
+ : ""}</div>`;
   }
   const checks = c.checks.map(k => ({name: k.check, pass: k.pass, detail: k.detail}));
   const m = d.manifest || {};
   return `<div class="panel">${head}
-    <div style="margin-top:8px">${mark(c.state)}</div>
-    <p class="lead">${esc(c.reason)}</p>
-    ${targetLine(c.restored_into, (d.logs[v] || []).find(e => e.type === "sandbox")?.name,
-      (d.logs[v] || []).some(e => e.type === "sandbox" && e.phase === "destroyed"))}
+    ${mark(c.state)}
+    ${lead(c.state, c.reason)}
+    ${targetLine(c.restored_into, (d.logs[v] || []).some(e => e.type === "sandbox" && e.phase === "destroyed"))}
     ${containment(c.signals.map(s => ({signal: s})).concat(), c.static_scan, d.logs[v])}
     ${groups(checks).map(([g, ks]) => checkSection(g, ks)).join("")}
     ${bridgeSection(c.bridges.map(b => ({name: b.name, round: b.round, sha256: b.sha256, changes: b.changes,
         url: `rg/api/backups/${encodeURIComponent(d.id)}/bridges/${encodeURIComponent(b.name)}`})), c.llm_calls)}
     ${timings(Object.entries(c.timings), c.elapsed_s)}
-    <section><h3><span>Backup manifest</span></h3><dl class="kv">
-      <dt>sha256</dt><dd>${esc(m.sha256 || "")}</dd>
-      <dt>taken</dt><dd>${esc(m.created_at || "")} by app ${esc(m.app_version || "")}</dd>
+    <section><details class="grp"><summary><h3><span>Backup manifest</span><span>${Object.keys(m.row_counts || {}).filter(k => k !== "schema_version").length} tables</span></h3></summary><dl class="kv">
+      <dt>taken</dt><dd>${m.created_at ? esc(clock(m.created_at)) : ""} by app ${esc(m.app_version || "")}</dd>
       ${Object.entries(m.row_counts || {}).filter(([k]) => k !== "schema_version").map(([k, n]) => `<dt>${esc(k)}</dt><dd>${n.toLocaleString("en")} rows</dd>`).join("")}
-    </dl></section>
+    </dl></details></section>
     <details><summary>Run log, ${(d.logs[v] || []).length} events</summary>${eventRows(d.logs[v] || [])}</details>
-    <div class="links no-print">${d.certificate ? `<a href="#cert">DR certificate</a>` : ""}
-      <button class="btn" id="rerun" ${["queued", "running"].includes(d.status) ? "disabled" : ""}>Run again</button></div>
+    <div class="links no-print"><button class="btn" id="rerun" ${["queued", "running"].includes(d.status) ? "disabled" : ""}>Run again</button></div>
   </div>`;
 }
 function rgStream() {
@@ -321,7 +391,7 @@ function rgStream() {
     if (ev.type === "check") L.step = ev.check;
     if (ev.type === "bridge") { L.state = "healing"; L.step = `bridge round ${ev.round}`; }
     if (ev.type === "verdict") { L.state = ev.state; L.step = ev.reason; rgRefresh(); }
-    if (view === "backups") draw();
+    if (view !== "drill") draw();
   };
 }
 let rgTimer;
@@ -330,7 +400,7 @@ function rgRefresh() {
   rgTimer = setTimeout(async () => {
     rg.summaries = await getJSON("rg/api/backups");
     if (rg.sel) await rgDetail(rg.sel.b);
-    if (view === "backups") draw();
+    if (view !== "drill") draw();
   }, 300);
 }
 
@@ -348,7 +418,7 @@ async function drLoad() {
 }
 function drFollow(runId) {
   dr.runId = runId; dr.proof = null;
-  dr.live = {apps: [], backups: [], cells: {}, events: [], rows: {}, steps: []};
+  dr.live = {apps: [], backups: [], cells: {}, events: [], steps: []};
   dr.es?.close();
   dr.es = new EventSource(`api/runs/${runId}/events`);
   dr.es.onopen = () => setLive(true);
@@ -358,7 +428,6 @@ function drFollow(runId) {
     if (ev.type === "matrix" && ev.phase === "init") { L.apps = ev.apps; L.backups = ev.backups;
       if (!dr.sel) dr.sel = {b: ev.backups[ev.backups.length - 1].file, v: ev.apps[0].title}; }
     if (ev.type === "matrix" && ev.phase === "cell") L.cells[`${ev.backup}|${ev.app}`] = {...L.cells[`${ev.backup}|${ev.app}`], ...ev, t: ev.t};
-    if (ev.type === "matrix" && ev.phase === "row") L.rows[ev.backup] = ev.level;
     if (ev.type === "step") L.steps.push(ev);
     if (ev.type === "verdict") L.verdict = ev;
     if (view === "drill") draw();
@@ -381,13 +450,13 @@ function drView() {
     const L = dr.live;
     base.cols = L.apps.map(a => ({id: a.title, label: a.title}));
     base.rows = L.backups.map(b => ({
-      id: b.file, name: b.file, verdict: L.rows[b.id] ? ({ready: "ready", "not restorable": "failed"}[L.rows[b.id]] || L.rows[b.id]) : "running",
-      sub: `schema v${b.version} · ${mb(b.size)} · ${b.sha256.slice(0, 12)}`,
+      id: b.file, name: b.file,
+      sub: `schema v${b.version} · ${mb(b.size)}`,
       cells: Object.fromEntries(L.apps.map(a => { const c = L.cells[`${b.id}|${a.id}`] || {state: "running"};
         return [a.title, {state: c.state === "drift" && c.bridge ? "healing" : c.state, line: c.state === "healing"
           ? `bridge round ${c.round}` : (c.detail || "fresh sandbox: restore, boot, suite")}]; })),
     }));
-    base.meta = `Drill · run ${dr.runId.slice(-6)} · running · ${sec(L.events.at(-1)?.t)}`;
+    base.meta = `Drill · running · ${sec(L.events.at(-1)?.t)}`;
     base.headline = L.verdict ? esc(L.verdict.headline) : `${L.backups.length} backups x ${L.apps.length} app versions, one sealed sandbox per cell.`;
     return base;
   }
@@ -397,40 +466,39 @@ function drView() {
   base.cols = apps.map(a => ({id: a, label: a}));
   base.rows = p.matrix.map(m => ({
     id: m.backup, name: m.backup,
-    verdict: m.status.startsWith("QUARANTINED") ? "quarantined" : m.status === "DR READY" ? "ready" : "failed",
-    sub: `schema v${m.schema_version} · ${mb(m.bytes)} · ${m.sha256.slice(0, 12)}`,
+    sub: `schema v${m.schema_version} · ${mb(m.bytes)}`,
     cells: Object.fromEntries(m.app_versions.map(a => {
       const rc = drReceipts(m.backup, a.app), s = rc.reduce((t, r) => t + (r.elapsed || 0), 0);
       const inc = p.incidents.find(i => i.backup === m.backup)?.detonations.find(d => d.app === a.app);
       const tests = a.suite.length + a.control_plane_checks.length;
       return [a.app, {state: a.result, line: a.result === "quarantined" && inc
-        ? `${inc.signals.length} attacks contained · exit ${inc.exit}`
-        : a.result === "healed" ? `${a.bridge} · ${tests} checks · ${sec(s)}`
+        ? `${inc.signals.length} attacks contained`
+        : a.result === "healed" ? `${tests} checks pass · ${sec(s)}`
         : a.result === "native" ? `${tests} checks pass · ${sec(s)}` : a.detail}];
     })),
   }));
   const ready = p.matrix.filter(m => m.status === "DR READY"), q = p.matrix.filter(m => m.status.startsWith("QUARANTINED"));
-  base.meta = `Drill · test instances only · Nordvik Handel ERP · run ${p.run_id.slice(-6)} · ${clock(p.generated_at.replace(/(\d\d)(\d\d)$/, "$1:$2"))} · ${sec(p.elapsed_s)}`;
+  base.meta = `Drill · test instances only · Nordvik Handel ERP · ${clock(p.generated_at.replace(/(\d\d)(\d\d)$/, "$1:$2"))} · ${sec(p.elapsed_s)}`;
   base.headline = `${ready.length} of ${p.matrix.length} backups DR ready.` + (q.length ? ` <em>${q.map(m => esc(m.backup)).join(", ")} quarantined: do not restore.</em>` : "");
   return base;
 }
 function drActions(running) {
-  return `<label class="btn" for="file" title="Your own SQL dump, up to 25 MB">${dr.upload ? esc(dr.upload.name) : "Add .sql"}</label>
+  return `${dr.proof ? `<a href="#cert">Certificate</a>` : ""}
+    <label class="btn" for="file" title="Your own SQL dump, up to 25 MB">${dr.upload ? esc(dr.upload.name) : "Add .sql"}</label>
     <input type="file" id="file" accept=".sql,.db,.dump,text/plain" hidden>
-    ${dr.proof ? `<a class="btn" href="#cert">Certificate</a>` : ""}
     <button class="btn primary" id="run" ${running ? "disabled" : ""}>${running ? "Running" : "Run drill"}</button>`;
 }
 function drPanel() {
   if (!dr.sel) return "";
   const {b, v} = dr.sel;
-  const head = `<div class="meta mono">${esc(b)}</div><h2>${esc(v)}</h2>`;
+  const head = `<h2>${esc(b)} <span class="muted">on ${esc(v)}</span></h2>`;
   if (dr.live) {
     const L = dr.live, bid = L.backups.find(x => x.file === b)?.id, aid = L.apps.find(x => x.title === v)?.id;
     const c = L.cells[`${bid}|${aid}`] || {state: "running"};
     const evs = L.events.filter(e => e.backup === bid && e.app === aid && e.type !== "cpu" && e.type !== "matrix" && !(e.type === "log" && e.stream === "stdout"));
     const pol = evs.filter(e => e.type === "policy");
-    return `<div class="panel">${head}<div style="margin-top:8px">${mark(c.state === "drift" && c.bridge ? "healing" : c.state)}</div>
-      ${targetLine(null, evs.find(e => e.type === "sandbox")?.name)}
+    return `<div class="panel">${head}${mark(c.state === "drift" && c.bridge ? "healing" : c.state)}
+      ${targetLine(null)}
       <p class="lead">${esc(c.detail || "")}</p>
       ${pol.length ? `<section><h3><span>Containment</span><span>${pol.length} signals</span></h3>${eventRows(pol, true)}</section>` : ""}
       ${c.host ? checkSection("Checks so far", c.host.map(k => ({name: k.check, pass: k.pass, detail: k.detail}))) : ""}
@@ -444,33 +512,35 @@ function drPanel() {
   const checks = a.suite.map(t => ({name: t.test, pass: t.pass, detail: t.detail}))
     .concat(a.control_plane_checks.map(k => ({name: k.check, pass: k.pass, detail: k.detail})));
   const br = a.bridge && p.bridges[a.bridge];
-  const sandbox = det ? det.sandbox : rc.at(-1)?.name;
   return `<div class="panel">${head}
-    <div style="margin-top:8px">${mark(a.result)}</div>
-    ${targetLine(null, sandbox, det ? det.destroyed : rc.at(-1)?.destroyed)}
-    <p class="lead">${esc(det ? "The dump tried to attack the restore host. Each attempt hit a wall, then the sandbox was destroyed." : a.detail)}</p>
+    ${mark(a.result)}
+    ${targetLine(null, det ? det.destroyed : rc.at(-1)?.destroyed)}
+    ${lead(a.result, a.detail)}
     ${det ? containmentDrill(det, inc) : ""}
     ${groups(checks).map(([g, ks]) => checkSection(g, ks)).join("")}
     ${br ? bridgeSection([{name: a.bridge, round: br.rounds, sha256: br.sha256, changes: br.changes,
         url: `api/runs/${p.run_id}/bridges/${encodeURIComponent(a.bridge)}`}],
         p.llm_calls.filter(l => l.purpose.includes(a.bridge.replace(/^bridge_|\.sql$/g, "").replace("_to_", " to ")))) : ""}
     ${rc.length ? timings(rc.map(r => [String(r.n).split(", ").slice(1).join(", ") || "sandbox", r.elapsed]), rc.reduce((t, r) => t + r.elapsed, 0)) : ""}
-    <section><h3><span>Sandbox</span></h3><dl class="kv">
-      ${sandbox ? `<dt>last sandbox</dt><dd>${esc(sandbox)}, ${det ? `exit ${det.exit}` : `exit ${rc.at(-1)?.exit}`}, ${(det ? det.destroyed : rc.at(-1)?.destroyed) ? "destroyed" : "NOT destroyed"}</dd>` : ""}
-      <dt>policy</dt><dd>${esc(policyLine(p.sandbox_policy))}</dd>
-      <dt>backup sha256</dt><dd>${esc(m.sha256)}</dd></dl></section>
-    <div class="links no-print"><a href="#cert">DR certificate</a>${inc ? `<a href="api/runs/${p.run_id}/incident.json">Incident log (JSON)</a>` : ""}</div>
+    <section><h3><span>Sandbox policy</span></h3><p class="lead">${esc(policyLine(p.sandbox_policy))}</p></section>
+    ${inc ? `<div class="links no-print"><a href="api/runs/${p.run_id}/incident.json">Incident log (JSON)</a></div>` : ""}
   </div>`;
 }
 function containmentDrill(det, inc) {
   return `<section><h3><span>Containment</span><span>${det.containment_events.length} signals</span></h3>
     ${eventRows(det.containment_events, true)}
-    <div class="rows ev"><div><span class="t">${sec(det.elapsed_s).replace(" s", "")}</span><span>Sandbox ${esc(det.sandbox)} ${det.destroyed ? "destroyed" : "NOT destroyed"}, exit ${esc(det.exit)}</span></div></div></section>
+    <div class="rows ev"><div><span class="t">${(+det.elapsed_s).toFixed(2)}</span><span class="st c-idle" style="font-weight:400"><i class="hollow"></i><span>Sandbox ${det.destroyed ? "destroyed" : "NOT destroyed"}</span></span></div></div></section>
     <section><h3><span>Static scan of the dump</span><span>${inc.static_scan.length} lines</span></h3>
     <div class="code">${inc.static_scan.map(f => `line ${f.line}  ${esc(f.text)}\n        ${esc(f.why)}`).join("\n")}</div></section>`;
 }
 
 /* ---------- shared panel parts ---------- */
+// A ready or quarantined cell's reason restates its status or the sections below; only what adds something stays.
+function lead(state, reason) {
+  if (!["native", "healed", "quarantined"].includes(state)) return reason ? `<p class="lead">${esc(reason)}</p>` : "";
+  const extra = String(reason || "").match(/\(([^)]*itself)\)/)?.[1];
+  return extra ? `<p class="lead">${esc(extra.charAt(0).toUpperCase() + extra.slice(1))}.</p>` : "";
+}
 function checkSection(title, ks) {
   const pass = ks.filter(k => k.pass).length;
   const rows = `<div class="rows">${ks.map(k => {
@@ -486,20 +556,20 @@ function containment(sigs, scan, events) {
   if (!sigs.length && !(scan || []).length) return "";
   return `<section><h3><span>Containment</span><span>${sigs.length} signals</span></h3>${pol.length ? eventRows(pol, true)
     : `<div class="rows">${sigs.map(s => `<div><span class="m no">●</span><span>${esc(s.signal)}</span><span></span></div>`).join("")}</div>`}</section>
-    ${(scan || []).length ? `<section><h3><span>Static scan of the dump</span><span>${scan.length}</span></h3><div class="code">${scan.map(f => typeof f === "string" ? esc(f) : `line ${esc(f.line)}  ${esc(f.text)}\n        ${esc(f.why)}`).join("\n")}</div></section>` : ""}`;
+    ${(scan || []).length ? `<section><h3><span>Static scan of the dump</span><span>${scan.length} ${scan.length === 1 ? "line" : "lines"}</span></h3><div class="code">${scan.map(f => typeof f === "string" ? esc(f) : `line ${esc(f.line)}  ${esc(f.text)}\n        ${esc(f.why)}`).join("\n")}</div></section>` : ""}`;
 }
 function bridgeSection(bs, llm) {
   if (!bs.length) return "";
   const l = (llm || [])[0];
   return bs.map(b => `<section><h3><span>Bridge migration, round ${esc(b.round)}</span><span>${l ? `${esc(l.model)} · ${sec(l.latency_s)}` : ""}</span></h3>
     <div class="code">${esc(b.changes)}</div>
-    <div class="links"><a href="${b.url}" download="${esc(b.name)}">Download ${esc(b.name)}</a><span class="mono muted">sha256 ${esc(b.sha256.slice(0, 16))}</span></div></section>`).join("");
+    <div class="links"><a href="${b.url}" download="${esc(b.name)}">Download ${esc(b.name)}</a></div></section>`).join("");
 }
 function timings(pairs, total) {
   if (!pairs.length) return "";
   const max = Math.max(...pairs.map(p => +p[1] || 0), 0.01);
-  return `<section><h3><span>Timing</span><span>${sec(total)}</span></h3>${pairs.map(([n, s]) =>
-    `<div class="timing"><span>${esc(n)}</span><span class="b"><i style="width:${(100 * (+s || 0) / max).toFixed(1)}%"></i></span><span class="s">${sec(s)}</span></div>`).join("")}</section>`;
+  return `<section><details class="grp"><summary><h3><span>Timing</span><span>${sec(total)}</span></h3></summary>${pairs.map(([n, s]) =>
+    `<div class="timing"><span>${esc(n)}</span><span class="b"><i style="width:${(100 * (+s || 0) / max).toFixed(1)}%"></i></span><span class="s">${sec(s)}</span></div>`).join("")}</details></section>`;
 }
 function eventRows(evs, policy) {
   return `<div class="rows ev">${evs.map(e => {
@@ -514,14 +584,99 @@ function eventRows(evs, policy) {
   }).join("")}</div>`;
 }
 // Every restore lands in a throwaway TEST instance of the app (own container, own DB, no network), never production.
-// Uses the runtime's explicit target when it reports one, else the sandbox that held the test instance.
-function targetLine(target, sandbox, destroyed) {
-  const t = target ? [target.instance, target.database?.replace(/^.*?(Postgres[^,]*?) \S+(, .*)?$/, "$1$2")].filter(Boolean).join(" · ")
-    : sandbox ? `test instance ${sandbox}` : "test instance (sandbox)";
-  return `<dl class="kv target"><dt>restored into</dt><dd>${esc(t)}${destroyed === false ? ", NOT destroyed" : destroyed ? ", destroyed after the checks" : ""}${target?.production_touched === false ? " · production untouched" : ""}</dd></dl>`;
+// Names what the test instance was (database, network), never its sandbox id.
+function targetLine(target, destroyed) {
+  const db = target?.database?.replace(/^.*?(Postgres[^,]*?) \S+(, .*)?$/, "$1$2");
+  return `<dl class="kv target"><dt>restored into</dt><dd>test instance${db ? `, ${esc(db)}` : ""}${destroyed === false ? ", NOT destroyed" : destroyed ? ", destroyed after the checks" : ""}${target?.production_touched === false ? ". Production untouched" : ""}</dd></dl>`;
 }
 const policyLine = p => p ? [p.runtime, `network ${String(p.network).split(" ")[0]}`, `rootfs ${p.rootfs}`, `${p.memory} RAM`,
   `${p.cpus} CPU`, `pids ${p.pids_limit}`, `caps ${p.capabilities}`, `${p.timeout_s} s cap`].join(" · ") : "";
+
+/* ---------- Overview: one rail of backups, oldest left; hover or tap a mark for its path through the airlock ---------- */
+const STAGES = ["Received", "Sealed sandbox", "Checks", "Drift healed", "Test copy", "Certificate"];
+// Colour = does this backup work (Jonas 15:16 "colors for if its working"); healed works too, in a calmer tone.
+const OV = {
+  ready: ["c-ok", "Restorable"], healed: ["c-heal", "Restorable, healed"], not_restorable: ["c-warn", "Not restorable"],
+  quarantined: ["c-bad", "Blocked"], running: ["c-run", "In the airlock", "run"], queued: ["c-idle", "Queued", "hollow"],
+};
+const ovState = b => b.status === "dr_ready" ? (Object.values(b.cells).some(c => c.state === "healed") ? "healed" : "ready")
+  : b.status === "failed" ? "not_restorable" : b.status;
+const ovSel = {id: null};
+// One step per stage: [state, label]. done / active / skip (not needed) / stop (the path ends here) / end / pending / none.
+function ovSteps(b) {
+  const healed = Object.values(b.cells).some(c => c.state === "healed");
+  if (b.status === "quarantined") return [["done"], ["stop", "Blocked"], ["none"], ["none"], ["none"], ["none"]];
+  if (["not_restorable", "failed"].includes(b.status)) return [["done"], ["done"], ["stop", "Failed"], ["none"], ["none"], ["none"]];
+  if (b.status === "dr_ready") return [["done"], ["done"], ["done"], healed ? ["done", "bridge passed"] : ["skip", "not needed"], ["done"], ["end", "Issued"]];
+  if (b.status === "queued") return [["done"], ["pending"], ["pending"], ["pending"], ["pending"], ["pending"]];
+  const L = Object.entries(rg.live).filter(([k]) => k.startsWith(b.id + "@")).map(([, v]) => v);
+  const heal = L.some(l => l.state === "healing"), checking = L.some(l => l.events.some(e => e.type === "check"));
+  const settled = Object.keys(b.cells).length > 0;
+  return [["done"], checking || heal || settled ? ["done"] : ["active", "restoring"],
+    heal || settled ? ["done"] : checking ? ["active", "checking"] : ["pending"],
+    heal ? ["active", "writing bridge"] : healed ? ["done", "bridge passed"] : ["pending"], ["pending"], ["pending"]];
+}
+function ovWhy(b) {
+  if (b.status === "quarantined") {
+    const n = (String(b.reason).match(/containment: ([^;]*)/)?.[1] || "").split(", ").filter(Boolean).length;
+    return n ? `${n} attacks contained, nothing left the sandbox` : "Executable lines in the dump, never restored";
+  }
+  if (b.status === "dr_ready") {
+    const cs = Object.entries(b.cells), ok = cs.filter(([, c]) => ["native", "healed"].includes(c.state));
+    return `Restores on ${ok.length} of ${cs.length} app version${cs.length > 1 ? "s" : ""}` + (cs.some(([, c]) => c.state === "healed") ? ", schema drift healed by a bridge" : "");
+  }
+  return shortReason(String(b.reason || "").replace(/^[\w.]+: \w+, /, ""));
+}
+function ovDetail(b) {
+  if (!b) return "";
+  const [c, word] = OV[ovState(b)] || ["c-idle", b.status];
+  const steps = ovSteps(b), path = c === "c-run" || c === "c-idle" ? "c-ok" : c;
+  const busy = rg.summaries.some(x => ["running", "queued"].includes(x.status));
+  return `<div><h2>${esc(shortName(b.file))}</h2><div class="when">${esc(clock(b.created_at))}${b.bytes ? `, ${mb(b.bytes)}` : ""}</div>
+      <div class="st ${c}"><i></i><b>${esc(word)}</b></div><p class="why">${esc(ovWhy(b))}</p>
+      <div class="links"><button class="btn primary" id="again" data-id="${esc(b.id)}" ${busy ? "disabled" : ""}>${["running", "queued"].includes(b.status) ? "Restoring" : "Restore again"}</button>
+        <a href="?view=backups" data-open="${esc(b.id)}">Evidence</a>${b.status === "dr_ready" ? `<a href="?view=backups#cert" data-open="${esc(b.id)}">Certificate</a>` : ""}</div></div>
+    <ol class="path">${steps.map(([st, label], i) => `<li class="stg ${st} ${path}${["done", "stop", "end", "skip", "active"].includes(steps[i + 1]?.[0]) ? " lit" : ""}"><span class="sh">${STAGES[i]}</span><i></i>${label ? `<span class="lb">${esc(label)}</span>` : ""}</li>`).join("")}</ol>`;
+}
+function ovView() {
+  const ss = rg.summaries.slice().sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""));
+  const ready = ss.filter(b => b.status === "dr_ready").length, q = ss.filter(b => b.status === "quarantined").length;
+  // The backup you would restore from (Jonas 15:16 "some way to show whats the latest working").
+  const latest = ss.filter(b => b.status === "dr_ready").at(-1);
+  const sel = ss.find(b => b.id === ovSel.id) || ss.find(b => ["running", "queued"].includes(b.status)) || latest || ss.at(-1);
+  return `<div class="ov">
+    <h1>Every backup proven restorable before you need it.</h1>
+    <p class="promise">Each new backup is restored in a sealed sandbox, checked, healed if its schema drifted, then certified. Production is never touched.</p>
+    ${ss.length ? `<div class="board"><div class="verdict">${ready} of ${ss.length} backups restorable.${q ? ` <em>${q} poisoned backup${q > 1 ? "s" : ""} blocked.</em>` : ""}</div>
+    <div class="tl">${ss.map((b, i) => { const [c, word, mod] = OV[ovState(b)] || ["c-idle", b.status, "hollow"];
+      return `<button class="mk ${c}" data-id="${esc(b.id)}" aria-pressed="${b === sel}" aria-label="${esc(shortName(b.file))}: ${esc(word)}">
+        ${b === latest ? `<span class="flag${i > ss.length / 2 ? " r" : ""}">Latest restorable</span>` : ""}<i class="${mod || ""}"></i><span class="n">${esc(shortName(b.file))}</span><span class="w">${esc(word)}</span></button>`; }).join("")}</div>
+    <div class="axis"><span>${esc(clock(ss[0].created_at))}</span><span>${esc(clock(ss.at(-1).created_at))}</span></div>
+    <div class="dt" id="dt">${ovDetail(sel)}</div></div>` : ""}
+  </div>`;
+}
+function ovPick(id) {
+  if (ovSel.id === id) return;
+  ovSel.id = id;
+  document.querySelectorAll(".mk").forEach(m => m.setAttribute("aria-pressed", m.dataset.id === id));
+  $("#dt").innerHTML = ovDetail(rg.summaries.find(b => b.id === id));
+  bindDetail();
+}
+function bindDetail() {
+  document.querySelectorAll("[data-open]").forEach(a => a.onclick = async e => {
+    e.preventDefault();
+    const s = rg.summaries.find(b => b.id === a.dataset.open), cs = Object.entries(s.cells);
+    rg.sel = {b: s.id, v: (cs.find(([, c]) => c.state === "healed") || cs[0] || [rg.versions.at(-1)])[0]};
+    await rgDetail(s.id, true).catch(err => note(err.message));
+    setView("backups", a.getAttribute("href").split("#")[1]);
+  });
+  $("#again")?.addEventListener("click", async e => {
+    e.target.disabled = true;
+    const r = await fetch(`rg/api/backups/${encodeURIComponent(e.target.dataset.id)}/rerun`, {method: "POST"});
+    if (!r.ok) { note(`Not queued: ${await why(r)}`); e.target.disabled = false; }
+    rgRefresh();
+  });
+}
 
 /* ---------- certificate (both engines carry the same matrix shape) ---------- */
 function certView() {
@@ -533,8 +688,8 @@ function certView() {
     <div class="head"><div><div class="meta">${esc(c.issuer || "BackupAirlock")} · ${esc(c.generated_at)}</div>
       <h2>DR Readiness Certificate</h2>
       <div class="stamp">${c.matrix.map(m => `${esc(m.backup)}: ${esc(m.status.split(":")[0].toLowerCase())}`).join(" · ")}</div></div>
-      <div class="actions no-print"><a class="btn" href="#">Back</a><a class="btn" href="${json}">Export JSON</a>
-        ${view === "drill" ? `<a class="btn" href="api/runs/${c.run_id}/proof.html">Export HTML</a>` : ""}<button class="btn primary" onclick="print()">Print</button></div></div>
+      <div class="actions no-print"><a href="#">Back</a><a href="${json}">JSON</a>
+        ${view === "drill" ? `<a href="api/runs/${c.run_id}/proof.html">HTML</a>` : ""}<button class="btn primary" onclick="print()">Print</button></div></div>
     <section><h3 class="colhead">Backup x app version</h3><table><tr><th>Backup</th><th>App version</th><th>Result</th><th>Bridge</th><th>Checks</th></tr>
       ${c.matrix.map(m => m.app_versions.map((a, i) => { const ks = (a.suite || []).concat(a.control_plane_checks || []);
         return `<tr><td>${i ? "" : `<b class="mono">${esc(m.backup)}</b><br><span class="mono muted">${esc(m.sha256)}</span>`}</td><td>${esc(a.app)}</td>
@@ -549,28 +704,44 @@ function certView() {
 }
 
 /* ---------- render ---------- */
-let view = "backups";
+let view = "overview";
 function setLive(on) { $("#live").className = "live" + (on ? " on" : ""); $("#live span").textContent = on ? "live" : view === "drill" ? "no drill running" : "offline"; }
 function note(t) { $("#note").textContent = t || ""; }
 function draw() {
   document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.view === view));
+  $("#top").hidden = view === "overview" && location.hash !== "#cert";
+  if (view === "overview" && location.hash !== "#cert") { $("#body").innerHTML = ovView(); return bind(); }
   const V = view === "drill" ? drView() : rgView();
   $("#meta").textContent = V.meta || "";
   $("#headline").innerHTML = V.headline || "";
   $("#actions").innerHTML = V.actions || "";
   if (location.hash === "#cert") { $("#body").innerHTML = certView(); return bind(); }
   const sel = V.sel;
+  // Nothing to list: the headline already says so.
+  if (!V.rows.length) { $("#body").innerHTML = ""; return bind(); }
   $("#body").innerHTML = `<div class="main"><div>
     <div class="matrix"><div class="colhead corner">Backup</div>${V.cols.map(c => `<div class="colhead">${esc(c.label)}</div>`).join("")}
-    ${V.rows.map(r => `<div class="row"><div class="bk"><div class="name" title="${esc(r.full || r.name)}">${esc(r.name)}</div><div class="sub">${esc(r.sub)}</div>${verdictLine(r.verdict)}</div>
-      ${(r.cols || V.cols).map(c => { const x = r.cells[c.id] || {state: "not_run", line: ""};
-        return `<button class="cell" data-b="${esc(r.id)}" data-v="${esc(c.id)}"${r.cols ? ` style="grid-column:span ${V.cols.length}"` : ""} aria-pressed="${!!sel && sel.b === r.id && sel.v === c.id}">
-          <div class="app">${esc(c.label)}</div>${mark(x.state)}<div class="d" title="${esc(x.line)}">${esc(x.line)}</div></button>`; }).join("")}</div>`).join("")}
-    </div>${V.rows.length ? "" : `<div class="empty">Nothing to show yet.</div>`}</div>
+    ${V.rows.map(r => `<div class="row"><div class="bk"><div class="name" title="${esc(r.full || r.name)}">${esc(r.name)}</div><div class="sub">${esc(r.sub)}</div></div>
+      ${matrixCells(r, r.cols || V.cols, sel, V.cols.length)}</div>`).join("")}
+    </div></div>
     <div>${view === "drill" ? drPanel() : rgPanel()}</div></div>`;
   bind();
 }
+function matrixCells(r, cols, sel, width) {
+  const xs = cols.map(c => r.cells[c.id] || {state: "not_run", line: ""});
+  const what = x => String(x.line).split(" · ")[0];
+  const same = cols.length > 1 && !["native", "healed"].includes(xs[0].state) && xs.every(x => x.state === xs[0].state && what(x) === what(xs[0]));
+  const cell = (x, c, label, span) => `<button class="cell" data-b="${esc(r.id)}" data-v="${esc(c.id)}"${span ? ` style="grid-column:span ${span}"` : ""}
+    aria-pressed="${!!sel && sel.b === r.id && (!!span || sel.v === c.id)}">${label ? `<div class="app">${esc(label)}</div>` : ""}${mark(x.state)}<div class="d">${esc(x.line)}</div></button>`;
+  if (cols.length === 1 && width > 1) return cell(xs[0], cols[0], cols[0].label, width);
+  return same ? cell({...xs[0], line: what(xs[0])}, cols[0], "", cols.length)
+    : cols.map((c, i) => cell(xs[i], c, c.label)).join("");
+}
 function bind() {
+  document.querySelectorAll(".mk").forEach(el => { el.onmouseenter = el.onfocus = el.onclick = () => ovPick(el.dataset.id); });
+  bindDetail();
+  document.querySelectorAll('a[href^="?view="]').forEach(a => a.onclick = e => {
+    e.preventDefault(); const [v, h] = a.getAttribute("href").slice(6).split("#"); setView(v, h); });
   document.querySelectorAll(".cell").forEach(el => el.onclick = async () => {
     const s = {b: el.dataset.b, v: el.dataset.v};
     if (view === "drill") dr.sel = s; else { rg.sel = s; await rgDetail(s.b).catch(e => note(e.message)); }
@@ -579,36 +750,41 @@ function bind() {
   });
   $("#rerun")?.addEventListener("click", async () => {
     const r = await fetch(`rg/api/backups/${encodeURIComponent(rg.sel.b)}/rerun`, {method: "POST"});
-    note(r.ok ? "Queued. The cells fill in as the sandbox reports." : `Not queued: ${(await r.json()).detail}`);
+    note(r.ok ? "Queued." : `Not queued: ${await why(r)}`);
     rgRefresh();
   });
   $("#file")?.addEventListener("change", async e => {
     const f = e.target.files[0]; if (!f) return;
     note(`Uploading ${f.name}`);
     const r = await fetch(`api/uploads?name=${encodeURIComponent(f.name)}`, {method: "POST", body: f});
-    if (!r.ok) { dr.upload = null; note(`Upload refused: ${(await r.json()).detail}`); }
+    if (!r.ok) { dr.upload = null; note(`Upload refused: ${await why(r)}`); }
     else { dr.upload = await r.json(); note(`${dr.upload.name} (${mb(dr.upload.bytes)}) joins the next drill as a fourth row.`); }
     draw();
   });
   $("#run")?.addEventListener("click", async () => {
     const r = await fetch(`api/runs/matrix${dr.upload ? "?upload=" + dr.upload.id : ""}`, {method: "POST"});
-    if (!r.ok) { note(`Not started: ${(await r.json()).detail}`); return; }
+    if (!r.ok) { note(`Not started: ${await why(r)}`); return; }
     note(""); dr.sel = null; dr.upload = null; drFollow((await r.json()).run_id); draw();
   });
 }
-document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
-  view = b.dataset.view; history.replaceState(null, "", "?view=" + view); note(""); start();
-});
+function setView(v, hash) {
+  view = v; history.pushState(null, "", `?view=${v}${hash ? "#" + hash : ""}`); note(""); start(); scrollTo(0, 0);
+}
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => setView(b.dataset.view));
+window.addEventListener("popstate", () => { view = viewFromUrl(); start(); });
 window.addEventListener("hashchange", draw);
 async function start() {
   draw();
   try {
-    if (view === "drill") await drLoad(); else { await rgLoad(); rgStream(); }
-  } catch (e) { note(view === "drill" ? `Drill results unavailable: ${e.message}` : `BackupAirlock runtime unavailable: ${e.message}`); }
+    // Each engine loads once; switching views must not restart a drill's live stream.
+    if (view === "drill" && !dr.proof && !dr.live) await drLoad();
+    if (view !== "drill" && !rg.es) { await rgLoad(); rgStream(); }
+  } catch (e) { note(view === "drill" ? `Drill results unavailable: ${e.message}` : `Backup watcher unavailable: ${e.message}`); }
   setLive(view === "drill" ? !!dr.es : !!rg.es);
   draw();
 }
-view = new URLSearchParams(location.search).get("view") === "drill" ? "drill" : "backups";
+const viewFromUrl = () => ["drill", "backups"].includes(new URLSearchParams(location.search).get("view")) ? new URLSearchParams(location.search).get("view") : "overview";
+view = viewFromUrl();
 start();
 </script>
 </body>
