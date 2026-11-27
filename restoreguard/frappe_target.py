@@ -564,6 +564,37 @@ async def _bridge(cell, sb, fields, rows, want, native):
     _fail(cell, f"no working bridge to {cfg['test']['site']} after {guard.MAX_BRIDGE_ROUNDS} rounds: {cell.bridges[-1].get('failure')}")
 
 
+SHOT_PY = os.environ.get("RESTOREGUARD_SHOT_PY", "/opt/restoreguard/shot-venv/bin/python")
+SHOTS = guard.STATE / "shots"
+
+
+def shot_path(backup_id, site):
+    return SHOTS / f"{backup_id}@{site}.png"
+
+
+async def _shot(cell, test):
+    """The restored site as it looks right now, for the console; a picture, never a check, so a failure is only logged."""
+    cfg = cell.app["cfg"]
+    site = cfg["test"]["site"]
+    out = shot_path(cell.backup["id"], site)
+    if not os.path.exists(SHOT_PY):
+        return cell.emit({"type": "log", "line": f"no screenshot of {site}: {SHOT_PY} missing"})
+    SHOTS.mkdir(parents=True, exist_ok=True)
+    route = "app/" + cfg["doctype"].lower().replace(" ", "-")
+    proc = await asyncio.create_subprocess_exec(SHOT_PY, str(Path(__file__).resolve().parent / "erp_shot.py"), cfg["test"]["url"], route, str(out),
+                                                stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                                                stderr=asyncio.subprocess.STDOUT)
+    try:
+        log, _ = await asyncio.wait_for(proc.communicate(test.token.encode()), 90)
+    except asyncio.TimeoutError:
+        proc.kill()
+        log = b"timed out after 90 s"
+    if proc.returncode == 0 and out.exists():
+        return cell.emit({"type": "log", "line": f"screenshot of {site}/{route}"})
+    last = (log.decode(errors="replace").strip().splitlines() or [f"exit {proc.returncode}"])[-1]
+    cell.emit({"type": "log", "line": f"no screenshot of {site}: {last}"[:300]})
+
+
 async def _vm(cell, fields, rows, want, bridge=None):
     """The sandbox passed (with its bridge, if the app drifted): restore the same file into the test site
     on the VM, then check it there."""
@@ -596,6 +627,7 @@ async def _vm(cell, fields, rows, want, bridge=None):
         cell.check(f"on {site}: {name}", passed, detail)
     if failed := [c["check"] for c in cell.checks if not c["pass"]]:
         return _fail(cell, failed[0])
+    await _shot(cell, test)
     if bridge:
         rnd = len(cell.bridges)
         cell.state, cell.reason = "healed", (f"{cfg['test']['app']}: migrate alone left the data wrong; GLM bridge round {rnd} "

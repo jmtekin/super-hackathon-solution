@@ -22,6 +22,11 @@ rsync -a --delete --exclude .git --exclude state --exclude backups --exclude bac
 rsync -a --delete --exclude .git --exclude .venv --exclude runs --exclude shots "$SRC/../ui"/ "$DEST/restorer"/
 python3 -m venv "$DEST/.venv"
 "$DEST/.venv/bin/pip" install -q -r "$DEST/restorer/requirements.txt"
+# Screenshots of the restored ERP for the console (erp_shot.py): Playwright in its own venv, Chromium + its libraries.
+python3 -m venv "$DEST/shot-venv"
+"$DEST/shot-venv/bin/pip" install -q playwright==1.49.1
+PLAYWRIGHT_BROWSERS_PATH="$DEST/ms-playwright" "$DEST/shot-venv/bin/playwright" install --with-deps chromium >/dev/null
+chmod -R a+rX "$DEST/shot-venv" "$DEST/ms-playwright"
 docker pull -q postgres:16-alpine
 docker pull -q mariadb:11.8  # Frappe target sandbox
 # Stand-in app versions until Mohamed's images replace them in apps.json.

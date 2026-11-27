@@ -22,7 +22,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi import Body, FastAPI, HTTPException
-from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 
 import faults
 import frappe_target
@@ -196,6 +196,7 @@ def _summary(b):
             "started_at": b.get("started_at"), "finished_at": b.get("finished_at"),
             "elapsed_s": round(b["finished_at"] - b["started_at"], 2) if b.get("finished_at") else None,
             "run": b.get("run"), "injected": m.get("injected"),
+            "shots": [v for v in b["cells"] if b.get("kind") == "frappe" and frappe_target.shot_path(b["id"], v).exists()],
             "checks_passed": sum(c["pass"] for c in checks), "checks_total": len(checks),
             "cells": {v: {"state": r["state"], "reason": r["reason"], "elapsed_s": r["elapsed_s"]}
                       for v, r in b["cells"].items()}}
@@ -211,7 +212,8 @@ def _get(bid):
 def health():
     return {"ok": True, "backups": len(backups), "queued": queue.qsize() if queue else 0,
             "app_versions": [a["version"] for a in guard.apps()],
-            "frappe": {"source": f"{FRAPPE['source']['site']} (read only)", "restores_into": [t["site"] for t in FRAPPE["tests"]]}
+            "frappe": {"source": f"{FRAPPE['source']['site']} (read only)", "restores_into": [t["site"] for t in FRAPPE["tests"]],
+                       "test_urls": {t["site"]: t["url"] for t in FRAPPE["tests"]}}
             if FRAPPE else None}
 
 
@@ -257,6 +259,16 @@ def incident(bid: str):
     return JSONResponse({"backup": b["file"], "sha256": b["manifest"]["sha256"], "status": b["status"],
                          "reason": b["reason"], "cells": cells},
                         headers={"Content-Disposition": f'attachment; filename="incident-{bid}.json"'})
+
+
+@app.get("/api/backups/{bid}/shot/{site}.png")
+def shot(bid: str, site: str):
+    """The test site right after this backup's restore (frappe_target._shot)."""
+    _get(bid)
+    f = frappe_target.shot_path(bid, site)
+    if "/" in site or not f.exists():
+        raise HTTPException(404, "no screenshot")
+    return FileResponse(f, media_type="image/png", headers={"Cache-Control": "max-age=60"})
 
 
 @app.get("/api/backups/{bid}/bridges/{name}")
