@@ -1,0 +1,80 @@
+{
+  "row_counts": {
+    "orders": 2000,
+    "users": 240
+  },
+  "row_hashes": {
+    "orders": {
+      "1": "09725122780d3d7458bb042eb120145b59b7947647b01ae97b05e0d157bda6d6",
+      "42": "a7da90a656b604987bd3dab5ba03a4709c1ec1310b4d6e686fbe1b799a0f2656",
+      "977": "71ff726f3f35c12c2294d1aff0ebd9f7f9869049be4da59db1dd39af3fc7f508",
+      "1500": "4ec7f251ef8f48641c41d75baf33a5056cfd0325d8c5553c09d950a160e6a48d",
+      "1873": "c94714f94ae9722066baf5688d5bfb100cb71eaa12b4219dce95d9b17ab7b89b",
+      "2000": "a51c352c8da74f92c56ad0fbc721a01516992b4275478bc309db31841011a6bf"
+    }
+  },
+  "schema": {
+    "orders": [
+      [
+        "id",
+        "INTEGER",
+        false
+      ],
+      [
+        "user_id",
+        "INTEGER",
+        true
+      ],
+      [
+        "sku",
+        "TEXT",
+        true
+      ],
+      [
+        "total_cents",
+        "INTEGER",
+        true
+      ],
+      [
+        "status",
+        "TEXT",
+        true
+      ],
+      [
+        "created_at",
+        "TEXT",
+        true
+      ]
+    ],
+    "users": [
+      [
+        "id",
+        "INTEGER",
+        false
+      ],
+      [
+        "email",
+        "TEXT",
+        true
+      ],
+      [
+        "name",
+        "TEXT",
+        true
+      ],
+      [
+        "created_at",
+        "TEXT",
+        true
+      ]
+    ]
+  },
+  "smoke": {
+    "sql": "SELECT u.email, COUNT(o.id), SUM(o.total_cents) FROM users u JOIN orders o ON o.user_id = u.id WHERE u.id = 42 GROUP BY u.id",
+    "expect": [
+      "lina.saleh42@example.se",
+      11,
+      2960492
+    ]
+  }
+}

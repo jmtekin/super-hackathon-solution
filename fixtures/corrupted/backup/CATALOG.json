@@ -1,0 +1,7 @@
+{
+  "engine": "sqlite3 3.45",
+  "app": "shop-orders",
+  "taken_at": "2026-11-26T02:00:04Z",
+  "dump": "backup/app.sql",
+  "format": "sql text dump"
+}
