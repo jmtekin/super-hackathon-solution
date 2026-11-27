@@ -22,6 +22,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
+import frappe_target
 import guard
 
 HERE = Path(__file__).resolve().parent
@@ -31,6 +32,9 @@ REMOTE_TOKEN_FILE = os.environ.get("RESTOREGUARD_BACKUPS_TOKEN_FILE", "/opt/agen
 POLL_S = int(os.environ.get("RESTOREGUARD_POLL", "15"))
 RESULTS = guard.STATE / "results"
 NAME = re.compile(r"^[\w.-]+_v\d+$")
+FRAPPE = frappe_target.config()  # a test target that could be production stops the service here
+FRAPPE_DIR = Path(os.environ.get("RESTOREGUARD_FRAPPE_BACKUPS", HERE / "backups-frappe"))
+FRAPPE_POLL_S = int(os.environ.get("RESTOREGUARD_FRAPPE_POLL", "120"))  # production's Backups page, read only
 
 backups, queue, subscribers = {}, None, set()
 
@@ -87,10 +91,31 @@ def discover():
             backups[rec["id"]] = {**rec, "status": "queued", "found_at": time.time(), "cells": {}}
             _status(backups[rec["id"]])
             queue.put_nowait(rec["id"])
+    for gz in sorted(FRAPPE_DIR.glob("*.sql.gz")) if FRAPPE else []:
+        stem = gz.name[:-len(".sql.gz")]
+        if stem in backups or not frappe_target.FILE.match(gz.name) or not (FRAPPE_DIR / f"{stem}.json").exists():
+            continue
+        try:
+            rec = frappe_target.load_backup(gz)
+        except ValueError as e:
+            backups[stem] = {"id": stem, "kind": "frappe", "file": gz.name, "path": str(gz), "manifest": None,
+                             "status": "failed", "reason": str(e), "found_at": time.time(), "cells": {}}
+            _status(backups[stem])
+            continue
+        backups[stem] = {**rec, "status": "queued", "found_at": time.time(), "cells": {}}
+        _status(backups[stem])
+        queue.put_nowait(stem)
 
 
 async def watcher():
+    frappe_due = 0
     while True:
+        if FRAPPE and time.monotonic() >= frappe_due:
+            frappe_due = time.monotonic() + FRAPPE_POLL_S
+            try:
+                await asyncio.to_thread(frappe_target.fetch_backups, FRAPPE, FRAPPE_DIR)
+            except Exception as e:
+                broadcast({"type": "watcher", "error": f"frappe fetch failed: {e}"[:300]})
         if REMOTE:
             try:
                 await asyncio.to_thread(_mirror)
@@ -107,19 +132,24 @@ async def worker():
         b.update(status="running", started_at=time.time(), cells={})
         _status(b)
         results = []
-        for a in guard.apps():
-            r = await guard.run_cell(b, a, broadcast)
+        runner = frappe_target if b.get("kind") == "frappe" else guard
+        for a in _targets(b):
+            r = await runner.run_cell(b, a, broadcast)
             results.append(r)
             events = r.pop("events")
             (RESULTS / f"{bid}@{a['version']}.events.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
             b["cells"][a["version"]] = r
             _save(b)
-        b["certificate"] = guard.certificate(b, results)
+        b["certificate"] = guard.certificate(b, results, runner.policy())
         row = b["certificate"]["matrix"][0]["status"]
         b["status"] = {"DR READY": "dr_ready", "NOT RESTORABLE": "not_restorable"}.get(row, "quarantined")
         b["reason"] = "; ".join(f"{r['app_version']}: {r['state']}, {r['reason']}" for r in results)
         b["finished_at"] = time.time()
         _status(b)
+
+
+def _targets(b):
+    return [frappe_target.target(FRAPPE)] if b.get("kind") == "frappe" else guard.apps()
 
 
 @asynccontextmanager
@@ -144,7 +174,7 @@ app = FastAPI(title="RestoreGuard", docs_url=None, redoc_url=None, lifespan=life
 def _summary(b):
     m = b.get("manifest") or {}
     checks = [c for r in b["cells"].values() for c in r["checks"]]
-    return {"id": b["id"], "file": b["file"], "sha256": m.get("sha256"), "status": b["status"], "reason": b.get("reason", ""),
+    return {"id": b["id"], "kind": b.get("kind", "postgres"), "file": b["file"], "sha256": m.get("sha256"), "status": b["status"], "reason": b.get("reason", ""),
             "created_at": m.get("created_at"), "schema_version": m.get("schema_version"),
             "app_version": m.get("app_version"), "bytes": b.get("bytes"), "found_at": b.get("found_at"),
             "started_at": b.get("started_at"), "finished_at": b.get("finished_at"),
@@ -163,7 +193,9 @@ def _get(bid):
 @app.get("/health")
 def health():
     return {"ok": True, "backups": len(backups), "queued": queue.qsize() if queue else 0,
-            "app_versions": [a["version"] for a in guard.apps()]}
+            "app_versions": [a["version"] for a in guard.apps()],
+            "frappe": {"source": f"{FRAPPE['source']['site']} (read only)", "restores_into": FRAPPE["test"]["site"]}
+            if FRAPPE else None}
 
 
 @app.get("/api/backups")
@@ -234,13 +266,13 @@ def rerun(bid: str):
 def matrix():
     versions = [a["version"] for a in guard.apps()]
     rows = sorted(backups.values(), key=lambda b: b["id"], reverse=True)
-    return {"app_versions": versions,
+    return {"app_versions": versions + ([FRAPPE["test"]["site"]] if FRAPPE else []),
             "backups": [{"id": b["id"], "schema_version": (b.get("manifest") or {}).get("schema_version"),
                          "status": b["status"],
                          "cells": [{"app_version": v, "state": b["cells"][v]["state"], "reason": b["cells"][v]["reason"]}
                                    if v in b["cells"] else {"app_version": v, "state": b["status"] if b["status"] in
                                                             ("queued", "running") else "not_run", "reason": ""}
-                                   for v in versions]} for b in rows]}
+                                   for v in [a["version"] for a in _targets(b)]]} for b in rows]}
 
 
 @app.get("/api/stream")

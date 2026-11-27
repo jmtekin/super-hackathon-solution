@@ -3,3 +3,4 @@ state/
 faults/out/
 __pycache__/
 backups-frappe/
+faults/out-frappe/
