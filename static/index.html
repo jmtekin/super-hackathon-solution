@@ -33,7 +33,7 @@ button.run:disabled{opacity:.45;cursor:default}
 .policy div:last-child{border:0}
 .policy em{font-style:normal;color:var(--ok)}
 .policy .hot em{color:var(--bad);font-weight:700}
-.stack{display:grid;gap:20px;align-content:start;min-width:0}
+.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:20px;align-content:start;min-width:0}
 .row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:20px}
 .verdict{display:none;padding:22px 24px;border-radius:12px;border:1px solid}
 .verdict.ok{display:block;background:var(--okbg);border-color:#86efac;color:#14532d}
@@ -239,8 +239,9 @@ function onEvent(ev) {
     term(ev.line, ev.stream === "stderr" ? "e" : "");
   } else if (ev.type === "cpu") {
     $("cpuv").textContent = `${ev.pct.toFixed(0)}% of ${ev.cap.toFixed(0)}% cap · ${ev.mem_mb} MB`;
-    setBar("cpubar", ev.pct / ev.cap, ev.pct >= ev.cap * .9);
-    if (ev.pct >= ev.cap * .9 && !steps.__cpu) steps.__cpu = Object.assign(li("fail alarm child", "!", "CPU: AT CAP", `${ev.pct.toFixed(0)}% of 1 core, throttled by the sandbox, host unaffected`, ev.t));
+    // 250 ms samples of a throttled busy loop read 75-99 %, so "at cap" starts at 75 %.
+    setBar("cpubar", ev.pct / ev.cap, ev.pct >= ev.cap * .75);
+    if (ev.pct >= ev.cap * .75 && !steps.__cpu) steps.__cpu = Object.assign(li("fail alarm child", "!", "CPU: AT CAP", `${ev.pct.toFixed(0)}% of 1 core, throttled by the sandbox, host unaffected`, ev.t));
   } else if (ev.type === "policy") {
     term(ev.event, "p");
     li("fail alarm child", "!", esc(ev.event.split(",")[0]), esc(ev.detail || "orchestrator kills the container"), ev.t);
