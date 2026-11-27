@@ -15,7 +15,9 @@ Live demo: https://vps.taild101c7.ts.net:10000/restorer/
 5. Deterministic checks, no model: row counts, sampled row hashes, schema assertions, one app smoke query, against the manifest recorded at backup time (kept in the control plane, never in the backup).
 6. The model explains the evidence; the verdict itself comes only from steps 3 to 5.
 
-Fixtures (`fixtures/build.py`, deterministic): **recoverable** (catalog points to a stale path, first attempt fails, repair succeeds), **corrupted** (restores cleanly, orders silently truncated), **compromised** (post-restore hook calls out to the network, then spins: network denied, CPU at cap, killed at 3 s).
+**Backup chain** (fixture 4): every nightly backup is restored natively into the current app in parallel sandboxes; for nights on an older schema the model reads old vs current schema and writes one `migrate.sql`; the nights are restored into their own schema and migrated, one sandbox each, in parallel; every round is checked per night against a manifest built by a reference migration in `fixtures/build.py` (row counts, sampled row hashes, a sha256 over every row, schema incl. `user_version`, smoke query). A sandbox error or a failed check goes back to the model for a repair, up to 3 rounds. The restore scripts are the app's own; only the migration is generated.
+
+Fixtures (`fixtures/build.py`, deterministic): **recoverable** (catalog points to a stale path, first attempt fails, repair succeeds), **corrupted** (restores cleanly, orders silently truncated), **compromised** (post-restore hook calls out to the network, then spins: network denied, CPU at cap, killed at 3 s), **drift** (10 nightly data-only backups; after night 9 `users` became `customers`, `name` split into `first_name`/`last_name`, `orders.currency NOT NULL DEFAULT 'SEK'` added: nights 1-9 fail natively with "table orders has 7 columns but 6 values were supplied" and are migrated v1 to v2, night 10 restores natively).
 
 ## Files
 
@@ -23,9 +25,9 @@ Fixtures (`fixtures/build.py`, deterministic): **recoverable** (catalog points t
 |---|---|
 | `app.py` | FastAPI control plane: drill pipeline, LLM calls, SSE events, proof downloads |
 | `sandbox.py` | hardened Docker runner, live CPU/memory from the container cgroup |
-| `verify.py` | the four deterministic checks |
+| `verify.py` | the deterministic checks (four, plus table digests when the manifest has them) |
 | `static/index.html` | the single-page UI (relative paths, works under any prefix) |
-| `fixtures/build.py` | builds the three backups + their manifests |
+| `fixtures/build.py` | builds the four fixtures + their manifests, incl. the reference v1 to v2 migration |
 | `sandbox.Dockerfile` | sandbox image (alpine + sqlite) |
 | `install.sh` | one-command install on a Vultr VM |
 | `shoot.js` | headless end-to-end run of all fixtures with screenshots into `shots/` |
@@ -48,4 +50,5 @@ Env vars: `VULTR_INFERENCE_KEY` (required), `RESTORER_HOST` (default 127.0.0.1; 
 
 - Sandbox is hardened Docker, not a microVM: the build host has no KVM. On a VM with nested virtualisation, swap `sandbox.py`'s `docker run` for Microsandbox/Firecracker; nothing else changes.
 - The control plane talks to the Docker daemon, which is root-equivalent; it is never exposed to the sandbox.
-- One drill at a time (409 otherwise). No auth, by design for the demo.
+- One drill at a time (409 otherwise); a chain drill runs up to 10 sandboxes at once inside it. No auth, by design for the demo.
+- The chain builds one migration per run and refuses a chain whose old nights span more than one old schema.
