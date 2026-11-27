@@ -58,7 +58,7 @@ new production backup costs exactly one VM restore (results persist in `state/`,
 port 80, on production's host:port, named like production, or an `ssh` login on another host than the test site;
 the production client cannot build a non-GET request. Not checked: that the VM's copy of the file is byte-identical to
 the one checksummed here (the key can run nothing but the restore); it is the file production's Backups page served.
-First full run 2026-11-27 15:04 (`20261127_140556`, by hand): native, 24/24 checks, VM restore 21.8 s, cell 131 s.
+First full run 2026-11-27 15:04 (`20261127_140556`, by hand): native, 25/25 checks, VM restore 21.8 s, cell 131 s; through the service 15:06-15:08, 25/25, 123 s.
 
 Fault kit (`python faults.py backups-frappe/<stem>.sql.gz`, copies in `faults/out-frappe/`), 2026-11-27 14:31 on
 `20261127_140556-demo_local-database`: 7/7 caught, none reached test.local.

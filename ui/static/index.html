@@ -262,7 +262,7 @@ function rgView() {
       sub: [b.created_at && clock(b.created_at), b.schema_version != null && `schema v${b.schema_version}`, mb(b.bytes)].filter(Boolean).join(" · "),
       cols: b.kind === "frappe" && rg.frappe ? [{id: rg.frappe, label: rg.frappe}] : null,
       cells: Object.fromEntries(rgTargets(b).map(v => { const c = rgCell(b.id, v); return [v, {state: c.state,
-        line: cellLine(c.state, c.reason, c.elapsed_s, b.status === "running")}]; })),
+        line: [b.kind === "frappe" && v, cellLine(c.state, c.reason, c.elapsed_s, b.status === "running")].filter(Boolean).join(" · ")}]; })),
     })),
     sel: rg.sel,
   };
