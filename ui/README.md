@@ -2,7 +2,7 @@
 
 **BackupAirlock is an autonomous disaster-recovery verifier that restores database backups against multiple application codebase versions inside sealed, throwaway sandboxes, proving business-logic integrity, auto-generating bridge migrations for version drift, and quarantining poisoned dumps before they ever touch production.**
 
-(Repo and service name: `restorer`. Team spec: `BACKUPAIRLOCK-SPEC.md`.)
+(Repo and service name: `restorer`. Team spec: `../docs/BACKUPAIRLOCK-SPEC.md`.)
 
 The demo ERP is Nordvik Handel AB, a small Swedish trading company (SEK, 25 %
 VAT, 200 customers, ~2,000 invoices, double-entry journal, stock), on Odoo's
@@ -57,7 +57,7 @@ Fixtures (`fixtures/build.py`, a seeded day-by-day simulation of the company's y
 | `apps/suite.py` | the business-logic suite run against the booted app |
 | `sandbox.py` | hardened Docker runner, live CPU/memory from the container cgroup |
 | `verify.py` | the deterministic checks: five on the books, five against the manifest |
-| `static/index.html` | the console (relative paths, works under any prefix): tabs Backups (RestoreGuard runtime via `/rg/*`) and Drill; checklist design/SPEC-CHECKLIST.md |
+| `static/index.html` | the console (relative paths, works under any prefix): tabs Backups (RestoreGuard runtime via `/rg/*`) and Drill; checklist ../docs/design/SPEC-CHECKLIST.md |
 | `fixtures/build.py` | simulates the ERP, builds the matrix dumps + the four drill fixtures + their manifests, incl. the reference v1 to v2 migration |
 | `sandbox.Dockerfile` | sandbox image `restorer-sandbox:2` (alpine + sqlite, python3, curl, honey `/root/.env`) |
 | `install.sh` | one-command install on a Vultr VM |
