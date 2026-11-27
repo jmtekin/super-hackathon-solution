@@ -178,10 +178,19 @@ def test_malformed_manifest_fails_without_a_sandbox(done, ids, kind, why):
 
 def test_matrix_has_every_dropped_backup(done, ids):
     m = rgctl.api("/api/matrix")
-    rows = {r["id"]: r for r in m["backups"]}
-    assert m["app_versions"] == ["1.0.0", "2.0.0"]
-    assert [c["state"] for c in rows[ids["drift"]]["cells"]] == ["healed", "native"]
-    assert [c["state"] for c in rows[ids["garbage"]]["cells"]] == ["not_run", "not_run"]
+    state = {r["id"]: {c["app_version"]: c["state"] for c in r["cells"]} for r in m["backups"]}
+    assert {"1.0.0", "2.0.0"} <= set(m["app_versions"])  # other targets (Frappe) may add columns
+    assert state[ids["drift"]] == {"1.0.0": "healed", "2.0.0": "native"}
+    assert state[ids["garbage"]] == {"1.0.0": "not_run", "2.0.0": "not_run"}
+
+
+def test_rerun_after_the_manifest_is_fixed(done, ids):
+    """A manifest read mid-write is not stuck: once it is whole, rerun proves the backup."""
+    bid = ids["garbage"]
+    good = json.loads((rgctl.DROP / f"{ids['good']}.json").read_text())
+    (rgctl.DROP / f"{bid}.json").write_text(json.dumps(dict(good, file=f"{bid}.dump")))
+    assert http(f"/api/backups/{bid}/rerun", "POST") == (200, {"queued": bid})
+    assert rgctl.wait(bid, 300)["status"] == "dr_ready"
 
 
 def test_unknown_ids_are_404():

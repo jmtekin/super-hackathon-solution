@@ -4,7 +4,7 @@
 # heals it on app 1.0.0) and a poisoned one (quarantined). Each step waits for the verdict, then PAUSE seconds
 # of talking time. Demo copies are named *-demo-*; real backups are never touched.
 #   ./demo.sh          reset, then run the four steps
-#   ./demo.sh reset    remove the demo copies and their results (restarts restoreguard)
+#   ./demo.sh reset    remove the demo copies and their results (the service keeps running)
 # Not in parallel with e2e.sh or faults.py: one sandbox at a time on this box.
 set -e
 cd "$(dirname "$0")"
