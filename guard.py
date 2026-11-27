@@ -173,6 +173,8 @@ def docker(*args, **kw):
 class Sandbox:
     """A Postgres 16 container with no network, the dump at /input/backup.dump (read-only)."""
 
+    memory = PG_MEMORY
+
     def __init__(self, cell):
         self.cell, self.name, self.app_name = cell, cell.name, cell.name + "-app"
 
@@ -221,7 +223,7 @@ class Sandbox:
             self.cell.emit({"type": "policy", "signal": "timeout", "event": f"TIMEOUT: {timeout} s, sandbox killed"})
         if rc == 137 and "memory" not in self.cell.signals:
             self.cell.signals.add("memory")
-            self.cell.emit({"type": "policy", "signal": "memory", "event": f"MEMORY CAP HIT: {PG_MEMORY}, process killed"})
+            self.cell.emit({"type": "policy", "signal": "memory", "event": f"MEMORY CAP HIT: {self.memory}, process killed"})
         return rc, out.decode(errors="replace"), text
 
     def _signals(self, text, stream, keep=None):
@@ -277,12 +279,13 @@ def _sandbox_lock():
     return f
 
 
-async def run_cell(backup, app, emit=lambda ev: None):
-    """Prove one backup on one app version. Never raises; the verdict is in the result."""
-    cell = Cell(backup, app, emit)
+async def run_cell(backup, app, emit=lambda ev: None, cell_type=Cell, body=None):
+    """Prove one backup on one app version. Never raises; the verdict is in the result.
+    cell_type and body let another target (frappe_target) reuse the lock, timeout and quarantine rules."""
+    cell = cell_type(backup, app, emit)
     lock = await asyncio.to_thread(_sandbox_lock)
     try:
-        await asyncio.wait_for(_cell(cell), CELL_TIMEOUT)
+        await asyncio.wait_for((body or _cell)(cell), CELL_TIMEOUT)
     except asyncio.TimeoutError:
         cell.signals.add("timeout")
         cell.state, cell.reason = "failed", f"cell exceeded {CELL_TIMEOUT} s"
@@ -478,13 +481,13 @@ async def _boot_and_bridge(cell, sb):
     cell.reason = f"no working bridge to app {cell.app['version']} after {MAX_BRIDGE_ROUNDS} rounds: {cell.bridges[-1].get('failure')}"
 
 
-def certificate(backup, cells):
+def certificate(backup, cells, sandbox_policy=None):
     """BackupAirlock's DR Readiness Certificate, one backup's matrix row, sealed by its own sha256."""
     states = {c["state"] for c in cells}
     cert = {
         "kind": "BackupAirlock DR Readiness Certificate", "issuer": "RestoreGuard",
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "backup_sha256": {backup["file"]: backup["manifest"]["sha256"]},
-        "sandbox_policy": policy(), "inference": "Vultr Serverless Inference (api.vultrinference.com/v1)",
+        "sandbox_policy": sandbox_policy or policy(), "inference": "Vultr Serverless Inference (api.vultrinference.com/v1)",
         "matrix": [{
             "backup": backup["file"], "sha256": backup["manifest"]["sha256"], "bytes": backup["bytes"],
             "schema_version": backup["manifest"]["schema_version"],

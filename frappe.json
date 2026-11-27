@@ -1,0 +1,10 @@
+{
+ "source": {"site": "demo.local", "url": "http://70.34.199.143"},
+ "test": {"site": "test.local", "url": "http://70.34.199.143:8080"},
+ "doctype": "Demo Service Request",
+ "tokens": "/opt/agent/.config/restoreguard-frappe.json",
+ "uncounted": ["Access Log", "Activity Log", "Comment", "Communication", "Console Log", "Deleted Document",
+               "Email Queue", "Energy Point Log", "Error Log", "Integration Request", "Notification Log",
+               "Prepared Report", "Route History", "Scheduled Job Log", "Submission Queue", "Version",
+               "View Log", "Webhook Request Log"]
+}

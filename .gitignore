@@ -2,3 +2,4 @@ backups/
 state/
 faults/out/
 __pycache__/
+backups-frappe/
