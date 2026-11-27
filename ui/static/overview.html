@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BackupAirlock</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ccircle cx=%278%27 cy=%278%27 r=%276%27 fill=%27%233fb950%27/%3E%3C/svg%3E">
+<style>
+/* Overview: the ERP's backups from production to a test copy, with the runtime's live numbers on the path.
+   Same system as the timeline (index.html): design/COLOR.md, design/SPACING.md, type 12 / 13 / 14 / 16 / 20. */
+:root{
+  --bg:#111113;--surface:#18191b;--hover:#272a2d;--selected:#2e3135;
+  --line:#363a3f;--line-2:#43484e;--strong:#5a6169;--ink:#edeef0;--ink-2:#c4c8ce;
+  --ok:#3fb950;--heal:#6cb6a8;--warn:#d29922;--bad:#ff9592;--accent:#70b8ff;
+  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;--s7:48px;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline;text-underline-offset:3px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.page{max-width:1440px;margin:0 auto;padding:var(--s5) var(--s7) var(--s7)}
+
+/* nav: the same three items on every page */
+.bar{display:flex;align-items:center;gap:var(--s5);height:40px}
+.brand{font-weight:600;font-size:14px;color:var(--ink)}
+.nav{display:flex;gap:var(--s1)}
+.nav a{height:32px;line-height:32px;padding:0 var(--s3);border-radius:3px;color:var(--ink-2);font-size:13px}
+.nav a:hover{background:var(--hover);text-decoration:none}
+.nav a[aria-current=page]{color:var(--ink);background:var(--selected)}
+
+h1{font-size:20px;line-height:28px;font-weight:600;margin-top:var(--s7);max-width:40em}
+.lead{color:var(--ink-2);margin-top:var(--s2);max-width:60ch}
+
+/* the flow: production -> backup -> airlock (Verify, Heal, Restore) -> test copies -> certificate */
+.flow{display:grid;grid-template-columns:minmax(0,1fr) 32px minmax(0,1fr) 32px minmax(0,3.2fr) 32px minmax(0,1.2fr) 32px minmax(0,1fr);
+  align-items:stretch;margin-top:var(--s7)}
+.node{padding:var(--s4) 0;min-width:0}
+.node .k{font-size:12px;line-height:16px;color:var(--ink-2)}
+.node .n{font-size:16px;line-height:24px;font-weight:600;margin-top:var(--s1)}
+.node .d{font-size:13px;line-height:20px;color:var(--ink-2);margin-top:var(--s1)}
+.node .v{font-size:13px;line-height:20px;margin-top:var(--s3)}
+.arrow{align-self:center;height:1px;background:var(--strong);position:relative}
+.arrow::after{content:"";position:absolute;right:0;top:-3px;border:3.5px solid transparent;border-left:6px solid var(--strong);border-right:0}
+/* the airlock is the one boxed thing: the box is the boundary nothing inside it crosses */
+.airlock{border:1px solid var(--line-2);border-radius:4px;padding:var(--s4) var(--s5) var(--s5);min-width:0}
+.airlock .k{font-size:12px;line-height:16px;color:var(--ink-2)}
+.airlock .k b{color:var(--ink);font-weight:600;font-size:14px;margin-right:var(--s2)}
+.stages{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s5);margin-top:var(--s4)}
+.stage .n{font-size:16px;line-height:24px;font-weight:600}
+.stage .d{font-size:13px;line-height:20px;color:var(--ink-2);margin-top:var(--s1)}
+.stage .v{font-size:13px;line-height:20px;margin-top:var(--s3)}
+.mk{display:inline-block;width:8px;height:8px;border-radius:1px;background:var(--c);margin-right:var(--s2);vertical-align:1px}
+.c-ok{--c:var(--ok)}.c-heal{--c:var(--heal)}.c-warn{--c:var(--warn)}.c-bad{--c:var(--bad)}.c-idle{--c:var(--strong)}.c-run{--c:var(--ink)}
+.c-bad .w{color:var(--bad)}
+.tests .v + .v{margin-top:var(--s1)}
+
+/* below the flow: the ERP itself, and the latest backups */
+.lower{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,5fr);gap:var(--s7);margin-top:var(--s7);align-items:start}
+h2{font-size:14px;line-height:20px;font-weight:600}
+figure img{display:block;width:100%;height:auto;border-radius:4px;border:1px solid var(--line);margin-top:var(--s3)}
+figcaption{font-size:12px;line-height:16px;color:var(--ink-2);margin-top:var(--s2)}
+.rows{margin-top:var(--s3);list-style:none}
+.rows li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--s4);padding:var(--s3) 0;border-top:1px solid var(--line)}
+.rows .nm{font-size:13px;line-height:20px;font-weight:600}
+.rows .tm{font-size:12px;line-height:16px;color:var(--ink-2);margin-top:var(--s1)}
+.rows .st{font-size:13px;line-height:20px;white-space:nowrap}
+.more{display:inline-block;margin-top:var(--s4);font-size:13px}
+.err{color:var(--ink-2);font-size:13px;margin-top:var(--s4)}
+
+@media (max-width:1100px){
+  .flow{grid-template-columns:minmax(0,1fr);}
+  .arrow{justify-self:start;margin-left:var(--s2);width:1px;height:24px}
+  .arrow::after{right:auto;top:auto;bottom:0;left:-3px;border:3.5px solid transparent;border-top:6px solid var(--strong);border-bottom:0}
+  .lower{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width:640px){
+  .page{padding:var(--s4) var(--s4) var(--s6)}
+  .bar{gap:var(--s3)}
+  .nav a{padding:0 var(--s2)}
+  h1{margin-top:var(--s6)}
+  .stages{grid-template-columns:minmax(0,1fr);gap:var(--s4)}
+  .airlock{padding:var(--s4)}
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="bar">
+    <a class="brand" href="./">BackupAirlock</a>
+    <nav class="nav"><a href="./" aria-current="page">Overview</a><a href="timeline">Timeline</a><a href="settings">Settings</a></nav>
+  </header>
+
+  <h1>Every backup of the ERP is restored into a test copy and checked before anyone needs it.</h1>
+  <p class="lead">Production is only ever read. Each new backup goes through the airlock on Vultr, and only a backup that passed lands in a test site.</p>
+
+  <section class="flow" aria-label="From production to a test copy">
+    <div class="node">
+      <div class="k">Production ERP</div>
+      <div class="n">demo.local</div>
+      <div class="d">Frappe / ERPNext on Vultr, read only</div>
+    </div>
+    <div class="arrow"></div>
+    <div class="node">
+      <div class="k">Nightly backup</div>
+      <div class="n" id="lb-time">&nbsp;</div>
+      <div class="d">latest backup</div>
+    </div>
+    <div class="arrow"></div>
+    <div class="airlock">
+      <div class="k"><b>BackupAirlock</b>on Vultr, sandbox without network</div>
+      <div class="stages">
+        <div class="stage"><div class="n">Verify</div><div class="d">checksum, readable dump, scan for code that runs on restore</div><div class="v" id="v-verify">&nbsp;</div></div>
+        <div class="stage"><div class="n">Heal</div><div class="d">old backup on a newer app: a GLM bridge maps the schema</div><div class="v" id="v-heal">&nbsp;</div></div>
+        <div class="stage"><div class="n">Restore</div><div class="d">full restore, record counts and business rules</div><div class="v" id="v-restore">&nbsp;</div></div>
+      </div>
+    </div>
+    <div class="arrow"></div>
+    <div class="node tests">
+      <div class="k">Test copies</div>
+      <div class="n">test.local</div>
+      <div class="d">app v1</div>
+      <div class="n">test2.local</div>
+      <div class="d">app v2</div>
+    </div>
+    <div class="arrow"></div>
+    <div class="node">
+      <div class="k">Certificate</div>
+      <div class="n" id="lr-time">&nbsp;</div>
+      <div class="d">latest restorable</div>
+      <div class="v" id="lr-checks">&nbsp;</div>
+    </div>
+  </section>
+  <p class="err" id="err" hidden></p>
+
+  <section class="lower">
+    <figure>
+      <h2>The ERP after the restore</h2>
+      <img src="erp-test-local.jpg" width="1440" height="558" alt="Frappe desk on test.local showing Demo Service Request DSR-2026-0001, restored from production's backup">
+      <figcaption>test.local, the restored test copy: Demo Service Request DSR-2026-0001 as production holds it. Captured 27 Nov 16:35.</figcaption>
+    </figure>
+    <div>
+      <h2>Latest ERP backups</h2>
+      <ul class="rows" id="rows"></ul>
+      <a class="more" href="timeline">Every backup and its checks on the timeline</a>
+    </div>
+  </section>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+// Same vocabulary and colours as the timeline: healed works too, red is only ever a blocked backup.
+const ST = {ready: ["c-ok", "Restored"], healed: ["c-heal", "Healed"], not_restorable: ["c-warn", "Not restorable"],
+  quarantined: ["c-bad", "Blocked"], running: ["c-run", "In the airlock"], queued: ["c-idle", "Queued"]};
+const state = b => b.status === "dr_ready" ? (Object.values(b.cells).some(c => c.state === "healed") ? "healed" : "ready")
+  : b.status === "failed" ? "not_restorable" : b.status;
+const mark = s => { const [c, w] = ST[s] || ["c-idle", s]; return `<span class="${c}"><i class="mk"></i><span class="w">${esc(w)}</span></span>`; };
+const when = iso => iso ? new Date(iso).toLocaleString("en-GB", {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"}) : "none yet";
+// A real backup is one production made: not a fault-kit copy, not one a Run injected a fault into.
+const real = b => !b.injected && !/-(run|demo|e2e)-|-(bitflip|truncated|rows-deleted|rule-broken|poisoned|schema-v2)/.test(b.id);
+
+fetch("rg/api/backups").then(r => r.ok ? r.json() : Promise.reject(r.status)).then(all => {
+  const erp = all.filter(b => b.kind === "frappe" && real(b)).sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+  const latest = erp[0], ok = erp.find(b => b.status === "dr_ready");
+  $("#lb-time").textContent = when(latest?.created_at);
+  $("#lr-time").textContent = when(ok?.created_at);
+  $("#lr-checks").innerHTML = ok ? `${mark(state(ok))} ${ok.checks_passed} of ${ok.checks_total} checks` : "";
+  const blocked = all.filter(b => b.status === "quarantined").length;
+  const healed = all.filter(b => Object.values(b.cells).some(c => c.state === "healed")).length;
+  $("#v-verify").textContent = `${all.length} backups checked, ${blocked} blocked`;
+  $("#v-heal").textContent = `${healed} healed`;
+  $("#v-restore").textContent = `${all.filter(b => b.status === "dr_ready").length} restorable`;
+  $("#rows").innerHTML = erp.slice(0, 5).map(b => `<li><div><div class="nm">ERP backup ${esc(when(b.created_at))}</div>
+    <div class="tm">${b.checks_total ? `${b.checks_passed} of ${b.checks_total} checks` : "checks running"}</div></div>
+    <div class="st">${mark(state(b))}</div></li>`).join("") || `<li><div class="tm">No ERP backup yet.</div></li>`;
+}).catch(() => { $("#err").hidden = false; $("#err").textContent = "The runtime is not answering, so the live numbers are missing."; });
+</script>
+</body>
+</html>

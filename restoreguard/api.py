@@ -217,6 +217,28 @@ def health():
             if FRAPPE else None}
 
 
+@app.get("/api/config")
+def config():
+    """What the runtime is set to, for the console's Settings page: no tokens, keys or file paths."""
+    standin_rules = re.findall(r"\(\d+, '([^']+)'\)", guard.RULES_SQL)
+    return {"sources": ([{"site": FRAPPE["source"]["site"], "url": FRAPPE["source"]["url"], "access": "read only",
+                          "poll_s": FRAPPE_POLL_S}] if FRAPPE else []) +
+                       ([{"site": "Nordvik stand-in backup job", "url": REMOTE or "watched folder", "access": "read only",
+                          "poll_s": POLL_S}]),
+            "targets": ([{"site": t["site"], "url": t["url"], "app": t["app"], "restore": "bench restore over a forced-command SSH key"}
+                         for t in FRAPPE["tests"]] if FRAPPE else []) +
+                       [{"site": a["label"], "url": "throwaway sandbox", "app": a["version"], "restore": "pg_restore in the sandbox"}
+                        for a in guard.apps()],
+            "sandbox": {"postgres": guard.policy(), "frappe": frappe_target.policy()},
+            "bridge": {"model": guard.airlock.PLAN_MODEL, "provider": "Vultr Serverless Inference",
+                       "max_rounds": guard.MAX_BRIDGE_ROUNDS},
+            "rules": {"stand-in": standin_rules,
+                      "frappe": [f"{FRAPPE['doctype']}: required fields, Select options and Links from its own DocType",
+                                 "total cost = hours x hourly rate", "hours > 0, hourly rate >= 0",
+                                 "record counts of every doctype = production's at download"] if FRAPPE else []},
+            "faults": list(RUN_FAULTS)}
+
+
 @app.get("/api/backups")
 def list_backups():
     return sorted((_summary(b) for b in backups.values()), key=lambda s: s["id"], reverse=True)

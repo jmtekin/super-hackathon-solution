@@ -37,7 +37,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 
 import sandbox
 import verify
@@ -704,8 +704,25 @@ async def matrix_drill(run):
 
 
 @app.get("/", response_class=HTMLResponse)
-def index():
+def overview(request: Request):
+    if "view" in request.query_params:  # old links to the timeline's other views
+        return RedirectResponse(f"timeline?{request.url.query}", 301)
+    return FileResponse(HERE / "static" / "overview.html")
+
+
+@app.get("/timeline", response_class=HTMLResponse)
+def timeline():
     return FileResponse(HERE / "static" / "index.html")
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings():
+    return FileResponse(HERE / "static" / "settings.html")
+
+
+@app.get("/erp-test-local.jpg")
+def erp_shot():
+    return FileResponse(HERE / "static" / "erp-test-local.jpg")
 
 
 @app.get("/health")
