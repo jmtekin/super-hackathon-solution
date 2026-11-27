@@ -112,18 +112,24 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
 /* the one view (Jonas 15:35-15:36): checks of the selected backup above, the timeline of backups along the bottom, nothing else */
 .page.full{max-width:none;padding:0}
 .ov{height:100vh;height:100dvh;display:grid;grid-template-rows:minmax(0,1fr) auto}
-.dt{overflow:auto;padding:var(--s7) var(--s7) var(--s6)}
-.dt header{display:flex;align-items:baseline;flex-wrap:wrap;column-gap:var(--s4);row-gap:var(--s1)}
+.dt{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);grid-template-rows:auto minmax(0,1fr);column-gap:var(--s6);row-gap:var(--s5);padding:var(--s7) var(--s7) var(--s5);min-height:0}
+.dt header{grid-column:1/-1;display:flex;align-items:baseline;flex-wrap:wrap;column-gap:var(--s4);row-gap:var(--s1)}
 .dt h2{font-size:20px;line-height:28px;font-weight:600;overflow-wrap:anywhere}
 .dt .when{font-size:13px;color:var(--ink-2)}
-.ck{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s6);margin-top:var(--s6);max-width:1200px}
+.ck{display:grid;align-content:start;gap:var(--s5);overflow:auto;min-height:0;padding-right:var(--s2)}
 .ck h3{font-size:13px;line-height:20px;font-weight:600;padding-bottom:var(--s2);border-bottom:1px solid var(--line)}
 .ck ul{list-style:none;margin-top:var(--s2)}
-.ck li{display:grid;grid-template-columns:8px minmax(0,1fr) auto;column-gap:var(--s3);align-items:center;font-size:13px;line-height:24px}
-.ck li i{width:8px;height:8px;border-radius:50%;background:var(--c)}
+.ck li{display:grid;grid-template-columns:8px minmax(0,1fr) auto;column-gap:var(--s3);align-items:start;font-size:13px;line-height:24px}
+.ck li i{margin-top:8px;width:8px;height:8px;border-radius:50%;background:var(--c)}
 .ck li.skipped i,.ck li.waiting i{background:none;box-shadow:inset 0 0 0 1.5px var(--c)}
-.ck li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ck li.skipped span,.ck li.waiting span{color:var(--ink-2)}
+.term{overflow:auto;min-height:0;background:var(--surface);border-radius:3px;padding:var(--s3) var(--s4);font:12px/20px var(--mono);color:var(--ink-2)}
+.term>div{display:grid;grid-template-columns:48px minmax(0,1fr);column-gap:var(--s3)}
+.term>div>span:last-child{overflow-wrap:anywhere;white-space:pre-wrap}
+.term .t{text-align:right;color:var(--strong)}
+.term .c-warn{color:var(--warn)}
+.term .c-bad{color:var(--bad)}
+.term pre{margin:0 0 var(--s1) 60px;font:inherit;color:var(--strong);white-space:pre-wrap;overflow-wrap:anywhere}
 .ck li b{font-size:12px;font-weight:400;color:var(--ink-2)}
 .ck li.fail b{color:var(--ink);font-weight:600}
 .ck li.fail.c-bad b{color:var(--bad)}
@@ -181,8 +187,9 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
   .cert td{border:0;padding:2px 0;overflow-wrap:anywhere}
   .cert td:empty{display:none}
   .timing{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) 48px}
-  .dt{padding:var(--s5) var(--s4) var(--s4)}
-  .ck{grid-template-columns:1fr;gap:var(--s5);margin-top:var(--s5)}
+  .dt{display:block;overflow:auto;padding:var(--s5) var(--s4) var(--s4)}
+  .ck{overflow:visible;margin-top:var(--s5);padding-right:0}
+  .term{margin-top:var(--s5);max-height:50vh}
   .tl{margin:0 var(--s5)}
 }
 @media print{
@@ -363,10 +370,11 @@ function rgStream() {
     if (ev.type === "backup") { rgRefresh(); return; }
     if (!ev.cell) return;
     const L = rg.live[ev.cell] ||= {events: [], state: "running"};
+    if (L.done) { L.events = []; L.done = false; }
     L.events.push(ev); L.t = ev.t;
     if (ev.type === "check") L.step = ev.check;
     if (ev.type === "bridge") { L.state = "healing"; L.step = `bridge round ${ev.round}`; }
-    if (ev.type === "verdict") { L.state = ev.state; L.step = ev.reason; rgRefresh(); }
+    if (ev.type === "verdict") { L.done = true; L.state = ev.state; L.step = ev.reason; rgRefresh(); }
     if (view !== "drill") draw();
   };
 }
@@ -547,15 +555,17 @@ function timings(pairs, total) {
   return `<section><details class="grp"><summary><h3><span>Timing</span><span>${sec(total)}</span></h3></summary>${pairs.map(([n, s]) =>
     `<div class="timing"><span>${esc(n)}</span><span class="b"><i style="width:${(100 * (+s || 0) / max).toFixed(1)}%"></i></span><span class="s">${sec(s)}</span></div>`).join("")}</details></section>`;
 }
+const evText = e => e.type === "check" ? `${e.pass ? "✓" : "✕"} ${e.check}${e.detail ? `: ${e.detail}` : ""}`
+  : e.type === "sandbox" ? `sandbox ${e.name} ${e.phase}${e.exit != null ? `, exit ${e.exit}` : ""}${e.policy ? `: ${e.policy.image}, network ${e.policy.network}, memory ${e.policy.memory}, rootfs ${e.policy.rootfs}` : ""}`
+  : e.type === "restore" ? (e.phase === "started" ? `restore ${e.file} into ${e.restored_into}` : `restore ${e.phase}, exit ${e.rc}, ${e.s} s`)
+  : e.type === "llm" ? `${e.model} ${e.purpose} ${e.phase}${e.latency_s ? `, ${e.latency_s} s` : ""}`
+  : e.type === "bridge" ? `bridge ${e.name}, round ${e.round}`
+  : e.type === "verdict" ? `verdict: ${e.state}, ${e.reason}`
+  : e.type === "log" ? `${e.stream}: ${e.line}`
+  : e.event || e.detail || e.type;
 function eventRows(evs, policy) {
   return `<div class="rows ev">${evs.map(e => {
-    const text = e.type === "check" ? `${e.pass ? "✓" : "✕"} ${e.check}${e.detail ? `: ${e.detail}` : ""}`
-      : e.type === "sandbox" ? `sandbox ${e.name} ${e.phase}${e.exit != null ? `, exit ${e.exit}` : ""}`
-      : e.type === "llm" ? `${e.model} ${e.purpose} ${e.phase}${e.latency_s ? `, ${e.latency_s} s` : ""}`
-      : e.type === "bridge" ? `bridge ${e.name}, round ${e.round}`
-      : e.type === "verdict" ? `verdict: ${e.state}, ${e.reason}`
-      : e.type === "log" ? `${e.stream}: ${e.line}`
-      : e.event || e.detail || e.type;
+    const text = evText(e);
     return `<div><span class="t">${e.t != null ? (+e.t).toFixed(2) : ""}</span><span${policy ? ' class="st c-bad" style="font-weight:400"' : ""}>${policy ? "<i></i>" : ""}<span>${esc(calm(text))}${policy && e.detail ? `<br><span class="muted mono">${esc(e.detail)}</span>` : ""}</span></span></div>`;
   }).join("")}</div>`;
 }
@@ -606,9 +616,20 @@ function ovChecks(b) {
   return `<div class="ck">${[["Verify", list(v, ref[0])], ["Heal", heal], ["Restore", list(r, ref[1])]].map(([g, ks]) => `<section><h3>${g}</h3><ul>
     ${ks.map(([n, st]) => `<li class="${st} ${C[st]}"><i></i><span title="${esc(n)}">${esc(n)}</span><b>${st}</b></li>`).join("")}</ul></section>`).join("")}</div>`;
 }
+// The runtime's own log of the shown cell, right of the checks (Jonas 15:47 "To the right is cmd output"); while the
+// backup runs, the stream's events.
+function ovTerm(b) {
+  const d = rg.details[b.id], c = ovCell(d), key = c && Object.keys(d.cells).find(k => d.cells[k] === c);
+  const live = Object.values(rg.live).find(L => L.events[0]?.backup === b.id && (!c || L.events[0].cell === c.cell));
+  const evs = live?.events.length && (!live.done || !d?.logs?.[key]) ? live.events : d?.logs?.[key] || [];
+  const sql = Object.fromEntries((c?.bridges || []).map(x => [x.name, x.sql]));
+  const line = e => `<div class="${e.type === "policy" ? "c-bad" : e.type === "check" && !e.pass ? "c-warn" : ""}"><span class="t">${e.t != null ? (+e.t).toFixed(2) : ""}</span><span>${esc(calm(evText(e)))}</span></div>`
+    + (e.type === "bridge" && sql[e.name] ? `<pre>${esc(sql[e.name])}</pre>` : "");
+  return `<div class="term" id="term"${live && !live.done ? " data-live" : ""}>${evs.length ? evs.map(line).join("") : `<div><span class="t"></span><span>${["running", "queued"].includes(b.status) ? "waiting for the sandbox" : "no log"}</span></div>`}</div>`;
+}
 function ovDetail(b) {
   const [c, word] = OV[ovState(b)] || ["c-idle", b.status];
-  return `<header><h2>${esc(shortName(b.file))}</h2><span class="when">${esc(clock(b.created_at))}</span><div class="st ${c}"><i></i><b>${esc(word)}</b></div></header>${ovChecks(b)}`;
+  return `<header><h2>${esc(shortName(b.file))}</h2><span class="when">${esc(clock(b.created_at))}</span><div class="st ${c}"><i></i><b>${esc(word)}</b></div></header>${ovChecks(b)}${ovTerm(b)}`;
 }
 function ovView() {
   const ss = ovList();
@@ -625,11 +646,13 @@ function ovView() {
 function ovPick(id) {
   if (!id || ovSel.id === id) return;
   ovSel.id = id;
-  const show = () => { if (ovSel.id === id && $("#dt")) $("#dt").innerHTML = ovDetail(rg.summaries.find(b => b.id === id)); };
+  const show = () => { if (ovSel.id === id && $("#dt")) { $("#dt").innerHTML = ovDetail(rg.summaries.find(b => b.id === id)); ovTail(); } };
   document.querySelectorAll(".mk").forEach(m => m.setAttribute("aria-pressed", m.dataset.id === id));
   show();
   rgDetail(id).then(show, () => {});
 }
+// A running log follows its newest line.
+const ovTail = () => { const t = $("#term"); if (t?.dataset.live != null) t.scrollTop = t.scrollHeight; };
 // A thin line from the cursor to the nearest mark (Jonas 15:35 "easy to not hover correctly over the dot"): no need to hit it.
 function ovFrame() {
   ovPtr.frame = 0;
@@ -700,7 +723,7 @@ function draw() {
   const one = view === "overview" && location.hash !== "#cert";
   $(".page").classList.toggle("full", one);
   $(".bar").hidden = $("#top").hidden = one;
-  if (one) { $("#body").innerHTML = ovView(); if (ovPtr.on) ovDraw(); return bind(); }
+  if (one) { $("#body").innerHTML = ovView(); ovTail(); if (ovPtr.on) ovDraw(); return bind(); }
   const V = view === "drill" ? drView() : rgView();
   $("#meta").textContent = V.meta || "";
   $("#headline").innerHTML = V.headline || "";
