@@ -36,17 +36,19 @@ h1{font-size:20px;line-height:28px;font-weight:600;margin-top:var(--s7)}
 .sec:first-of-type{margin-top:var(--s7)}
 .sec h2{font-size:14px;line-height:20px;font-weight:600}
 .sec h2 + p{font-size:12px;line-height:16px;color:var(--ink-2);margin-top:var(--s1)}
-dl{display:grid;grid-template-columns:minmax(160px,auto) minmax(0,1fr);column-gap:var(--s5);row-gap:var(--s2);max-width:880px}
+dl{display:grid;grid-template-columns:128px minmax(0,1fr);column-gap:var(--s4);row-gap:var(--s2)}
+/* sibling groups (two sources, four targets, two sandboxes) sit side by side, two to a row */
+.cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s5) var(--s7);max-width:1040px}
 dt{font-size:13px;line-height:20px;color:var(--ink-2)}
 dd{font-size:13px;line-height:20px;overflow-wrap:anywhere}
-.group + .group{margin-top:var(--s5)}
 .group h3{font-size:13px;line-height:20px;font-weight:600;margin-bottom:var(--s2)}
-ul.rules{list-style:none;max-width:880px}
+ul.rules{list-style:none}
 ul.rules li{font-size:13px;line-height:20px;padding:var(--s1) 0}
 .err{color:var(--ink-2);font-size:13px;margin-top:var(--s7)}
 
 @media (max-width:900px){
   .sec{grid-template-columns:minmax(0,1fr);gap:var(--s3)}
+  .cols{grid-template-columns:minmax(0,1fr)}
 }
 @media (max-width:640px){
   .page{padding:var(--s4) var(--s4) var(--s6)}
@@ -61,8 +63,8 @@ ul.rules li{font-size:13px;line-height:20px;padding:var(--s1) 0}
 <body>
 <div class="page">
   <header class="bar">
-    <a class="brand" href="./">BackupAirlock</a>
-    <nav class="nav"><a href="./">Overview</a><a href="timeline">Timeline</a><a href="settings" aria-current="page">Settings</a></nav>
+    <a class="brand" href="overview">BackupAirlock</a>
+    <nav class="nav"><a href="overview">Overview</a><a href="timeline">Timeline</a><a href="settings" aria-current="page">Settings</a></nav>
   </header>
   <h1>Settings</h1>
   <p class="lead">Read from the running runtime on Vultr. Changing them means changing its config on the VM.</p>
@@ -72,6 +74,7 @@ ul.rules li{font-size:13px;line-height:20px;padding:var(--s1) 0}
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 const dl = pairs => `<dl>${pairs.filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`;
 const sec = (title, sub, inner) => `<section class="sec"><div><h2>${esc(title)}</h2>${sub ? `<p>${esc(sub)}</p>` : ""}</div><div>${inner}</div></section>`;
+const cols = inner => `<div class="cols">${inner}</div>`;
 const group = (title, inner) => `<div class="group"><h3>${esc(title)}</h3>${inner}</div>`;
 const every = s => s >= 60 ? `every ${s / 60} min` : `every ${s} s`;
 const sandbox = p => dl([["runtime", p.runtime], ["image", p.image], ["network", p.network], ["root filesystem", p.rootfs],
@@ -81,15 +84,15 @@ const sandbox = p => dl([["runtime", p.runtime], ["image", p.image], ["network",
 
 fetch("rg/api/config").then(r => r.ok ? r.json() : Promise.reject(r.status)).then(c => {
   document.getElementById("body").innerHTML = [
-    sec("Sources", "Backups are only ever read from here.", c.sources.map(s => group(s.site,
-      dl([["address", s.url], ["access", s.access], ["checked", every(s.poll_s)]]))).join("")),
-    sec("Restore targets", "Where a backup that passed is restored. Never production.", c.targets.map(t => group(t.site,
-      dl([["app version", t.app], ["address", t.url], ["restore", t.restore]]))).join("")),
-    sec("Sandbox", "Every restore runs here first.", group("ERP (MariaDB)", sandbox(c.sandbox.frappe)) + group("Stand-in (Postgres)", sandbox(c.sandbox.postgres))),
+    sec("Sources", "Backups are only ever read from here.", cols(c.sources.map(s => group(s.site,
+      dl([["address", s.url], ["access", s.access], ["checked", every(s.poll_s)]]))).join(""))),
+    sec("Restore targets", "Where a backup that passed is restored. Never production.", cols(c.targets.map(t => group(t.site,
+      dl([["app version", t.app], ["address", t.url], ["restore", t.restore]]))).join(""))),
+    sec("Sandbox", "Every restore runs here first.", cols(group("ERP (MariaDB)", sandbox(c.sandbox.frappe)) + group("Stand-in (Postgres)", sandbox(c.sandbox.postgres)))),
     sec("Heal", "Old backup on a newer app version.", dl([["model", c.bridge.model], ["inference", c.bridge.provider],
       ["attempts", `at most ${c.bridge.max_rounds} rounds, checked after each`]])),
-    sec("Business rules", "Checked on every restored copy.", group("ERP", `<ul class="rules">${c.rules.frappe.map(r => `<li>${esc(r)}</li>`).join("")}</ul>`) +
-      group("Stand-in", `<ul class="rules">${c.rules["stand-in"].map(r => `<li>${esc(r)}</li>`).join("")}</ul>`)),
+    sec("Business rules", "Checked on every restored copy.", cols(group("ERP", `<ul class="rules">${c.rules.frappe.map(r => `<li>${esc(r)}</li>`).join("")}</ul>`) +
+      group("Stand-in", `<ul class="rules">${c.rules["stand-in"].map(r => `<li>${esc(r)}</li>`).join("")}</ul>`))),
   ].join("");
 }).catch(() => { document.getElementById("body").innerHTML = `<p class="err">The runtime is not answering, so its settings cannot be shown.</p>`; });
 </script>

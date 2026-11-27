@@ -41,7 +41,7 @@ h1{font-size:20px;line-height:28px;font-weight:600;margin-top:var(--s7);max-widt
 .node .n{font-size:16px;line-height:24px;font-weight:600;margin-top:var(--s1)}
 .node .d{font-size:13px;line-height:20px;color:var(--ink-2);margin-top:var(--s1)}
 .node .v{font-size:13px;line-height:20px;margin-top:var(--s3)}
-.arrow{align-self:center;height:1px;background:var(--strong);position:relative}
+.arrow{align-self:start;margin:48px var(--s2) 0;height:1px;background:var(--strong);position:relative}
 .arrow::after{content:"";position:absolute;right:0;top:-3px;border:3.5px solid transparent;border-left:6px solid var(--strong);border-right:0}
 /* the airlock is the one boxed thing: the box is the boundary nothing inside it crosses */
 .airlock{border:1px solid var(--line-2);border-radius:4px;padding:var(--s4) var(--s5) var(--s5);min-width:0}
@@ -59,7 +59,7 @@ h1{font-size:20px;line-height:28px;font-weight:600;margin-top:var(--s7);max-widt
 /* below the flow: the ERP itself, and the latest backups */
 .lower{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,5fr);gap:var(--s7);margin-top:var(--s7);align-items:start}
 h2{font-size:14px;line-height:20px;font-weight:600}
-figure img{display:block;width:100%;height:auto;border-radius:4px;border:1px solid var(--line);margin-top:var(--s3)}
+figure img{display:block;width:100%;height:auto;aspect-ratio:1440/558;object-fit:cover;object-position:left top;border-radius:4px;border:1px solid var(--line);margin-top:var(--s3)}
 figcaption{font-size:12px;line-height:16px;color:var(--ink-2);margin-top:var(--s2)}
 .rows{margin-top:var(--s3);list-style:none}
 .rows li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--s4);padding:var(--s3) 0;border-top:1px solid var(--line)}
@@ -71,7 +71,7 @@ figcaption{font-size:12px;line-height:16px;color:var(--ink-2);margin-top:var(--s
 
 @media (max-width:1100px){
   .flow{grid-template-columns:minmax(0,1fr);}
-  .arrow{justify-self:start;margin-left:var(--s2);width:1px;height:24px}
+  .arrow{justify-self:start;margin:0 0 0 var(--s2);width:1px;height:24px}
   .arrow::after{right:auto;top:auto;bottom:0;left:-3px;border:3.5px solid transparent;border-top:6px solid var(--strong);border-bottom:0}
   .lower{grid-template-columns:minmax(0,1fr)}
 }
@@ -88,11 +88,11 @@ figcaption{font-size:12px;line-height:16px;color:var(--ink-2);margin-top:var(--s
 <body>
 <div class="page">
   <header class="bar">
-    <a class="brand" href="./">BackupAirlock</a>
-    <nav class="nav"><a href="./" aria-current="page">Overview</a><a href="timeline">Timeline</a><a href="settings">Settings</a></nav>
+    <a class="brand" href="overview">BackupAirlock</a>
+    <nav class="nav"><a href="overview" aria-current="page">Overview</a><a href="timeline">Timeline</a><a href="settings">Settings</a></nav>
   </header>
 
-  <h1>Every backup of the ERP is restored into a test copy and checked before anyone needs it.</h1>
+  <h1>Every ERP backup is restored into a test copy and checked.</h1>
   <p class="lead">Production is only ever read. Each new backup goes through the airlock on Vultr, and only a backup that passed lands in a test site.</p>
 
   <section class="flow" aria-label="From production to a test copy">
@@ -137,8 +137,8 @@ figcaption{font-size:12px;line-height:16px;color:var(--ink-2);margin-top:var(--s
   <section class="lower">
     <figure>
       <h2>The ERP after the restore</h2>
-      <img src="erp-test-local.jpg" width="1440" height="558" alt="Frappe desk on test.local showing Demo Service Request DSR-2026-0001, restored from production's backup">
-      <figcaption>test.local, the restored test copy: Demo Service Request DSR-2026-0001 as production holds it. Captured 27 Nov 16:35.</figcaption>
+      <img id="erp" src="erp-test-local.jpg" width="1440" height="558" alt="The ERP's own screen on test.local after a restore">
+      <figcaption id="erp-cap">test.local, the restored test copy: Demo Service Request DSR-2026-0001 as production holds it. Captured 27 Nov 16:35.</figcaption>
     </figure>
     <div>
       <h2>Latest ERP backups</h2>
@@ -166,6 +166,14 @@ fetch("rg/api/backups").then(r => r.ok ? r.json() : Promise.reject(r.status)).th
   $("#lb-time").textContent = when(latest?.created_at);
   $("#lr-time").textContent = when(ok?.created_at);
   $("#lr-checks").innerHTML = ok ? `${mark(state(ok))} ${ok.checks_passed} of ${ok.checks_total} checks` : "";
+  // The runtime screenshots the test site after each ERP restore; older restores have none, so the capture above stays.
+  const site = ok && Object.keys(ok.cells).find(s => ok.cells[s].state === "native" || ok.cells[s].state === "healed");
+  if (site) {
+    const shot = new Image();
+    shot.onload = () => { $("#erp").src = shot.src;
+      $("#erp-cap").textContent = `${site}, the restored test copy, right after the restore of the backup from ${when(ok.created_at)}.`; };
+    shot.src = `rg/api/backups/${encodeURIComponent(ok.id)}/shot/${encodeURIComponent(site)}.png`;
+  }
   const blocked = all.filter(b => b.status === "quarantined").length;
   const healed = all.filter(b => Object.values(b.cells).some(c => c.state === "healed")).length;
   $("#v-verify").textContent = `${all.length} backups checked, ${blocked} blocked`;
