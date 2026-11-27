@@ -134,6 +134,18 @@ def _book(name, f, db):
         return _check(name, False, f"cannot be read: {e}", [])
 
 
+def check(name, path):
+    """One books check on its own, for schemas the manifest does not cover."""
+    try:
+        db = _connect(path)
+    except sqlite3.Error as e:
+        return _check(name, False, str(e), [])
+    try:
+        return _book(name, BOOKS[name], db)
+    finally:
+        db.close()
+
+
 def row_counts(db, exp):
     items = []
     for t, want in exp["row_counts"].items():

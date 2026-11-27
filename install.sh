@@ -23,7 +23,7 @@ python3 -m venv "$DEST/.venv"
 (cd "$DEST" && python3 fixtures/build.py)
 mkdir -p "$DEST/runs"
 chown -R restorer:restorer "$DEST"
-docker build -q -t restorer-sandbox:1 -f "$DEST/sandbox.Dockerfile" "$DEST"
+docker build -q -t restorer-sandbox:2 -f "$DEST/sandbox.Dockerfile" "$DEST"
 
 # The key lives only here and in the control-plane process, never in a sandbox.
 umask 077

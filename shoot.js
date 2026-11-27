@@ -4,7 +4,7 @@
 const path = require('path');
 const { chromium } = require('/opt/agent/browser/node_modules/playwright-core');
 const base = process.argv[2] || 'https://vps.taild101c7.ts.net:10000/restorer/';
-const fixtures = process.argv.slice(3).length ? process.argv.slice(3) : ['recoverable', 'corrupted', 'compromised', 'drift'];
+const fixtures = process.argv.slice(3).length ? process.argv.slice(3) : ['matrix', 'recoverable', 'corrupted', 'compromised', 'drift'];
 
 (async () => {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
@@ -17,6 +17,13 @@ const fixtures = process.argv.slice(3).length ? process.argv.slice(3) : ['recove
       await page.waitForSelector('text=NETWORK: DENIED', { timeout: 60000 });
       await page.waitForTimeout(1800);
       await page.screenshot({ path: path.join(__dirname, 'shots', `${fx}-live.png`) });
+    }
+    if (fx === 'matrix') {
+      await page.waitForSelector('.mc.healing', { timeout: 60000 });
+      await page.screenshot({ path: path.join(__dirname, 'shots', `${fx}-healing.png`) });
+      await page.waitForSelector('#b-cap.on', { timeout: 60000 });
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: path.join(__dirname, 'shots', `${fx}-containment.png`) });
     }
     if (fx === 'drift') {
       await page.waitForSelector('#n-nightly-09.incompatible', { timeout: 120000 });

@@ -1,4 +1,14 @@
-"""Restorer control plane: turns a nightly ERP backup into a verified restore report.
+"""BackupAirlock control plane: proves an ERP backup restores, serves the app and balances.
+
+The headline run is the Backup x App Version Compatibility Matrix: every
+(backup, app version) pair is restored in its own sandbox, the real app
+version boots on it and a deterministic business-logic suite runs against it
+(apps/suite.py); a pair that drifts gets a bridge migration from the model,
+retried in a new sandbox until the suite and the control plane's own checks
+pass; a backup that tries to break out is quarantined with a forensic log. The
+result is a DR Readiness Certificate.
+
+The single drills below predate the matrix and still run:
 
 One run = plan (LLM) -> sandbox attempt -> on failure feed stderr back for a
 repair (LLM) -> sandbox again -> deterministic verification -> explanation (LLM)
@@ -26,8 +36,8 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 
 import sandbox
 import verify
@@ -37,8 +47,25 @@ RUNS = HERE / "runs"
 API = "https://api.vultrinference.com/v1/chat/completions"
 PLAN_MODEL, FAST_MODEL = "glm-5.3", "deepseek-v4.1-flash-1017"
 MAX_ATTEMPTS = 3
+UPLOADS = RUNS / "uploads"
+MAX_UPLOAD = 25 * 2**20
+APPS = {"erp_v1": "ERP app v1.0", "erp_v2": "ERP app v2.0"}
+MATRIX_BACKUPS = {
+    "v1_legacy": ("v1_legacy.sql", "Night before the ERP upgrade, schema v1"),
+    "v2_current": ("v2_current.sql", "Last night, schema v2"),
+    "poisoned_dump": ("poisoned_dump.sql", "Last night's dump from an untrusted copy. Nobody has read it."),
+}
+# Lines a SQL dump has no business containing; found before detonation, for the forensic log.
+SCAN = [(re.compile(r"^\s*\.(shell|system|output|once|load|import|read)\b"), "sqlite3 CLI command, runs on the restore host"),
+        (re.compile(r"load_extension", re.I), "loads native code into the database engine"),
+        (re.compile(r"WITH\s+RECURSIVE", re.I), "recursive query in a data dump"),
+        (re.compile(r"^\s*ATTACH\b", re.I), "attaches another database file")]
 
 FIXTURES = {
+    "matrix": {"title": "Backup x App Version Compatibility Matrix",
+               "goal": "Prove which backup restores into which app version, heal the drift, quarantine the poisoned.",
+               "blurb": "3 backups (+ your upload) x ERP app v1.0 and v2.0, one sandbox per cell.", "timeout": 20,
+               "kind": "matrix"},
     "recoverable": {"title": "Recoverable, first plan fails",
                     "goal": "Restore the ERP database and prove the books balance.",
                     "blurb": "Nightly ERP backup of Nordvik Handel AB. The catalog is out of date.", "timeout": 60},
@@ -64,13 +91,13 @@ Reply with exactly two parts: a line starting PLAN: followed by 2 to 4 short bul
 REPAIR_SYSTEM = """You are Restorer's restore repairer. A restore script failed inside the sandbox. Fix it with the smallest change that addresses the error, using only facts from the error output and the file listing. Same rules as before: POSIX sh, set -eu, output to /work/restored.db, no network.
 Reply with a line starting CAUSE: (one sentence), then the full corrected script in one ```sh block."""
 
-MIGRATE_SYSTEM = """You are Restorer's migration writer. Old ERP backups no longer load into the current ERP because an upgrade changed its schema. Write one SQLite migration that copies every row from the old schema into the current one.
-- It runs with the sqlite3 CLI on the restored database, which already has the current schema and is empty. The old backup, loaded into its own schema, is attached as old (refer to old.<table>).
+MIGRATE_SYSTEM = """You are BackupAirlock's bridge migration writer. An ERP backup was taken on one schema version and the target ERP app version expects another, so the backup no longer loads into it. Write one SQLite migration that copies every row from the backup's schema into the app's schema.
+- It runs with the sqlite3 CLI on the restored database, which already has the app's schema and is empty. The backup, loaded into its own schema, is attached as old (refer to old.<table>).
 - Plain SQL only: INSERT INTO ... SELECT with explicit column lists. No CREATE, DROP, ALTER, PRAGMA or ATTACH.
-- Copy every old table. Derive new columns from the old data where the data allows (simple substr/instr expressions); otherwise let the column default apply. No placeholders, no comments.
+- Copy every table the two schemas share. Derive new columns from the old data where the data allows (simple expressions); otherwise let the column default apply. Columns the app's schema no longer has are dropped. No placeholders, no comments.
 Reply with a line starting CHANGES: followed by one short line per schema change, then the SQL in one ```sql block."""
 
-REPAIR_MIGRATION_SYSTEM = """You are Restorer's migration repairer. A schema migration failed inside the sandbox. Fix it with the smallest change that addresses the error. Same rules: plain SQL, INSERT INTO ... SELECT with explicit column lists, the old database attached as old.
+REPAIR_MIGRATION_SYSTEM = """You are BackupAirlock's migration repairer. A schema migration failed inside the sandbox. Fix it with the smallest change that addresses the error. Same rules: plain SQL, INSERT INTO ... SELECT with explicit column lists, the old database attached as old.
 Reply with a line starting CAUSE: (one sentence), then the full corrected SQL in one ```sql block."""
 
 # The chain's restore scripts are the ERP's own procedure, not the model's: only
@@ -174,7 +201,7 @@ class Run:
         self.fixture, self.cfg = fixture, FIXTURES[fixture]
         self.dir = RUNS / self.id
         self.t0, self.events, self.llm_calls, self.attempts = time.monotonic(), [], [], []
-        self.cond, self.done, self.proof = asyncio.Condition(), False, None
+        self.cond, self.done, self.proof, self.upload = asyncio.Condition(), False, None, ""
 
     def emit(self, ev):
         ev["t"] = round(time.monotonic() - self.t0, 2)
@@ -272,7 +299,7 @@ async def explain(run, summary):
 async def seal(run, verdict, explanation, files, **extra):
     """Write the Recovery Proof and end the run's event stream."""
     run.proof = {
-        "kind": "Restorer Recovery Proof", "run_id": run.id, "fixture": run.fixture, "goal": run.cfg["goal"],
+        "kind": "BackupAirlock Recovery Proof", "run_id": run.id, "fixture": run.fixture, "goal": run.cfg["goal"],
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "elapsed_s": round(time.monotonic() - run.t0, 2),
         "verdict": verdict, "backup_sha256": files, "sandbox_policy": sandbox.policy(run.cfg["timeout"]),
         "command_receipts": [{k: v for k, v in a.items() if k != "stdout"} for a in run.attempts],
@@ -289,7 +316,7 @@ async def seal(run, verdict, explanation, files, **extra):
 
 async def chain_drill(run):
     root = HERE / "fixtures" / run.fixture
-    app_schema = (root / "app" / "schema.sql").read_text()
+    app_schema = (HERE / "apps" / "erp_v2" / "schema.sql").read_text()
     app_v = _schema_version(app_schema)
     chain = []
     for d in sorted(root.glob("nightly-*")):
@@ -445,6 +472,236 @@ async def chain_drill(run):
                           "rounds": rounds} if migration else None)
 
 
+# One cell = restore the dump, boot the app version on it, run the suite. The script is ours; only
+# the backup and, when healing, the bridge migration come from elsewhere.
+BOOT = """echo "boot: ERP app under test, then the business-logic suite"
+cd /tmp
+python3 -I /job/erp.py /work/restored.db &
+python3 -I /job/suite.py /work/restored.db /job/test_login.json
+"""
+CELL_RESTORE = """set -eu
+echo "restore: backup.sql into an empty database"
+sqlite3 -bail /work/restored.db < /input/backup/backup.sql
+""" + BOOT
+CELL_BRIDGE = """set -eu
+echo "restore: backup.sql into its own schema"
+sqlite3 -bail /work/old.db < /input/backup/backup.sql
+echo "stage: the app version's schema"
+sqlite3 -bail /work/restored.db < /job/app_schema.sql
+echo "bridge: generated migration"
+{ echo "ATTACH '/work/old.db' AS old;"; cat /job/bridge.sql; } | sqlite3 -bail /work/restored.db
+rm /work/old.db
+""" + BOOT
+CONTAINED = {"network", "rootfs", "honey", "memory", "timeout"}
+
+
+def scan(path):
+    found = []
+    with open(path, errors="replace") as f:
+        for n, line in enumerate(f, 1):
+            for pattern, why in SCAN:
+                if pattern.search(line):
+                    found.append({"line": n, "text": line.strip()[:200], "why": why})
+                    break
+            if len(found) >= 20:
+                break
+    return found
+
+
+def _upload(uid):
+    d = UPLOADS / Path(uid).name
+    if not (d / "meta.json").is_file():
+        raise HTTPException(404, "unknown upload")
+    return d, json.loads((d / "meta.json").read_text())
+
+
+async def matrix_drill(run):
+    root = HERE / "fixtures" / "matrix"
+    login = (root / "test_login.json").read_text()
+    backups = [{"id": b, "file": f, "blurb": blurb, "dir": root / b} for b, (f, blurb) in MATRIX_BACKUPS.items()]
+    if run.upload:
+        d, meta = _upload(run.upload)
+        backups.append({"id": run.upload, "file": meta["name"], "blurb": "Your upload", "dir": d})
+    apps = [{"id": a, "title": t, "code": (HERE / "apps" / a / "erp.py").read_text(),
+             "schema": (HERE / "apps" / a / "schema.sql").read_text()} for a, t in APPS.items()]
+    for a in apps:
+        a["version"] = _schema_version(a["schema"])
+    for b in backups:
+        data = (b["dir"] / "backup.sql").read_bytes()
+        b |= {"sha256": _sha(data), "size": len(data), "text": data.decode(errors="replace"),
+              "findings": scan(b["dir"] / "backup.sql")}
+        b["version"] = _schema_version(b["text"])
+    run.emit({"type": "matrix", "phase": "init",
+              "apps": [{k: a[k] for k in ("id", "title", "version")} for a in apps],
+              "backups": [{k: b[k] for k in ("id", "file", "blurb", "sha256", "size", "version")}
+                          | {"findings": len(b["findings"])} for b in backups]})
+    run.step("Backups received", "ok", detail=f"{len(backups)} SQL dumps fingerprinted (sha256), each mounted "
+             f"read-only into its own sandboxes; {sum(bool(b['findings']) for b in backups)} carry executable lines")
+    cells = [{"b": b, "a": a, "key": f"{b['id']}|{a['id']}", "state": "running"} for b in backups for a in apps]
+
+    def tagged(c):
+        def emit(ev):
+            run.emit({**ev, "backup": c["b"]["id"], "app": c["a"]["id"]})
+        return emit
+
+    def show(c, **kw):
+        c.update(kw)
+        run.emit({"type": "matrix", "phase": "cell", "backup": c["b"]["id"], "app": c["a"]["id"],
+                  **{k: c.get(k) for k in ("state", "detail", "tests", "bridge", "round", "changes")},
+                  "host": [{k: x[k] for k in ("check", "pass", "detail")} for x in c.get("host", [])] or None,
+                  "sql": c.get("bridge_sql")})
+
+    async def attempt(c, script, label, bridge=None):
+        files = {"erp.py": c["a"]["code"], "suite.py": (HERE / "apps" / "suite.py").read_text(),
+                 "test_login.json": login, "app_schema.sql": c["a"]["schema"],
+                 **({"bridge.sql": bridge} if bridge else {})}
+        r = await sandbox.run(c["b"]["dir"], script, run.dir / f"{c['key'].replace('|', '@')}-{label}",
+                              run.cfg["timeout"], tagged(c), files)
+        run.attempts.append({"n": f"{c['b']['file']} on {c['a']['title']}, {label}", "script": script,
+                             "script_sha256": _sha(script), **({"bridge_sha256": _sha(bridge)} if bridge else {}),
+                             **{k: r[k] for k in ("name", "exit", "elapsed", "stdout", "stderr", "network_denied",
+                                                  "timed_out", "destroyed", "signals")}})
+        c.setdefault("sandboxes", []).append(r)
+        return judge(c, r)
+
+    def judge(c, r):
+        """Cell outcome from the sandbox and deterministic checks only."""
+        if CONTAINED & set(r["signals"]) or c["b"]["findings"]:
+            return "quarantined", "contained: " + ", ".join(r["signals"] or ["executable lines in the dump"])
+        line = next((l for l in r["stdout"].splitlines() if l.startswith("@@SUITE ")), None)
+        if r["exit"] != 0 or line is None or r["artifact"] is None:
+            # sqlite3 ends a parse error with a caret line; the line naming the error is the useful one.
+            why = next((l for l in reversed(r["stderr"].splitlines()) if re.search(r"(Parse|Runtime)? ?error", l, re.I)
+                        and not l.lstrip().startswith("^")), _last_line(r["stderr"]))
+            return "failed", f"restore failed (exit {r['exit']}): {why.strip()[:200]}"
+        c["tests"] = json.loads(line[len("@@SUITE "):])
+        db = run.dir / f"{c['key'].replace('|', '@')}.db"
+        db.write_bytes(r["artifact"][1])
+        c["db_sha"] = _sha(r["artifact"][1])
+        # The suite ran inside the sandbox next to an untrusted dump, so the control plane re-checks the
+        # books itself: the full manifest where one exists for this pair, else the version-neutral checks.
+        mf = root / "manifests" / f"{c['b']['id']}@{c['a']['id']}.json"
+        if mf.is_file():
+            c["host"] = verify.run(db, json.loads(mf.read_text()))
+        else:
+            c["host"] = [verify.check(n, db) for n in ("Books balance", "No orphan lines")]
+        failed = [t["test"] + ": " + t["detail"] for t in c["tests"] if not t["pass"]] + \
+                 [k["check"] + ": " + k["detail"] for k in c["host"] if not k["pass"]]
+        if failed:
+            return "drift", "; ".join(failed)[:600]
+        return "ok", f"{len(c['tests'])} suite tests + {len(c['host'])} control-plane checks pass"
+
+    def context(c):
+        old = "\n".join(re.findall(r"^CREATE TABLE.*?\);$", c["b"]["text"], re.S | re.M))[:12000]
+        sample = "\n".join(next((l[:400] for l in c["b"]["text"].splitlines() if l.startswith(f'INSERT INTO "{t}"')), "")
+                           for t in re.findall(r"CREATE TABLE (?:\"?)(\w+)", old))
+        return (f"Backup schema (v{c['b']['version']}, from the dump):\n```sql\n{old}\n```\n"
+                f"Schema of {c['a']['title']} (v{c['a']['version']}):\n```sql\n{c['a']['schema']}```\n"
+                f"One sample row per backup table:\n{sample}\n")
+
+    async def heal(c, evidence):
+        name = f"bridge_v{c['b']['version']}_to_v{c['a']['version']}.sql"
+        bridge = None
+        for n in range(1, MAX_ATTEMPTS + 1):
+            show(c, state="healing", round=n, bridge=name,
+                 detail="Vultr Serverless Inference writes the bridge" if n == 1 else "repairing the bridge")
+            if bridge is None:
+                text = await llm(run, f"bridge v{c['b']['version']} to v{c['a']['version']}", MIGRATE_SYSTEM,
+                                 context(c) + f"\n{c['b']['file']} restored, but {c['a']['title']} fails on it:\n{evidence}")
+                c["changes"] = re.sub(r"(?m)^\s*(?:CHANGES:|[-*])\s*", "", _section(text, "CHANGES"))
+            else:
+                text = await llm(run, "bridge repair", REPAIR_MIGRATION_SYSTEM,
+                                 context(c) + f"\nMigration:\n```sql\n{bridge}```\n{evidence}")
+            fixed = _script(text)
+            if bridge is not None:
+                c.setdefault("repairs", []).append({"round": n, "cause": _section(text, "CAUSE"),
+                                                   "diff": _diff(bridge, fixed, f"{name} (round {n - 1})", f"{name} (round {n})")})
+            bridge = fixed
+            c["bridge_sql"] = bridge
+            state, detail = await attempt(c, CELL_BRIDGE, f"bridge round {n}", bridge)
+            if state == "ok":
+                return show(c, state="healed", detail=f"via {name}, round {n}: {detail}")
+            if state == "quarantined":
+                return show(c, state="quarantined", detail=detail)
+            sb = c["sandboxes"][-1]
+            evidence = (f"It failed with exit {sb['exit']}.\nstderr:\n{sb['stderr'][-2000:]}" if state == "failed" else
+                        f"It ran, but the business-logic suite or the control plane's checks failed:\n{detail}")
+        show(c, state="drift", detail=f"no bridge passed in {MAX_ATTEMPTS} rounds: {detail}")
+
+    async def cell(c):
+        show(c, state="running", detail="fresh sandbox: restore, boot, suite")
+        state, detail = await attempt(c, CELL_RESTORE, "native")
+        mine = set(re.findall(r"CREATE TABLE (?:\"?)(\w+)", c["b"]["text"]))
+        theirs = set(re.findall(r"CREATE TABLE (\w+)", c["a"]["schema"]))
+        # A bridge maps one version of this app's schema to another; a dump of some other database is not drift.
+        if state == "drift" and len(mine & theirs) * 2 < len(theirs):
+            state, detail = "failed", f"not this app's database: shares {len(mine & theirs)} of {len(theirs)} tables"
+        if state == "drift":
+            show(c, state="drift", detail=detail)
+            await heal(c, detail)
+        else:
+            show(c, state="native" if state == "ok" else state, detail=detail)
+
+    verdict, explanation = None, ""
+    try:
+        run.step("Matrix", "running", detail=f"{len(cells)} sandboxes in parallel, then a bridge for every drifted cell")
+        await asyncio.gather(*(cell(c) for c in cells))
+        run.step("Matrix", "ok", detail=", ".join(f"{sum(c['state'] == s for c in cells)} {s}"
+                                                   for s in ("native", "healed", "drift", "failed", "quarantined")))
+        rows = []
+        for b in backups:
+            mine = [c for c in cells if c["b"] is b]
+            passing = [c for c in mine if c["state"] in ("native", "healed")]
+            level = ("quarantined" if any(c["state"] == "quarantined" for c in mine) else
+                     "ready" if passing else "not restorable")
+            rows.append({"backup": b["id"], "level": level, "passing": [c["a"]["title"] for c in passing]})
+            run.emit({"type": "matrix", "phase": "row", **rows[-1]})
+        q = [r for r in rows if r["level"] == "quarantined"]
+        ready = [r for r in rows if r["level"] == "ready"]
+        verdict = {"level": "unsafe" if q else "ok" if len(ready) == len(rows) else "failed",
+                   "headline": (f"{len(ready)} of {len(rows)} backups DR-ready"
+                                + (f"; {', '.join(r['backup'] for r in q)} QUARANTINED, do not restore to prod." if q else ".")),
+                   "reason": "; ".join(f"{r['backup']}: " + (", ".join(r["passing"]) if r["passing"] else r["level"])
+                                       for r in rows)}
+        explanation = await explain(run, {
+            "run": "Backup x app version compatibility matrix", "verdict": verdict,
+            "cells": [{"backup": c["b"]["file"], "app": c["a"]["title"], "state": c["state"],
+                       "detail": c.get("detail", "")[:300]} for c in cells]})
+    except Exception as e:
+        verdict = verdict or {"level": "failed", "headline": "Matrix aborted.", "reason": str(e)[:300]}
+        run.step("Error", "fail", detail=str(e)[:300])
+    bridges = {c["bridge"]: {"backup": c["b"]["file"], "app": c["a"]["title"], "sql": c["bridge_sql"],
+                             "sha256": _sha(c["bridge_sql"]), "rounds": c["round"], "changes": c.get("changes", ""),
+                             "repairs": c.get("repairs", [])}
+               for c in cells if c["state"] == "healed"}
+    by_cell = {c["key"]: c for c in cells}
+    certificate = [{
+        "backup": b["file"], "sha256": b["sha256"], "bytes": b["size"], "schema_version": b["version"],
+        "status": ("QUARANTINED: DO NOT RESTORE TO PROD" if any(by_cell[f"{b['id']}|{a['id']}"]["state"] == "quarantined"
+                                                              for a in apps) else
+                   "DR READY" if any(by_cell[f"{b['id']}|{a['id']}"]["state"] in ("native", "healed") for a in apps)
+                   else "NOT RESTORABLE"),
+        "app_versions": [{"app": a["title"], "result": (c := by_cell[f"{b['id']}|{a['id']}"])["state"],
+                          "bridge": c.get("bridge") if c["state"] == "healed" else None,
+                          "bridge_sha256": bridges[c["bridge"]]["sha256"] if c["state"] == "healed" else None,
+                          "restored_db_sha256": c.get("db_sha"), "detail": c.get("detail"),
+                          "suite": c.get("tests", []),
+                          "control_plane_checks": [{k: x[k] for k in ("check", "pass", "detail")} for x in c.get("host", [])]}
+                         for a in apps]} for b in backups]
+    incidents = [{"backup": b["file"], "sha256": b["sha256"], "static_scan": b["findings"],
+                  "detonations": [{"app": a["title"], "sandbox": r["name"], "exit": r["exit"], "elapsed_s": r["elapsed"],
+                                   "destroyed": r["destroyed"], "signals": r["signals"], "stderr": r["stderr"][-2000:],
+                                   "containment_events": [{k: e.get(k) for k in ("t", "signal", "event", "detail")}
+                                                          for e in run.events if e.get("type") == "policy"
+                                                          and e.get("backup") == b["id"] and e.get("app") == a["id"]]}
+                                  for a in apps for r in by_cell[f"{b['id']}|{a['id']}"].get("sandboxes", [])]}
+                 for b in backups if any(by_cell[f"{b['id']}|{a['id']}"]["state"] == "quarantined" for a in apps)]
+    await seal(run, verdict, explanation, {b["file"]: b["sha256"] for b in backups},
+               kind="BackupAirlock DR Readiness Certificate", matrix=certificate, bridges=bridges, incidents=incidents,
+               checks=[{**k, "check": f"{c['b']['file']} on {c['a']['title']}: {k['check']}"}
+                       for c in cells for k in c.get("host", [])])
+
+
 @app.get("/", response_class=HTMLResponse)
 def index():
     return FileResponse(HERE / "static" / "index.html")
@@ -461,16 +718,41 @@ def fixtures():
             for k, v in FIXTURES.items()]
 
 
+@app.post("/api/uploads")
+async def upload(request: Request, name: str = "upload.sql"):
+    """Raw request body = the dump; no multipart, so no extra dependency."""
+    data = bytearray()
+    async for chunk in request.stream():
+        data += chunk
+        if len(data) > MAX_UPLOAD:
+            raise HTTPException(413, f"backup larger than {MAX_UPLOAD // 2**20} MB")
+    if not data:
+        raise HTTPException(400, "empty backup")
+    sha = _sha(bytes(data))
+    d = UPLOADS / f"upload-{sha[:12]}"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "backup.sql").write_bytes(data)
+    meta = {"id": d.name, "name": re.sub(r"[^\w.-]", "_", Path(name).name)[:60] or "upload.sql",
+            "bytes": len(data), "sha256": sha}
+    (d / "meta.json").write_text(json.dumps(meta))
+    return meta
+
+
 @app.post("/api/runs/{fixture}")
-async def start(fixture: str):
+async def start(fixture: str, upload: str = ""):
     if fixture not in FIXTURES:
         raise HTTPException(404, "unknown fixture")
+    if upload:
+        _upload(upload)
     # One drill at a time: the box is shared, and a judge double-clicking must not fork two runs.
     if any(not r.done for r in runs.values()):
         raise HTTPException(409, "a drill is already running")
     run = Run(fixture)
+    run.upload = upload
     runs[run.id] = run
-    asyncio.get_running_loop().create_task(chain_drill(run) if run.cfg.get("kind") == "chain" else drill(run))
+    kind = run.cfg.get("kind")
+    asyncio.get_running_loop().create_task(matrix_drill(run) if kind == "matrix" else
+                                           chain_drill(run) if kind == "chain" else drill(run))
     return {"run_id": run.id}
 
 
@@ -507,7 +789,29 @@ def _proof(run_id):
 
 @app.get("/api/runs/{run_id}/proof.json")
 def proof_json(run_id: str):
-    return JSONResponse(_proof(run_id), headers={"Content-Disposition": f'attachment; filename="recovery-proof-{run_id}.json"'})
+    p = _proof(run_id)
+    return JSONResponse(p, headers={"Content-Disposition": f'attachment; filename="{'dr-certificate' if p.get('matrix') else 'recovery-proof'}-{run_id}.json"'})
+
+
+@app.get("/api/runs/{run_id}/bridges/{name}")
+def bridge_sql(run_id: str, name: str):
+    if (b := _proof(run_id).get("bridges", {}).get(name)) is None:
+        raise HTTPException(404, "no such bridge migration in this run")
+    return PlainTextResponse(f"-- {name}: {b['backup']} -> {b['app']}, written by Vultr Serverless Inference, "
+                             f"passed the business-logic suite in round {b['rounds']}\n-- sha256 {b['sha256']}\n"
+                             f"-- run with the backup attached: ATTACH 'old.db' AS old;\n{b['sql']}",
+                             headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@app.get("/api/runs/{run_id}/incident.json")
+def incident(run_id: str):
+    p = _proof(run_id)
+    if not p.get("incidents"):
+        raise HTTPException(404, "no incident in this run")
+    return JSONResponse({"kind": "BackupAirlock forensic incident log", "run_id": run_id, "generated_at": p["generated_at"],
+                         "sandbox_policy": p["sandbox_policy"], "incidents": p["incidents"],
+                         "certificate_sha256": p["proof_sha256"]},
+                        headers={"Content-Disposition": f'attachment; filename="incident-{run_id}.json"'})
 
 
 @app.get("/api/runs/{run_id}/proof.html", response_class=HTMLResponse)
@@ -520,7 +824,23 @@ def proof_html(run_id: str):
                        f"{'destroyed' if a['destroyed'] else 'NOT destroyed'}</h3><code>sha256 {a['script_sha256']}</code>"
                        f"<pre>{e(a['script'])}</pre>" + (f"<pre class=err>{e(a['stderr'])}</pre>" if a['stderr'] else "")
                        for a in p["command_receipts"])
-    if p.get("chain"):
+    if p.get("matrix"):
+        restored_title = "Compatibility matrix"
+        restored = "".join(
+            f"<h3>{e(m['backup'])}: {e(m['status'])}</h3><code>sha256 {m['sha256']} · schema v{m['schema_version']}</code><table>"
+            + "".join(f"<tr><td>{e(v['app'])}</td><td>{e(v['result'])}</td><td>{e(v['detail'] or '')}"
+                      + (f"<br><code>{e(v['bridge'])} sha256 {v['bridge_sha256']}</code>" if v["bridge"] else "")
+                      + "<ul>" + "".join(f"<li>{'PASS' if t['pass'] else 'FAIL'} {e(t.get('test') or t.get('check'))}: {e(t['detail'])}</li>"
+                                         for t in v["suite"] + v["control_plane_checks"]) + "</ul></td></tr>"
+                      for v in m["app_versions"]) + "</table>" for m in p["matrix"])
+        restored += "".join(f"<h3>{e(n)}: {e(b['backup'])} to {e(b['app'])}, round {b['rounds']}</h3>"
+                            f"<code>sha256 {b['sha256']}</code><pre>{e(b['sql'])}</pre>" for n, b in p["bridges"].items())
+        restored += "".join(f"<h3>Incident: {e(i['backup'])}</h3><pre>{e(json.dumps(i['static_scan'], indent=1))}</pre>"
+                            + "".join(f"<p>{e(d['app'])}: sandbox {e(d['sandbox'])}, exit {e(str(d['exit']))}, "
+                                      f"{'destroyed' if d['destroyed'] else 'NOT destroyed'}; "
+                                      + e("; ".join(c["event"] for c in d["containment_events"])) + "</p>" for d in i["detonations"])
+                            for i in p["incidents"])
+    elif p.get("chain"):
         m = p.get("migration")
         restored = ("<table>" + "".join(f"<tr><td>{e(c['backup'])}</td><td>{e(c['taken_at'])}</td><td>schema v{c['schema_version']}</td>"
                                         f"<td>{e(c['note'])}</td><td>{e(c['checks_passed'])}</td>"
@@ -534,18 +854,18 @@ def proof_html(run_id: str):
                         + "".join(f"<li>{e(i['what'])}: {e(str(i['got']))}" + (" matches" if i["pass"] else f", expected {e(str(i['expected']))}")
                                   + "</li>" for i in c["items"]) + "</ul>" for c in p["checks"] if c["check"] in verify.BOOKS)
         restored += f"<h2>The books</h2>{books}" if books else ""
-    body = f"""<!doctype html><meta charset=utf-8><title>Recovery Proof {e(p['run_id'])}</title>
+    body = f"""<!doctype html><meta charset=utf-8><title>{e(p['kind'])} {e(p['run_id'])}</title>
 <style>body{{font:15px/1.5 system-ui,sans-serif;max-width:860px;margin:40px auto;padding:0 20px;color:#0f172a}}
 pre{{background:#0f172a;color:#e2e8f0;padding:12px;border-radius:8px;overflow:auto;font-size:12px}}pre.err{{color:#fca5a5}}
 table{{border-collapse:collapse;width:100%}}td{{border-bottom:1px solid #e2e8f0;padding:6px}}code{{font-size:12px;color:#475569}}
 .v{{padding:16px;border-radius:10px;font-weight:600;background:{'#dcfce7' if v['level'] == 'ok' else '#fee2e2'}}}</style>
-<h1>Recovery Proof</h1><p>Run {e(p['run_id'])} &middot; {e(p['fixture'])} &middot; {e(p['generated_at'])} &middot; {p['elapsed_s']} s</p>
+<h1>{e(p['kind'])}</h1><p>Run {e(p['run_id'])} &middot; {e(p['fixture'])} &middot; {e(p['generated_at'])} &middot; {p['elapsed_s']} s</p>
 <div class=v>{e(v['headline'])}<br><small>{e(v['reason'])}</small></div><p>{e(p['explanation'])}</p>
 <h2>{restored_title}</h2>{restored}<h2>Checks</h2><table>{rows}</table>
 <h2>Command receipts</h2>{receipts}<h2>Sandbox policy</h2><pre>{e(json.dumps(p['sandbox_policy'], indent=1))}</pre>
 <h2>Backup fingerprints</h2><pre>{e(json.dumps(p['backup_sha256'], indent=1))}</pre>
 <p><code>proof sha256 {p['proof_sha256']}</code></p>"""
-    return HTMLResponse(body, headers={"Content-Disposition": f'attachment; filename="recovery-proof-{run_id}.html"'})
+    return HTMLResponse(body, headers={"Content-Disposition": f'attachment; filename="{'dr-certificate' if p.get('matrix') else 'recovery-proof'}-{run_id}.html"'})
 
 
 if __name__ == "__main__":

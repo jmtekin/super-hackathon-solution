@@ -40,6 +40,13 @@ CREATE TABLE res_partner (
   supplier_rank INTEGER NOT NULL DEFAULT 0,
   create_date TEXT NOT NULL
 );
+CREATE TABLE res_users (
+  id INTEGER PRIMARY KEY,
+  login TEXT NOT NULL UNIQUE,
+  password TEXT NOT NULL, -- pbkdf2-sha512, as Odoo stores it
+  partner_id INTEGER NOT NULL REFERENCES res_partner(id),
+  active INTEGER NOT NULL
+);
 CREATE TABLE product_product (
   id INTEGER PRIMARY KEY,
   default_code TEXT NOT NULL UNIQUE,

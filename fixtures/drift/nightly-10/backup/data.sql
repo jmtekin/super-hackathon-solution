@@ -15938,6 +15938,9 @@ INSERT INTO "res_partner" VALUES(203,'Ek El AB',1,'faktura@ekel203.se','SE559725
 INSERT INTO "res_partner" VALUES(204,'Falk El AB',1,'faktura@falkel204.se','SE55991316801','Norrköping','SE',1,0,'2020-11-11');
 INSERT INTO "res_partner" VALUES(205,'Björk Entreprenad AB',1,'faktura@bjorkentreprenad205.se','SE55976018501','Örebro','SE',1,0,'2024-07-02');
 INSERT INTO "res_partner" VALUES(206,'Lund Plåt AB',1,'faktura@lundplat206.se','SE55974930401','Linköping','SE',1,0,'2024-06-23');
+INSERT INTO "res_users" VALUES(1,'ekonomi@nordvikhandel.se','pbkdf2-sha512$25000$aa69df0bdd17705c1a8f4e869008028d$ba16293e25e1ba51daacac02734b4d07c79810792894fe9aa34c5fab24407ea02d8c3ae4a50d70c4574453c17e157c519235ad29b088564e016ca114f52873b0',1,1);
+INSERT INTO "res_users" VALUES(2,'lager@nordvikhandel.se','pbkdf2-sha512$25000$9eaa9b8584144a3963a247941747eb8c$39b5d38bcdaa07b3f9fd2ee8feaf1b72b01ef71d89fa7150033bb30fd2d04c4ff81e2bc171709eb6b668478b9ffe7ce613b5f5f7f250e64829a2d0a4b9b48073',1,1);
+INSERT INTO "res_users" VALUES(3,'admin','pbkdf2-sha512$25000$1c18ec63323440e4cdc241964ad1701c$efe4824cfa813e8b8fa59b92792e111df1e5049e2229a30b89fe9b9745215e5c041c01a08117e809a4c086a4df965fd89afb6f2506232194f9ac17d2fc905cd4',1,1);
 INSERT INTO "sale_order" VALUES(1,'S00001',8,'2026-01-02','sale','invoiced',273900,68475,342375);
 INSERT INTO "sale_order" VALUES(2,'S00002',75,'2026-01-02','sale','invoiced',438000,109500,547500);
 INSERT INTO "sale_order" VALUES(3,'S00003',12,'2026-01-02','sale','invoiced',239000,59750,298750);

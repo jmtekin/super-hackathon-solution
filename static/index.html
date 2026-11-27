@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Restorer: prove the books balance after restore</title>
+<title>BackupAirlock: prove every backup restores, before you need it</title>
 <style>
 :root{--bg:#f6f6f3;--card:#fff;--ink:#0d0f12;--mute:#6b7280;--line:#e5e5e0;--ok:#15803d;--okbg:#dcfce7;--bad:#b91c1c;--badbg:#fee2e2;--warn:#b45309;--term:#0d1117;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
 *{box-sizing:border-box}
@@ -105,7 +105,40 @@ pre.diff span{display:block} pre.diff .a{color:var(--ok);background:#f0fdf4} pre
 .grid .w:after{content:"";display:inline-block;width:9px;height:9px;border:2px solid var(--ink);border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite}
 .chainerr{font:12px var(--mono);color:var(--bad);margin-top:10px}
 .changes{font-size:13px;margin:4px 0 0;padding-left:18px}
-body.chainmode .meter{display:none}
+body.chainmode .meter,body.matrixmode #sbcard .meter{display:none}
+.mx{display:grid;grid-template-columns:minmax(210px,1.15fr) repeat(2,minmax(0,1fr));gap:8px;align-items:stretch}
+.mx .hd{font:600 12px var(--mono);padding:0 2px;align-self:end}
+.mx .hd span{color:var(--mute);font-weight:400}
+.mx .bk{padding:8px 0;border-top:1px solid #f1f1ee}
+.mx .bk b{display:block;font:600 13px var(--mono)}
+.mx .bk small{display:block;color:var(--mute);font-size:12px}
+.mx .bk code{font:11px var(--mono);color:var(--mute)}
+.mc{border-radius:10px;padding:10px 12px;border:1px solid var(--line);background:#fafaf8;cursor:pointer;min-height:78px;min-width:0;transition:background .2s}
+.mc .st{font:700 12px var(--mono);letter-spacing:.04em;color:var(--mute)}
+.mc .dt{font-size:12px;margin-top:3px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
+.mc .dots{margin-top:6px;display:flex;gap:4px;flex-wrap:wrap}
+.mc .dots i{width:9px;height:9px;border-radius:2px;background:#d4d4d0}
+.mc .dots i.y{background:var(--ok)} .mc .dots i.n{background:var(--bad)}
+.mc.running .st:after{content:"";display:inline-block;width:8px;height:8px;margin-left:8px;border:2px solid var(--ink);border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite}
+.mc.native,.mc.healed{background:var(--okbg);border-color:#86efac} .mc.native .st,.mc.healed .st{color:var(--ok)}
+.mc.drift,.mc.failed{background:var(--badbg);border-color:#fca5a5} .mc.drift .st,.mc.failed .st{color:var(--bad)}
+.mc.healing{background:#fef3c7;border-color:#fcd34d} .mc.healing .st{color:var(--warn)}
+.mc.quarantined{background:#1c1917;border-color:#1c1917;color:#e7e5e4} .mc.quarantined .st{color:#fca5a5}
+.mc.sel{box-shadow:0 0 0 2px var(--ink)}
+.legend{display:flex;gap:16px;margin-top:12px;font:11px var(--mono);color:var(--mute)}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.badges{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.badge{border:1px dashed #d4d4d0;border-radius:10px;padding:12px;font:700 12px/1.35 var(--mono);color:#a3a3a3;letter-spacing:.02em}
+.badge small{display:block;font-weight:400;margin-top:4px}
+.badge.on{border:1px solid var(--bad);background:var(--bad);color:#fff;animation:alarm .45s 4}
+@keyframes alarm{50%{background:#ef4444}}
+.honey{font:12px var(--mono);color:var(--bad);margin-top:10px}
+.tests div{display:grid;grid-template-columns:42px minmax(0,190px) 1fr;gap:10px;padding:4px 0;border-bottom:1px solid #f1f1ee;font-size:12.5px}
+.tests span{font:700 11px var(--mono)} .tests .pass span{color:var(--ok)} .tests .fail span{color:var(--bad)}
+.tests em{font-style:normal;color:#374151;word-break:break-word}
+#cdbody h3{font-size:12px;margin:14px 0 4px}
+.up input{font-size:12px;width:100%}
+.up .sub{color:var(--mute);font-size:12px;margin-top:6px}
 .hide{display:none}
 footer{color:var(--mute);font-size:12px;text-align:center;padding:10px 0 30px}
 @media(max-width:1000px){main{grid-template-columns:1fr}.row2{grid-template-columns:1fr}}
@@ -113,36 +146,45 @@ footer{color:var(--mute);font-size:12px;text-align:center;padding:10px 0 30px}
 </head>
 <body>
 <header>
-  <div class="brand"><span></span>Restorer</div><span class="ver">v2</span>
-  <div class="tag">Nightly ERP backup. Prove the books balance after restore.</div>
+  <div class="brand"><span></span>BackupAirlock</div><span class="ver">v3</span>
+  <div class="tag">Restores every backup against every app version in sealed sandboxes: proves the books, heals drift, quarantines poisoned dumps.</div>
   <div class="health" id="health"><i class="dot" id="hdot"></i><span id="htext">Control Plane /health ...</span></div>
 </header>
 <main>
   <aside>
-    <h2>ERP backup</h2>
+    <h2>Run</h2>
     <div id="fixtures"></div>
+    <div class="card up hide" id="up"><h2>Your backup (optional)</h2><input type="file" id="file" accept=".sql,text/plain"><div class="sub" id="upst">A SQLite .sql dump, up to 25 MB. It joins the matrix as a 4th row.</div></div>
     <button class="run" id="run" disabled>Run restore drill</button>
     <h2>Sandbox policy</h2>
     <div class="card policy" id="policy">
       <div><span>network</span><em>none</em></div>
       <div><span>cpu</span><em>1 core cap</em></div>
-      <div><span>memory</span><em>256 MB, no swap</em></div>
-      <div><span>pids</span><em>128 max</em></div>
+      <div><span>memory</span><em>512 MB, no swap</em></div>
+      <div><span>pids</span><em>64 max</em></div>
       <div><span>root filesystem</span><em>read-only</em></div>
       <div><span>backup volume</span><em>read-only</em></div>
       <div><span>capabilities</span><em>all dropped</em></div>
       <div><span>user</span><em>nobody</em></div>
       <div id="ptimeout"><span>wall clock</span><em>60 s</em></div>
+      <div><span>secrets</span><em>none (honey file only)</em></div>
       <div><span>inference key</span><em>control plane only</em></div>
     </div>
   </aside>
   <section class="stack">
     <div class="verdict" id="verdict"></div>
+    <div class="card hide" id="matrix"><h2>Backup x App Version Compatibility Matrix · one sandbox per cell</h2><div class="mx" id="mx"></div>
+      <div class="legend"><span><i style="background:var(--ok)"></i>green: native or healed</span><span><i style="background:#fcd34d"></i>yellow: healing</span><span><i style="background:var(--bad)"></i>red: drift</span><span><i style="background:#1c1917"></i>quarantined</span><span>squares: suite tests, then control-plane checks</span></div></div>
+    <div class="card hide" id="contain"><h2 id="containtitle">Containment</h2>
+      <div class="badges"><div class="badge" id="b-network">NETWORK AIR-GAP ENFORCED<small>0 BYTES EXFILTRATED</small></div><div class="badge" id="b-rootfs">READ-ONLY ROOTFS PROTECTED<small>no write outside /work</small></div><div class="badge" id="b-cap">MEMORY/TIMEOUT CAP HIT<small id="capv">512 MB / 20 s</small></div></div>
+      <div class="meter"><label><span>Memory of the poisoned sandbox</span><span id="memv">0 / 512 MB</span></label><div class="bar" id="membar"><i></i></div></div>
+      <div class="honey" id="honey"></div></div>
+    <div class="card hide" id="celldetail"><h2 id="cdtitle">Cell</h2><div id="cdbody"></div></div>
     <div class="card chain hide" id="chain"><h2 id="chaintitle">Backup chain</h2><div class="strip" id="strip"></div><div class="grid" id="grid"></div><div class="chainerr" id="chainerr"></div></div>
     <div class="row2">
       <div class="card"><h2>Run timeline</h2><ol class="tl" id="tl"><li class="empty" style="display:block">Pick a fixture and run a drill.</li></ol></div>
       <div class="stack">
-        <div class="card">
+        <div class="card" id="sbcard">
           <h2>Sandbox <span id="sbname" style="text-transform:none;font-family:var(--mono)"></span></h2>
           <div class="meter"><label><span>CPU</span><span id="cpuv">idle</span></label><div class="bar" id="cpubar"><i></i></div></div>
           <div class="meter"><label><span>Wall clock</span><span id="wallv">0 / 60 s</span></label><div class="bar" id="wallbar"><i></i></div></div>
@@ -163,13 +205,13 @@ footer{color:var(--mute);font-size:12px;text-align:center;padding:10px 0 30px}
     </div>
   </section>
 </main>
-<footer>Odoo-compatible: the demo ERP uses Odoo's table names (res_partner, account_move, account_move_line, stock_move, sale_order), on SQLite. Control plane: FastAPI on a Vultr VM. Inference: Vultr Serverless Inference. Every restore runs in a disposable sandbox.</footer>
+<footer>BackupAirlock. Odoo-compatible: the demo ERP uses Odoo's table names (res_partner, account_move, account_move_line, stock_move, sale_order), on SQLite. Control plane: FastAPI on a Vultr VM. Inference: Vultr Serverless Inference. Every restore runs in a disposable sandbox.</footer>
 <script>
 // Relative API paths need a trailing slash behind the Funnel /restorer prefix.
 if (!location.pathname.endsWith("/")) location.replace(location.pathname + "/" + location.search);
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let fixtures = [], sel = null, es = null, timeout = 60, wallTimer = null, sbStart = 0;
+let fixtures = [], sel = null, es = null, timeout = 60, wallTimer = null, sbStart = 0, uploadId = "";
 
 let beats = 0;
 async function health() {
@@ -196,6 +238,8 @@ async function loadFixtures() {
 function pick(id) {
   sel = fixtures.find(f => f.id === id) || fixtures[0];
   document.body.classList.toggle("chainmode", sel.kind === "chain");
+  document.body.classList.toggle("matrixmode", sel.kind === "matrix");
+  $("up").classList.toggle("hide", sel.kind !== "matrix");
   document.querySelectorAll(".fx").forEach(el => el.classList.toggle("sel", el.dataset.id === sel.id));
   timeout = sel.timeout;
   $("ptimeout").querySelector("em").textContent = `${timeout} s, then destroyed`;
@@ -206,9 +250,9 @@ function pick(id) {
 
 function reset() {
   $("tl").innerHTML = ""; $("term").innerHTML = ""; $("checks").innerHTML = "";
-  $("verdict").className = "verdict"; ["repair","plan","evwrap","chain","migration"].forEach(i => $(i).classList.add("hide"));
+  $("verdict").className = "verdict"; ["repair","plan","evwrap","chain","migration","matrix","contain","celldetail"].forEach(i => $(i).classList.add("hide"));
   setBar("cpubar", 0); setBar("wallbar", 0); $("cpuv").textContent = "idle"; $("sbname").textContent = "";
-  steps = {}; chain = null;
+  steps = {}; chain = null; M = null;
 }
 let steps = {};
 function li(cls, icon, name, sub, t) {
@@ -278,12 +322,79 @@ function chainSandbox(ev) {
   sandboxCount();
 }
 
+// Compatibility matrix: rows are backups, columns app versions, every cell its own sandbox.
+let M = null;
+const STATE = {running: "RESTORING", native: "GREEN · NATIVE", healed: "GREEN · HEALED", drift: "RED · DRIFT",
+               failed: "RED · FAILED", healing: "YELLOW · HEALING", quarantined: "QUARANTINED"};
+function matrixInit(ev) {
+  M = {cells: {}, apps: ev.apps, hot: new Set(ev.backups.filter(b => b.findings).map(b => b.id)), sel: null, running: 0, destroyed: 0, done: false};
+  ["matrix", "contain"].forEach(i => $(i).classList.remove("hide"));
+  $("mx").innerHTML = `<div></div>` + ev.apps.map(a => `<div class="hd">${esc(a.title)} <span>schema v${a.version}</span></div>`).join("")
+    + ev.backups.map(b => `<div class="bk"><b>${esc(b.file)}</b><small>${esc(b.blurb)}</small><code>sha256 ${b.sha256.slice(0, 12)} · ${(b.size / 2 ** 20).toFixed(1)} MB · schema v${b.version || "?"}</code></div>`
+      + ev.apps.map(a => `<div class="mc" id="mc-${b.id}|${a.id}" data-k="${b.id}|${a.id}"><span class="st">QUEUED</span><div class="dt"></div><div class="dots"></div></div>`).join("")).join("");
+  document.querySelectorAll(".mc").forEach(el => el.onclick = () => showCell(el.dataset.k));
+  const hot = ev.backups.filter(b => b.findings).map(b => b.file);
+  $("containtitle").textContent = `Containment${hot.length ? " · " + hot.join(", ") : ""}`;
+  document.querySelectorAll(".badge").forEach(b => b.classList.remove("on"));
+  $("capv").textContent = `512 MB / ${timeout} s`; $("honey").textContent = ""; $("memv").textContent = `0 / 512 MB`; setBar("membar", 0);
+}
+function matrixCell(ev) {
+  const k = `${ev.backup}|${ev.app}`, el = $(`mc-${k}`);
+  M.cells[k] = ev;
+  el.className = `mc ${ev.state}${M.sel === k ? " sel" : ""}`;
+  el.querySelector(".st").textContent = STATE[ev.state] + (ev.state === "healing" ? ` r${ev.round}` : "");
+  el.querySelector(".dt").textContent = ev.state === "healed" ? `via ${ev.bridge}` : ev.detail || "";
+  el.querySelector(".dots").innerHTML = [...(ev.tests || []), ...(ev.host || [])].map(t => `<i class="${t.pass ? "y" : "n"}" title="${esc(t.test || t.check)}"></i>`).join("");
+  if ((!M.sel && ev.state === "drift") || M.sel === k) showCell(k);
+}
+function showCell(k) {
+  const c = M && M.cells[k];
+  if (!c) return;
+  M.sel = k;
+  document.querySelectorAll(".mc").forEach(el => el.classList.toggle("sel", el.dataset.k === k));
+  const row = t => `<div class="${t.pass ? "pass" : "fail"}"><span>${t.pass ? "PASS" : "FAIL"}</span><b>${esc(t.test || t.check)}</b><em>${esc(t.detail)}</em></div>`;
+  $("celldetail").classList.remove("hide");
+  $("cdtitle").textContent = `${c.backup} on ${M.apps.find(a => a.id === c.app).title}`;
+  $("cdbody").innerHTML = `<div class="cause"><b>${esc(STATE[c.state])}</b> ${esc(c.detail)}</div>`
+    + (c.tests ? `<h3>Business-logic suite, run against the booted app inside the sandbox</h3><div class="tests">${c.tests.map(row).join("")}</div>` : "")
+    + (c.host ? `<h3>Control plane re-check of the returned database</h3><div class="tests">${c.host.map(row).join("")}</div>` : "")
+    + (c.sql ? `<h3>${esc(c.bridge)}, written by Vultr Serverless Inference${M.done ? ` · <a href="api/runs/${current}/bridges/${encodeURIComponent(c.bridge)}">download</a>` : ""}</h3>`
+      + `<ul class="changes">${(c.changes || "").split("\n").filter(Boolean).map(l => `<li>${esc(l)}</li>`).join("")}</ul><pre class="code">${esc(c.sql)}</pre>` : "");
+}
+function matrixSandbox(ev) {
+  const where = `[${ev.backup} on ${ev.app}]`;
+  if (ev.type === "sandbox") {
+    if (ev.phase === "started") { M.running++; term(`$ docker run --network none --read-only --cap-drop ALL --memory 512m --cpus 1 --pids-limit 64 ... ${ev.name}  ${where}`, "s"); }
+    else if (ev.phase === "exited") { M.running--; term(`${where} exit: ${ev.exit}  (${ev.elapsed} s)`, ev.exit === 0 ? "s" : "p"); }
+    else if (ev.phase === "destroyed") {
+      M.destroyed++;
+      if (M.hot.has(ev.backup) && $("b-cap").classList.contains("on")) $("capv").textContent = $("capv").textContent.replace(/( · CONTAINER DESTROYED)?$/, " · CONTAINER DESTROYED");
+    } else term(`WARNING: ${ev.name} still present`, "p");
+    $("sbname").textContent = `· ${M.running} running, ${M.destroyed} destroyed`;
+  } else if (ev.type === "log") {
+    if (!ev.line.startsWith("@@SUITE ")) term(`${where} ${ev.line}`, ev.stream === "stderr" ? "e" : "");
+  } else if (ev.type === "cpu") {
+    if (M.hot.has(ev.backup)) { $("memv").textContent = `${ev.mem_mb.toFixed(0)} / 512 MB`; setBar("membar", ev.mem_mb / 512, ev.mem_mb > 400); }
+  } else if (ev.type === "policy") {
+    term(`${where} ${ev.event}`, "p");
+    if (ev.signal === "honey") $("honey").textContent = `Honey file /root/.env read: "${ev.detail}". A decoy: no real secret is in any sandbox.`;
+    const b = $(`b-${ev.signal === "memory" || ev.signal === "timeout" ? "cap" : ev.signal}`);
+    if (b && !b.classList.contains("on")) {
+      b.classList.add("on");
+      if (b.id === "b-cap") { $("capv").textContent = ev.signal === "memory" ? "512 MB HIT" : `${timeout} s HIT`; setBar("membar", ev.signal === "memory" ? 1 : 0, true); }
+    }
+    if (!steps["__" + ev.signal]) steps["__" + ev.signal] = li("fail alarm child", "!", esc(ev.event.split(",")[0]), esc(ev.detail || ev.event), ev.t);
+  }
+}
+
 function term(line, cls) {
   const t = $("term"); const d = document.createElement("div");
   if (cls) d.className = cls; d.textContent = line; t.appendChild(d); t.scrollTop = t.scrollHeight;
 }
 
 function onEvent(ev) {
+  if (ev.type === "matrix") return ev.phase === "init" ? matrixInit(ev) : ev.phase === "cell" ? matrixCell(ev) : null;
+  if (ev.app) return matrixSandbox(ev);
   if (ev.type === "chain") return ev.phase === "init" ? chainInit(ev) : chainEvent(ev);
   if (ev.backup && ev.type === "sandbox") return chainSandbox(ev);
   if (ev.backup && ev.type === "log") return term(`[${ev.backup}] ${ev.line}`, ev.stream === "stderr" ? "e" : "");
@@ -351,13 +462,19 @@ async function showVerdict(ev) {
   const id = current, p = await (await fetch(`api/runs/${id}/proof.json`)).json();
   const v = $("verdict");
   v.className = "verdict " + (ev.level === "ok" ? "ok" : "bad");
-  v.innerHTML = `<h2 style="color:inherit;opacity:.7">Recovery Proof</h2><h1>${esc(ev.headline)}</h1><div>${esc(ev.reason)}</div><p>${esc(p.explanation)}</p>
-    <div class="meta">run ${esc(id)} · ${ev.elapsed_s} s end to end · proof sha256 ${esc(ev.proof_sha256.slice(0, 16))}</div>
-    <a href="api/runs/${id}/proof.json">Download proof JSON</a><a href="api/runs/${id}/proof.html">Download proof HTML</a>`;
+  const doc = p.matrix ? "certificate" : "proof";
+  v.innerHTML = `<h2 style="color:inherit;opacity:.7">${p.matrix ? "DR Readiness Certificate" : "Recovery Proof"}</h2><h1>${esc(ev.headline)}</h1><div>${esc(ev.reason)}</div><p>${esc(p.explanation)}</p>
+    <div class="meta">run ${esc(id)} · ${ev.elapsed_s} s end to end · ${doc} sha256 ${esc(ev.proof_sha256.slice(0, 16))}</div>
+    <a href="api/runs/${id}/proof.json">Download ${doc} JSON</a><a href="api/runs/${id}/proof.html">Download ${doc} HTML</a>`
+    + Object.keys(p.bridges || {}).map(n => `<a href="api/runs/${id}/bridges/${encodeURIComponent(n)}">${esc(n)}</a>`).join("")
+    + (p.incidents && p.incidents.length ? `<a href="api/runs/${id}/incident.json">Forensic incident log</a>` : "");
+  if (p.matrix) { M.done = true; if (M.sel) showCell(M.sel); }
   $("evwrap").classList.remove("hide");
   $("receipts").innerHTML = `<h2>Command receipts</h2>` + p.command_receipts.map(a => `<div><span>${typeof a.n === "number" ? "attempt " : ""}${esc(a.n)}: exit ${esc(a.exit)}</span><span>${a.elapsed} s · ${a.destroyed ? "destroyed" : "NOT destroyed"} · ${a.script_sha256.slice(0, 10)}</span></div>`).join("")
     + p.llm_calls.map(c => `<div><span>${esc(c.purpose)}: ${esc(c.model)}</span><span>${c.latency_s} s · ${c.tokens ?? "?"} tok</span></div>`).join("");
-  $("sums").innerHTML = p.chain ? `<h2>Restored databases (sha256)</h2>` + p.chain.map(c => `<div><span>${esc(c.backup)} · ${esc(c.note)}</span><span>${c.restored_db_sha256 ? c.restored_db_sha256.slice(0, 16) : "none"}</span></div>`).join("")
+  $("sums").innerHTML = p.matrix ? `<h2>Backups (sha256)</h2>` + p.matrix.map(m => `<div><span>${esc(m.backup)} · ${esc(m.status)}</span><span>${m.sha256.slice(0, 16)}</span></div>`).join("")
+    + Object.entries(p.bridges).map(([n, b]) => `<div><span>${esc(n)}</span><span>${b.sha256.slice(0, 16)}</span></div>`).join("") + `<div><span>elapsed</span><span>${p.elapsed_s} s</span></div>`
+    : p.chain ? `<h2>Restored databases (sha256)</h2>` + p.chain.map(c => `<div><span>${esc(c.backup)} · ${esc(c.note)}</span><span>${c.restored_db_sha256 ? c.restored_db_sha256.slice(0, 16) : "none"}</span></div>`).join("")
     + (p.migration ? `<div><span>migrate.sql</span><span>${p.migration.sha256.slice(0, 16)}</span></div>` : "") + `<div><span>elapsed</span><span>${p.elapsed_s} s</span></div>`
     : `<h2>Checksums (sha256)</h2>` + Object.entries(p.backup_sha256).map(([f, h]) => `<div><span>${esc(f)}</span><span>${h.slice(0, 16)}</span></div>`).join("")
     + `<div><span>restored.db</span><span>${p.restored_db_sha256 ? p.restored_db_sha256.slice(0, 16) : "not trusted, not kept"}</span></div><div><span>elapsed</span><span>${p.elapsed_s} s</span></div>`;
@@ -367,12 +484,23 @@ async function showVerdict(ev) {
 let current = null;
 $("run").onclick = async () => {
   $("run").disabled = true; reset();
-  const r = await fetch(`api/runs/${sel.id}`, {method: "POST"});
+  const r = await fetch(`api/runs/${sel.id}${sel.kind === "matrix" && uploadId ? "?upload=" + uploadId : ""}`, {method: "POST"});
   if (!r.ok) { li("fail", ICON.fail, "Could not start", esc((await r.json()).detail), 0); $("run").disabled = false; return; }
   current = (await r.json()).run_id;
   es = new EventSource(`api/runs/${current}/events`);
   es.onmessage = m => onEvent(JSON.parse(m.data));
   es.addEventListener("end", () => { es.close(); es = null; $("run").disabled = false; clearInterval(wallTimer); });
+};
+$("file").onchange = async () => {
+  const f = $("file").files[0];
+  uploadId = "";
+  if (!f) return;
+  $("upst").textContent = `Uploading ${f.name} ...`;
+  const r = await fetch(`api/uploads?name=${encodeURIComponent(f.name)}`, {method: "POST", body: f});
+  const d = await r.json();
+  if (!r.ok) { $("upst").textContent = `Upload refused: ${d.detail}`; return; }
+  uploadId = d.id;
+  $("upst").textContent = `${d.name}, ${(d.bytes / 2 ** 20).toFixed(2)} MB, sha256 ${d.sha256.slice(0, 12)}. It joins the next matrix run.`;
 };
 loadFixtures();
 </script>

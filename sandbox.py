@@ -5,7 +5,11 @@ so nothing from it may run in the control plane. KVM is not available on the
 build host, so the sandbox is hardened Docker rather than a microVM: no network,
 capped CPU/memory/pids, read-only root, the backup mounted read-only, a tmpfs
 scratch dir, all capabilities dropped, an unprivileged uid, and a wall-clock
-limit enforced from outside. A fresh container per attempt; it is removed in
+limit enforced from outside. The only "secret" inside is a honey file
+(/root/.env, planted in the image): a backup that prints it has tried to steal
+credentials. Containment is reported as signals (network, rootfs, honey,
+memory, timeout) read from the sandbox's own output and its cgroup, the moment
+they happen. A fresh container per attempt; it is removed in
 every outcome and the removal is checked, not assumed.
 
 Only stdout, stderr, the exit code and one artifact (the restored database)
@@ -20,13 +24,20 @@ import time
 import uuid
 from pathlib import Path
 
-IMAGE = os.environ.get("RESTORER_IMAGE", "restorer-sandbox:1")
+IMAGE = os.environ.get("RESTORER_IMAGE", "restorer-sandbox:2")
 DOCKER = os.environ.get("RESTORER_DOCKER", "docker").split()
-CPUS, MEMORY, PIDS = "1", "256m", "128"
+CPUS, MEMORY, PIDS = "1", "512m", "64"
 MAX_STDOUT = 16 * 1024 * 1024
 ARTIFACT_TAG = "@@ARTIFACT "
-NET_DENIED = re.compile(r"Network unreachable|Network is unreachable|bad address|Name does not resolve|"
-                        r"Temporary failure in name resolution|Could not resolve", re.I)
+# (signal, what the sandbox printed, what the page says)
+SIGNS = [
+    ("network", re.compile(r"Network unreachable|Network is unreachable|bad address|Name does not resolve|"
+                           r"Temporary failure in name resolution|Could not resolve", re.I),
+     "NETWORK: DENIED, no interface but loopback, 0 bytes left the sandbox"),
+    ("rootfs", re.compile(r"Read-only file system", re.I), "ROOTFS: READ-ONLY, write outside /work blocked"),
+    ("honey", re.compile(r"AKIAHONEYAIRLOCK|honey/airlock|honey-airlock"),
+     "HONEY FILE READ: /root/.env is a decoy, no real secret is in the sandbox"),
+]
 
 # The wrapper is ours, not the model's: it runs the model's script and ships
 # the artifact back, so the artifact path never depends on the model.
@@ -42,7 +53,7 @@ def policy(timeout):
     return {"runtime": "docker (hardened, no KVM on build host)", "network": "none", "cpus": CPUS,
             "memory": MEMORY, "pids_limit": int(PIDS), "rootfs": "read-only", "input": "read-only",
             "workdir": "tmpfs 64 MB", "capabilities": "all dropped", "user": "65534 (nobody)",
-            "timeout_s": timeout}
+            "secrets": "none (honey file /root/.env only)", "timeout_s": timeout}
 
 
 def _cgroup(cid):
@@ -56,7 +67,8 @@ def _read_usage(cg):
     try:
         usec = int(next(l for l in (cg / "cpu.stat").read_text().splitlines() if l.startswith("usage_usec")).split()[1])
         mem = int((cg / "memory.current").read_text())
-        return usec, mem
+        ooms = int(next(l for l in (cg / "memory.events").read_text().splitlines() if l.startswith("oom_kill")).split()[1])
+        return usec, mem, ooms
     except (OSError, StopIteration, ValueError):
         return None
 
@@ -91,10 +103,15 @@ async def run(input_dir, script, workdir, timeout, emit, files=None):
     proc = await asyncio.create_subprocess_exec(*DOCKER, *args, stdout=asyncio.subprocess.PIPE,
                                                 stderr=asyncio.subprocess.PIPE, limit=MAX_STDOUT)
     emit({"type": "sandbox", "phase": "started", "name": name, "policy": policy(timeout)})
-    out, err, artifact, net_denied = [], [], None, False
+    out, err, artifact, signals = [], [], None, set()
+
+    def signal(sig, event, detail=""):
+        if sig not in signals:
+            signals.add(sig)
+            emit({"type": "policy", "signal": sig, "event": event, "detail": detail[:300]})
 
     async def pump(stream, label, sink):
-        nonlocal artifact, net_denied
+        nonlocal artifact
         while line := await stream.readline():
             text = line.decode(errors="replace").rstrip("\n")
             if label == "stdout" and text.startswith(ARTIFACT_TAG):
@@ -103,9 +120,9 @@ async def run(input_dir, script, workdir, timeout, emit, files=None):
                 continue
             sink.append(text)
             emit({"type": "log", "stream": label, "line": text[:2000]})
-            if NET_DENIED.search(text) and not net_denied:
-                net_denied = True
-                emit({"type": "policy", "event": "NETWORK: DENIED", "detail": text[:300]})
+            for sig, pattern, event in SIGNS:
+                if pattern.search(text):
+                    signal(sig, event, text)
 
     async def sample():
         cg, last, peak = None, None, 0.0
@@ -121,6 +138,8 @@ async def run(input_dir, script, workdir, timeout, emit, files=None):
                 peak = max(peak, pct)
                 emit({"type": "cpu", "pct": round(min(pct, 100 * float(CPUS)), 1), "cap": 100 * float(CPUS),
                       "mem_mb": round(u[1] / 2**20, 1), "elapsed": round(now - t0, 2)})
+            if u[2]:
+                signal("memory", f"MEMORY CAP HIT: {MEMORY[:-1]} MB, the kernel killed the runaway process")
             last = (u[0], now)
 
     sampler = asyncio.create_task(sample())
@@ -130,7 +149,7 @@ async def run(input_dir, script, workdir, timeout, emit, files=None):
                                               proc.wait()), timeout)
     except asyncio.TimeoutError:
         timed_out = True
-        emit({"type": "policy", "event": f"TIMEOUT: {timeout} s wall clock reached, terminating sandbox"})
+        signal("timeout", f"TIMEOUT: {timeout} s wall clock reached, terminating sandbox")
         await _docker("kill", name)
     finally:
         sampler.cancel()
@@ -143,9 +162,11 @@ async def run(input_dir, script, workdir, timeout, emit, files=None):
     rc, _ = await _docker("inspect", name)
     destroyed = rc != 0
     exit_code = "timeout" if timed_out else proc.returncode
+    if exit_code == 137:  # SIGKILL from the OOM killer when the cgroup sample missed it
+        signal("memory", f"MEMORY CAP HIT: {MEMORY[:-1]} MB, the kernel killed the runaway process")
     emit({"type": "sandbox", "phase": "exited", "name": name, "exit": exit_code, "elapsed": elapsed})
     emit({"type": "sandbox", "phase": "destroyed" if destroyed else "NOT DESTROYED", "name": name})
     cidfile.unlink(missing_ok=True)
     return {"name": name, "exit": exit_code, "elapsed": elapsed, "stdout": "\n".join(out)[-8000:],
-            "stderr": "\n".join(err)[-8000:], "artifact": artifact, "network_denied": net_denied,
-            "timed_out": timed_out, "destroyed": destroyed}
+            "stderr": "\n".join(err)[-8000:], "artifact": artifact, "network_denied": "network" in signals,
+            "timed_out": timed_out, "destroyed": destroyed, "signals": sorted(signals)}

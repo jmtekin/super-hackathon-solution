@@ -5,6 +5,7 @@
     "account_move_line": 11887,
     "product_product": 40,
     "res_partner": 206,
+    "res_users": 3,
     "sale_order": 1997,
     "sale_order_line": 4403,
     "stock_location": 3,
@@ -43,6 +44,7 @@
     "account_move_line": "9dcad4210607ad95c369045d7cc6d1e46b32ad4bff54b4f2bee0513bbea5c5ec",
     "product_product": "4316f83216f70b669e6156409271c7beba061c0bbd1a2af1a20bb7ba47844742",
     "res_partner": "ad44bbd41c36f88b43162b4a16c1b6108463cca8022dfa68fe8cb03cb6f4faf3",
+    "res_users": "17ed02a9c37252e2c3f552affcd81cffa0f7a54d02f0f8b9c0597b97cbf66ed2",
     "sale_order": "45f718c69f4b4f195cbabfcdcaa7d61ad0571728914bd40f461b131c96ae9275",
     "sale_order_line": "bc0eb4d0dad4bf512c205641cfd4ec53e91c4e956903a95c23938cd383584cdf",
     "stock_location": "c5afc530dc4cb1f33fb81311b333cbc6560c758f827d97f2567ae0efe5877f26",
@@ -292,6 +294,33 @@
       [
         "create_date",
         "TEXT",
+        true
+      ]
+    ],
+    "res_users": [
+      [
+        "id",
+        "INTEGER",
+        false
+      ],
+      [
+        "login",
+        "TEXT",
+        true
+      ],
+      [
+        "password",
+        "TEXT",
+        true
+      ],
+      [
+        "partner_id",
+        "INTEGER",
+        true
+      ],
+      [
+        "active",
+        "INTEGER",
         true
       ]
     ],
