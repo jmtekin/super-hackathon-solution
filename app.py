@@ -510,7 +510,7 @@ table{{border-collapse:collapse;width:100%}}td{{border-bottom:1px solid #e2e8f0;
 .v{{padding:16px;border-radius:10px;font-weight:600;background:{'#dcfce7' if v['level'] == 'ok' else '#fee2e2'}}}</style>
 <h1>Recovery Proof</h1><p>Run {e(p['run_id'])} &middot; {e(p['fixture'])} &middot; {e(p['generated_at'])} &middot; {p['elapsed_s']} s</p>
 <div class=v>{e(v['headline'])}<br><small>{e(v['reason'])}</small></div><p>{e(p['explanation'])}</p>
-<h2>Checks</h2><table>{rows}</table><h2>{restored_title}</h2>{restored}
+<h2>{restored_title}</h2>{restored}<h2>Checks</h2><table>{rows}</table>
 <h2>Command receipts</h2>{receipts}<h2>Sandbox policy</h2><pre>{e(json.dumps(p['sandbox_policy'], indent=1))}</pre>
 <h2>Backup fingerprints</h2><pre>{e(json.dumps(p['backup_sha256'], indent=1))}</pre>
 <p><code>proof sha256 {p['proof_sha256']}</code></p>"""
