@@ -290,8 +290,8 @@ const calm = s => String(s || "").replace(/^([A-Z][A-Z /-]+):/, (_, p) => p.char
 
 /* Check groups, as the spec names them: manifest, business logic, app boot. */
 function group(name) {
-  if (/business rules|books balance|invoice|receivable|stock|orphan|ledger|fk integrity/i.test(name)) return "Business logic";
-  if (/^app |api health|login|smoke/i.test(name)) return "App boot";
+  if (/^rule:|required:|business rules|books balance|invoice|receivable|stock|orphan|ledger|fk integrity|row counts|rows match|invariant sums|records|total_cost|priority is|status is|estimated_hours/i.test(name)) return "Business logic";
+  if (/^app |api health|login|token api|smoke|test\.local/i.test(name)) return "App boot";
   return "Manifest and restore";
 }
 function groups(checks) {
@@ -641,7 +641,7 @@ function ovWhy(b) {
   }
   if (b.status === "dr_ready") {
     const cs = Object.entries(b.cells), ok = cs.filter(([, c]) => ["native", "healed"].includes(c.state));
-    return `Restored on ${ok.length} of ${cs.length} app version${cs.length > 1 ? "s" : ""}, ${b.checks_passed} of ${b.checks_total} checks passed` + (cs.some(([, c]) => c.state === "healed") ? `. Healed: schema drift bridged by the model` : "");
+    return `Restored on ${ok.length} of ${cs.length} app version${cs.length > 1 ? "s" : ""}. Checked: ${b.checks_passed} of ${b.checks_total}` + (cs.some(([, c]) => c.state === "healed") ? `. Healed: schema drift bridged by the model` : "");
   }
   return shortReason(String(b.reason || "").replace(/^[\w.]+: \w+, /, ""));
 }
@@ -658,20 +658,17 @@ function ovDetail(b) {
     ${ovChecks(b)}`;
 }
 function ovPoints(ss) {
-  const latest = ss.filter(b => b.status === "dr_ready").at(-1);
+  const ready = ss.filter(b => b.status === "dr_ready"), latest = ready.at(-1);
   const healed = ss.filter(b => Object.values(b.cells).some(c => c.state === "healed"));
   const h = healed.at(-1), hv = h && Object.entries(h.cells).find(([, c]) => c.state === "healed")?.[0];
-  const q = ss.filter(b => b.status === "quarantined"), qb = q.at(-1);
-  const attacks = qb ? (String(qb.reason).match(/containment: ([^;]*)/)?.[1] || "").split(", ").filter(Boolean) : [];
-  const scan = qb && /static-scan/.test(qb.reason) ? ["code in the dump"] : [];
   const pt = (b, c, title, k, e) => `<button class="pt ${c}" data-pick="${esc(b?.id || "")}"><b><i></i>${title}</b><span class="k">${k}</span><span class="e">${e}</span></button>`;
   return `<div class="pts">
-    ${pt(latest, "c-ok", "Restored, not just backed up", latest?.checks_total ? `Restored: ${latest.checks_passed} of ${latest.checks_total} checks passed` : "Every backup restored",
-      "Data counts, money rules, foreign keys, the app boots and logs in")}
-    ${pt(h, "c-heal", "Heals schema drift", healed.length ? `Healed: ${healed.length} old backup${healed.length > 1 ? "s" : ""}` : "No drift yet",
+    ${pt(latest, "c-ok", "Restores", `Restored: ${ready.length} of ${ss.length} backups`,
+      "Each one restored in its own sealed sandbox, the app booted on it, then the sandbox destroyed")}
+    ${pt(h, "c-heal", "Heals", healed.length ? `Healed: ${healed.length} old backup${healed.length > 1 ? "s" : ""}` : "No drift yet",
       h ? `${esc(shortName(h.file))} failed on app ${esc(hv)}, then passed through a bridge the model wrote` : "An old backup on a new app gets a model-written bridge")}
-    ${pt(qb, "c-bad", "Blocks poisoned backups", q.length ? `Blocked: ${q.length} before restore` : "None found",
-      attacks.length ? `Caught: ${esc(attacks.concat(scan).join(", "))}. Nothing left the sandbox` : "Exfiltration, writes outside the sandbox, memory bombs")}
+    ${pt(latest, "c-ok", "Checks the business, not the file", latest?.checks_total ? `Checked: ${latest.checks_passed} of ${latest.checks_total} on the latest` : "Checked on every restore",
+      "Record counts against production, debits = credits, total cost = hours x rate, required fields, links, admin login")}
   </div>`;
 }
 // The cell's checks in the spec's three groups, every one visible.
@@ -684,12 +681,12 @@ function ovChecks(b) {
   for (const k of c.checks) { const n = String(k.check).split(" (")[0]; seen.set(n, seen.get(n) || k.pass); }
   const gs = groups([...seen].map(([name, pass]) => ({name, pass})));
   return `<div class="ck">${gs.map(([g, ks]) => `<div><h3>${esc(g)} <span>${ks.filter(k => k.pass).length} of ${ks.length}</span></h3><ul>
-    ${ks.slice(0, 6).map(k => `<li><b class="${k.pass ? "" : "no"}">${k.pass ? "✓" : "✕"}</b><span>${esc(String(k.name).split(" (")[0])}</span></li>`).join("")}
-    ${ks.length > 6 ? `<li><b></b><span>and ${ks.length - 6} more</span></li>` : ""}</ul></div>`).join("")}</div>`;
+    ${(g === "Business logic" ? ks : ks.slice(0, 6)).map(k => `<li><b class="${k.pass ? "" : "no"}">${k.pass ? "✓" : "✕"}</b><span>${esc(String(k.name).split(" (")[0].replace(/^rule: /, ""))}</span></li>`).join("")}
+    ${g !== "Business logic" && ks.length > 6 ? `<li><b></b><span>and ${ks.length - 6} more</span></li>` : ""}</ul></div>`).join("")}</div>`;
 }
 function ovView() {
   const ss = rg.summaries.slice().sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""));
-  const ready = ss.filter(b => b.status === "dr_ready").length, q = ss.filter(b => b.status === "quarantined").length;
+  const ready = ss.filter(b => b.status === "dr_ready").length;
   // The backup you would restore from (Jonas 15:16 "some way to show whats the latest working").
   const latest = ss.filter(b => b.status === "dr_ready").at(-1);
   const sel = ss.find(b => b.id === ovSel.id) || ss.find(b => ["running", "queued"].includes(b.status)) || latest || ss.at(-1);
@@ -697,7 +694,7 @@ function ovView() {
     <h1>Every backup proven restorable before you need it.</h1>
     <p class="promise">Each new backup is restored in a sealed sandbox, checked, healed if its schema drifted, then certified. Production is never touched.</p>
     ${ss.length ? ovPoints(ss) : ""}
-    ${ss.length ? `<div class="board"><div class="verdict">${ready} of ${ss.length} backups restorable.${q ? ` <em>${q} poisoned backup${q > 1 ? "s" : ""} blocked.</em>` : ""}</div>
+    ${ss.length ? `<div class="board"><div class="verdict">${ready} of ${ss.length} backups restorable.</div>
     <div class="tl">${ss.map((b, i) => { const [c, word, mod] = OV[ovState(b)] || ["c-idle", b.status, "hollow"];
       return `<button class="mk ${c}" data-id="${esc(b.id)}" aria-pressed="${b === sel}" aria-label="${esc(shortName(b.file))}: ${esc(word)}">
         ${b === latest ? `<span class="flag${i > ss.length / 2 ? " r" : ""}">Latest restorable</span>` : ""}<i class="${mod || ""}"></i><span class="n">${esc(shortName(b.file))}</span><span class="w">${esc(word)}</span></button>`; }).join("")}</div>
