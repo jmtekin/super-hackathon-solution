@@ -45,6 +45,8 @@ ExecStart=$DEST/.venv/bin/python app.py
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 Restart=always
 MemoryMax=1G
+# Open live streams (SSE) keep uvicorn from exiting: without this a restart took the site down for 90 s (16:38).
+TimeoutStopSec=5
 
 [Install]
 WantedBy=multi-user.target
