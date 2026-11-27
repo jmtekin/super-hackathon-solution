@@ -1,0 +1,4 @@
+backups/
+state/
+faults/out/
+__pycache__/
