@@ -1,13 +1,13 @@
 # BackupAirlock runtime
 
 Proves every backup of the Nordvik Handel ERP restores into a working app: each new `pg_dump -Fc` + manifest
-(contract: `../restorer/handoff/PROMPT-FOR-MOHAMED.md`) is restored into a throwaway **test instance** (its own
+(contract: `contract/manifest.sql` + `contract/rules.sql`, the same SQL the backup job runs) is restored into a throwaway **test instance** (its own
 Postgres 16 container, no network, the app version under test in that container's network namespace, never the
 production app or its database), checked against its manifest and the business rules, booted, and probed. A
 schema/app mismatch gets a GLM-5.3 bridge migration (Vultr Serverless Inference), retried up to 3 rounds. Results:
 JSON API + SSE for Jonas's UI, and BackupAirlock's DR Readiness Certificate per backup.
 
-API: `../restorer/README.md`, section **Runtime API** (the UI is built against it; shapes only ever grow).
+API: [`../ui/README.md`](../ui/README.md), section **Runtime API** (the UI is built against it; shapes only ever grow).
 
 ## One cell = one backup on one app version
 
@@ -64,7 +64,7 @@ the mapping -> `healed`. Key `/opt/agent/.ssh/restoreguard_test2_ed25519`; token
 First run 2026-11-27 15:29 (`20261127_151409`): test.local native 130 s; test2.local healed round 1
 (`effort_hours = estimated_hours`, `category = 'Consulting'`), 25 checks, 132 s; fault kit 7/7 on both columns.
 
-API additions (not yet in `../restorer/README.md` Runtime API): `kind` (`postgres`|`frappe`) in every backup
+API additions (not yet in `../ui/README.md` Runtime API): `kind` (`postgres`|`frappe`) in every backup
 summary; Frappe backups have one cell per test site, keyed by site, whose `restored_into` is `{instance: "test.local on
 Vultr VM 70.34.199.143 (full site restore via bench)", database, app, production}`; `/health` has `frappe: {source,
 restores_into}`; `/api/matrix` lists each test site as a column, cells only where they apply; SSE adds `restore` events

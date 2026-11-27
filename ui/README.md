@@ -2,7 +2,7 @@
 
 **BackupAirlock is an autonomous disaster-recovery verifier that restores database backups against multiple application codebase versions inside sealed, throwaway sandboxes, proving business-logic integrity, auto-generating bridge migrations for version drift, and quarantining poisoned dumps before they ever touch production.**
 
-(Repo and service name: `restorer`. Team spec: `../docs/BACKUPAIRLOCK-SPEC.md`.)
+(Service name: `restorer`. Team spec: [../docs/archive/BACKUPAIRLOCK-SPEC.md](../docs/archive/BACKUPAIRLOCK-SPEC.md).)
 
 The demo ERP is Nordvik Handel AB, a small Swedish trading company (SEK, 25 %
 VAT, 200 customers, ~2,000 invoices, double-entry journal, stock), on Odoo's
@@ -13,7 +13,7 @@ accounting model, cut down to the columns the books need; SQLite with amounts
 in integer öre so debits and credits compare exactly. A real Odoo backup is a
 Postgres dump and needs a Postgres sandbox image; the drill is the same.
 
-Live demo: https://vps.taild101c7.ts.net:10000/restorer/
+Live demo: https://65-20-116-145.sslip.io/ (Vultr VM; the drill views are `?view=drill`).
 
 ## The Backup x App Version Compatibility Matrix (headline run)
 
@@ -57,7 +57,7 @@ Fixtures (`fixtures/build.py`, a seeded day-by-day simulation of the company's y
 | `apps/suite.py` | the business-logic suite run against the booted app |
 | `sandbox.py` | hardened Docker runner, live CPU/memory from the container cgroup |
 | `verify.py` | the deterministic checks: five on the books, five against the manifest |
-| `static/index.html` | the console (relative paths, works under any prefix): tabs Backups (BackupAirlock runtime via `/rg/*`) and Drill; checklist ../docs/design/SPEC-CHECKLIST.md |
+| `static/index.html` | the console (relative paths, works under any prefix): tabs Backups (BackupAirlock runtime via `/rg/*`) and Drill; checklist ../docs/archive/SPEC-CHECKLIST.md |
 | `fixtures/build.py` | simulates the ERP, builds the matrix dumps + the four drill fixtures + their manifests, incl. the reference v1 to v2 migration |
 | `sandbox.Dockerfile` | sandbox image `restorer-sandbox:2` (alpine + sqlite, python3, curl, honey `/root/.env`) |
 | `install.sh` | one-command install on a Vultr VM |
