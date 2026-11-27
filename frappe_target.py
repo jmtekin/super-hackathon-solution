@@ -319,7 +319,7 @@ def compare(fields, rows, got, created):
             continue
         diffs += [f"{r['name']}.{f}: {r.get(f)!r} vs {d.get(f)!r}" for f in fields
                   if not _close(r.get(f), d.get(f)) and (r.get(f) or None) != (d.get(f) or None)]
-    if extra := len(got) - len(rows):
+    if (extra := len(got) - len(rows)) > 0:
         diffs.append(f"{extra} more records on test.local than in the backup")
     return diffs
 
