@@ -641,7 +641,7 @@ const evText = e => e.type === "check" ? `${e.pass ? "✓" : "✕"} ${e.check}${
   : e.type === "bridge" ? `bridge ${e.name}, round ${e.round}`
   : e.type === "verdict" ? `verdict: ${e.state}, ${e.reason}`
   : e.type === "step" ? e.step
-  : e.type === "log" ? `${e.stream}: ${e.line}`
+  : e.type === "log" ? (e.stream ? `${e.stream}: ${e.line}` : e.line)
   : e.event || e.detail || e.type;
 function eventRows(evs, policy) {
   return `<div class="rows ev">${evs.map(e => {

@@ -4,6 +4,7 @@ and data proof, and the VM step (a fake `ssh` on PATH, a fake test site): what r
 asked, how its answers are checked."""
 import asyncio
 import gzip
+import io
 import json
 import os
 import sys
@@ -75,6 +76,18 @@ class ProdRefusal(unittest.TestCase):
             for method in ("POST", "PUT", "DELETE"):
                 with self.assertRaises(PermissionError):
                     src.call("/api/resource/Demo%20Service%20Request/DSR-2026-0001", method=method, body={})
+
+    def test_only_production_is_rate_limited(self):
+        class Resp(io.BytesIO):
+            status, headers = 200, {}
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(ft.urllib.request, "urlopen", lambda *a, **k: Resp(b"{}")):
+            tokens = Path(d) / "t.json"
+            tokens.write_text(json.dumps({"demo.local": "k:s", "test.local": "k:s"}))
+            for role, slow in (("source", True), ("test", False)):
+                site, t = ft.Site({**CFG, "tokens": str(tokens)}, role), time.monotonic()
+                for _ in range(4):
+                    site.call("/api/method/frappe.client.get_count")
+                self.assertEqual(time.monotonic() - t >= 3 * ft.MIN_INTERVAL_S, slow, role)
 
     def test_ssh_to_another_host_refused(self):
         with self.assertRaisesRegex(ValueError, "ssh"):

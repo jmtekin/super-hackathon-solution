@@ -48,9 +48,10 @@ import guard
 CONFIG = Path(os.environ.get("RESTOREGUARD_FRAPPE", guard.HERE / "frappe.json"))
 DB_IMAGE = os.environ.get("RESTOREGUARD_MARIADB_IMAGE", "mariadb:11.8")
 DB_MEMORY = "512m"  # the data dir is tmpfs inside this cap: a full ERPNext site is ~200 MB loaded
-MIN_INTERVAL_S = 0.5  # one call to Abdullah's VM at a time, at most two a second
+MIN_INTERVAL_S = 0.5  # production serves real users: one call to it at a time, at most two a second
+TEST_PARALLEL = 8  # the test sites are ours: get_count of ~135 doctypes 8 at a time (~2 s; serialised it was ~68 s)
 RESTORE_TIMEOUT_S = 600  # bench restore + migrate of the whole site on the VM
-# the sandbox, the VM's restore (twice on drift: native, then bridged), then ~135 get_count calls at MIN_INTERVAL_S
+# the sandbox, the VM's restore (twice on drift: native, then bridged), then the test site's checks
 CELL_TIMEOUT = guard.CELL_TIMEOUT + 2 * RESTORE_TIMEOUT_S + 180
 MAX_SQL_BYTES = 4 << 30
 FILE = re.compile(r"^(\d{8}_\d{6}-[\w.-]+-database)\.sql\.gz$")
@@ -135,9 +136,10 @@ class Site:
         global _last_call
         if method != "GET" and not self.writable:
             raise PermissionError(f"{method} to {self.site} refused: production is read only")
-        with _calls:
-            time.sleep(max(0.0, _last_call + MIN_INTERVAL_S - time.monotonic()))
-            _last_call = time.monotonic()
+        if not self.writable:
+            with _calls:
+                time.sleep(max(0.0, _last_call + MIN_INTERVAL_S - time.monotonic()))
+                _last_call = time.monotonic()
         req = urllib.request.Request(self.url + path, method=method,
                                      data=None if body is None else json.dumps(body).encode(),
                                      headers={"Authorization": f"token {self.token}", "Accept": "application/json",
@@ -653,12 +655,15 @@ async def _vm(cell, fields, rows, want, bridge=None):
     user = await asyncio.to_thread(test.method, "frappe.auth.get_logged_user")
     if not cell.check(f"{site} token API answers (get_logged_user)", user, f"user {user}"):
         return _fail(cell, f"{site} does not answer after the restore")
-    counts = {}
-    for i, d in enumerate(m["row_counts"], 1):  # ~70 s at the VM's rate: a progress line every 15
-        counts[d] = await asyncio.to_thread(test.method, "frappe.client.get_count", doctype=d)
-        if i % 15 == 0 or i == len(m["row_counts"]):
-            cell.emit({"type": "log", "stream": site, "line": f"get_count: {i} of {len(m['row_counts'])} doctypes counted"})
-    off = [f"{d}: {n} vs source {m['row_counts'][d]}" for d, n in counts.items() if n != m["row_counts"][d]]
+    counts, gate = {}, asyncio.Semaphore(TEST_PARALLEL)
+
+    async def count(d):
+        async with gate:
+            counts[d] = await asyncio.to_thread(test.method, "frappe.client.get_count", doctype=d)
+        if len(counts) % 45 == 0 or len(counts) == len(m["row_counts"]):
+            cell.emit({"type": "log", "stream": site, "line": f"get_count: {len(counts)} of {len(m['row_counts'])} doctypes counted"})
+    await asyncio.gather(*map(count, m["row_counts"]))
+    off = [f"{d}: {counts[d]} vs source {n}" for d, n in m["row_counts"].items() if counts[d] != n]
     cell.check(f"on {site}: row counts match the source ({len(counts)} doctypes)", not off,
                "; ".join(off[:5]) or f"get_count on {site} vs {cfg['source']['site']} at download")
     got = await asyncio.to_thread(test.records, doctype, [f["fieldname"] for f in want])
