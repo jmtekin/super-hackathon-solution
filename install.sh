@@ -27,7 +27,11 @@ HASH="$(printf "%s\n" "$WRITE_PASSWORD" | caddy hash-password)"
 umask 077
 cat > /etc/caddy/Caddyfile <<CADDY
 $PUBLIC_HOST {
-	encode gzip
+	# never gzip the live event streams (SSE): gzip buffers them until the run ends
+	@compress {
+		not path_regexp (/events|/stream)\$
+	}
+	encode @compress gzip
 	@write not method GET HEAD
 	basicauth @write {
 		${WRITE_USER:-team} $HASH
