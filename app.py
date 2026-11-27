@@ -666,7 +666,8 @@ async def matrix_drill(run):
         explanation = await explain(run, {
             "run": "Backup x app version compatibility matrix", "verdict": verdict,
             "cells": [{"backup": c["b"]["file"], "app": c["a"]["title"], "state": c["state"],
-                       "detail": c.get("detail", "")[:300]} for c in cells]})
+                       "detail": c.get("detail", "")[:300], "suite": [f"{t['test']}: {t['detail']}" for t in c.get("tests", [])]}
+                      for c in cells]})
     except Exception as e:
         verdict = verdict or {"level": "failed", "headline": "Matrix aborted.", "reason": str(e)[:300]}
         run.step("Error", "fail", detail=str(e)[:300])

@@ -240,6 +240,7 @@ function pick(id) {
   document.body.classList.toggle("chainmode", sel.kind === "chain");
   document.body.classList.toggle("matrixmode", sel.kind === "matrix");
   $("up").classList.toggle("hide", sel.kind !== "matrix");
+  $("run").textContent = sel.kind === "matrix" ? "Run the matrix" : "Run restore drill";
   document.querySelectorAll(".fx").forEach(el => el.classList.toggle("sel", el.dataset.id === sel.id));
   timeout = sel.timeout;
   $("ptimeout").querySelector("em").textContent = `${timeout} s, then destroyed`;

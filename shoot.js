@@ -22,6 +22,7 @@ const fixtures = process.argv.slice(3).length ? process.argv.slice(3) : ['matrix
       await page.waitForSelector('.mc.healing', { timeout: 60000 });
       await page.screenshot({ path: path.join(__dirname, 'shots', `${fx}-healing.png`) });
       await page.waitForSelector('#b-cap.on', { timeout: 60000 });
+      await page.$eval('#matrix', (e) => e.scrollIntoView());
       await page.waitForTimeout(400);
       await page.screenshot({ path: path.join(__dirname, 'shots', `${fx}-containment.png`) });
     }
