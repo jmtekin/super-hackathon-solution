@@ -1,96 +1,123 @@
 # BackupAirlock
 
-Every ERP backup is proved restorable before anyone needs it: each new backup is restored into a
-throwaway, network-less test instance, checked against the source's own counts and business rules,
-and run against every app version. Schema drift between backup and app is bridged by a migration a
-Vultr Serverless Inference model writes and the checks then verify; a poisoned dump is quarantined.
-Nothing is ever restored into production.
+**Every ERP backup is proved restorable before anyone needs it.** Most companies learn their backup is broken during the outage: the file exists, but it is truncated, it no longer fits the upgraded app, or it carries a payload. BackupAirlock picks up each new backup from a production ERP, restores it into sealed sandboxes and real test copies, and issues a verdict with evidence:
 
-Vultr Agent Runtime Hackathon, 27 Nov 2026. ERP: Abdullah (Frappe/ERPNext on his Vultr VM). Runtime and
-tests: George. UI: Jonas. Team spec: [docs/BACKUPAIRLOCK-SPEC.md](docs/BACKUPAIRLOCK-SPEC.md).
+1. **Verify.** Checksum, static scan, full restore in a network-less sandbox, then the ERP's own counts and business rules. A real Frappe/ERPNext backup: **25/25 checks in 36.8 s**, restored for real into `test.local`.
+2. **Heal.** When the app was upgraded and an old backup no longer fits, a Vultr Serverless Inference model (GLM-5.3) writes a bridge migration; the checks, not the model, decide if it worked. Upgraded ERP (field renamed, new required field): **healed in round 1, 28/28 checks**.
+3. **Restore.** Only into test copies, never production. Fault kit: **7/7 Frappe and 6/6 Postgres faults caught** (bit flip, truncation, deleted rows, wrong totals, poisoned dump), none reached a test site; the poisoned dump is **quarantined in 8.5 s**.
+
+**Live:** https://65-20-116-145.sslip.io/ (public, and judges can press Run: one run at a time, only into test copies; [/overview](https://65-20-116-145.sslip.io/overview) shows the whole flow and the live policies).
+**Built on Vultr:** two Vultr Cloud Compute VMs (BackupAirlock: vc2-4c-8gb, Stockholm; the ERP: Frappe 16 + ERPNext) and Vultr Serverless Inference for every LLM call (`glm-5.3` writes bridges and repairs, `deepseek-v4.1-flash-1017` as fallback; `ui/app.py:47-48`).
+
+Vultr "Agent Runtime" hackathon, Stockholm, 27 Nov 2026. For a map of the code with file:line evidence, see [CLAUDE.md](CLAUDE.md).
+
+## The agent loop
+
+The hackathon theme is goal -> model plans -> acts in a container -> verified -> human approves. In BackupAirlock:
+
+| Theme step | BackupAirlock |
+|---|---|
+| Goal | "this backup must restore into every app version we run" |
+| Model plans and acts | GLM-5.3 on Vultr Serverless Inference writes the fix: from the backup's schema, the app's schema and the failing checks it writes bridge SQL, and repairs it from the next failure (prompts: `restoreguard/frappe_target.py:65-70`, `restoreguard/guard.py:62-69`). In the drill it also plans the restore script itself (`ui/app.py:83`). The pipeline around it is fixed on purpose: the model chooses the fix, never the verdict |
+| In a container | every restore and every bridge runs in a fresh Docker sandbox: `--network none`, read-only root, memory, CPU and pid caps, destroyed after |
+| Verified | deterministic checks (counts vs production, business rules, app boot, login); a failed check goes back to the model, up to 3 rounds |
+| Human approves | structural: there is no code path that writes production (`restoreguard/frappe_target.py:135-138`). Test copies are restored unattended; restoring production stays the operator's call, made from the latest restorable backup, its certificate and the bridge SQL to review |
 
 ## Architecture
 
+```mermaid
+flowchart LR
+  subgraph ERP["ERP VM (Vultr Cloud Compute)"]
+    P["demo.local<br/>PRODUCTION<br/>read only"]
+    T1["test.local<br/>app v1 test copy"]
+    T2["test2.local<br/>app v2 test copy"]
+  end
+  subgraph BA["BackupAirlock VM (Vultr Cloud Compute)"]
+    W["runtime<br/>restoreguard/api.py<br/>watcher + queue + SSE"]
+    S["sandbox<br/>MariaDB / Postgres<br/>no network, read-only root"]
+    C["console<br/>ui/app.py + ui/static"]
+  end
+  V["Vultr Serverless Inference<br/>glm-5.3"]
+  P -- "GET: backup file + counts" --> W
+  W --> S
+  S -- "failed check" --> V
+  V -- "bridge SQL" --> S
+  S -- "passed" --> W
+  W -- "forced-command SSH: bench restore" --> T1
+  W -- "bench restore + bridge" --> T2
+  W --> C
+  C -- "HTTPS (Caddy)" --> U["Judge / operator"]
 ```
- ERP VM (Frappe 16 + ERPNext)                     BackupAirlock VM (Vultr, this repo)
- ┌──────────────────────────────┐   GET only     ┌───────────────────────────────────────────────┐
- │ demo.local :80  PRODUCTION   │ ─────────────► │ restoreguard/api.py  watcher + queue, :8600    │
- │   Backups page, /backups/*,  │  backup .sql.gz│   guard.py / frappe_target.py: one cell =      │
- │   get_count (manifest)       │  + counts      │   checksum -> static scan -> restore in sandbox │
- │                              │                │   (Postgres 16 / MariaDB 11.8, --network none, │
- │ test.local :8080  TEST COPY  │ ◄───────────── │   read-only root, mem/pid caps) -> counts +    │
- │   only site ever written     │  token API     │   rules -> app boot probe -> replay on test    │
- └──────────────────────────────┘                │        │ drift: GLM-5.3 writes bridge SQL,     │
-                                                 │        │ re-verified, up to 3 rounds           │
-                                                 │        ▼                                       │
- Browser ── :80 ───────────────────────────────► │ ui/app.py  console + drill, /rg/* read-only    │
-                                                 │   proxy to the runtime, certificates, incidents│
-                                                 └──────────────────┬────────────────────────────┘
-                                                                    │ OpenAI-compatible
-                                                                    ▼
-                                                   Vultr Serverless Inference (api.vultrinference.com)
-```
 
-The verdict comes from the sandbox outcome and the checks only; the model writes restore scripts,
-bridge migrations and prose, never the verdict.
+Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Layout
+## How it works
 
-| Path | What |
-|---|---|
-| `restoreguard/` | the runtime: `api.py` (watcher, queue, JSON/SSE API), `guard.py` (Postgres cell), `frappe_target.py` (Frappe target), `faults.py` (fault kit), `contract/` (manifest + rules SQL shared with the backup job), `standin/` (stand-in Nordvik app until the real ERP replaced it). Details: [restoreguard/README.md](restoreguard/README.md) |
-| `ui/` | the console (`static/index.html`: Backups tab = runtime, Drill tab = compatibility matrix) and its FastAPI app with the BackupAirlock drill, hardened sandbox runner and fixtures. Details: [ui/README.md](ui/README.md) |
-| `tests/` | unit tests of the parts that need no sandbox (production refusal, malformed/missing/unreadable backups, every rule's failure case); `tests/e2e/` end-to-end suite against the running runtime |
-| `e2e.sh`, `demo.sh` | e2e suite (20 tests, ~3.5 min, one command); live demo run (~3 min, see Demo script) |
-| `docs/` | team spec, pitch, UI spec checklist, design references and screenshots |
-| `install.sh`, `.env.example` | one-VM install |
+1. **Watch.** Every 120 s the runtime reads production's Backups page (GET only) and downloads any new `bench backup` file. Right after the download it reads `get_count` for all 135 doctypes: that is the manifest the restore must match.
+2. **Verify the file.** SHA-256, gzip stream and trailer, static scan of the SQL for code (outside string literals).
+3. **Restore in the sandbox.** Full site restore into a MariaDB 11.8 container with no network, read-only root, data on tmpfs, 512 MB. Row counts per doctype vs production, business rules from the dump's own DocField metadata (required fields, `total_cost = hours x rate`).
+4. **Heal if needed.** If the test site runs a newer app (different schema), the native restore is checked first; if the data is wrong, GLM-5.3 writes an UPDATE-only bridge, which is policy-checked, tried in the sandbox, and proved by data (every dropped field's values carried row for row into a new field, the app's rules hold).
+5. **Restore for real.** Only after the sandbox passes: `bench --site test.local restore` over a forced-command SSH key that can restore that one site and nothing else. Then the test site is checked live: login, token API, counts for all doctypes vs production, records read back field by field, rules.
+6. **Certify.** Verdict (`native`, `healed`, `failed`, `quarantined`), every check with its time, the bridge SQL, the run log, a screenshot of the restored ERP, and a hashed certificate.
 
-## Run on one Vultr VM
+The same runtime also proves Postgres backups of a stand-in ERP (Nordvik Handel AB) against two app versions, and the console has a separate compatibility-matrix drill (3 dumps x 2 app versions, SQLite). Scenarios: [docs/DEMO.md](docs/DEMO.md).
 
-Ubuntu 24.04, 2 GB RAM or more, as root:
+## Security model
+
+- **Production is read only.** `Site.call` refuses any non-GET to production (`restoreguard/frappe_target.py:138`); a config whose test site is on port 80, equals the source or is named `demo.local` refuses to load (`frappe_target.py:99-110`).
+- **Restores go only into test copies.** The SSH key's forced command hardcodes the test site and accepts only a backup file name; the sandbox runs first, so a bad backup never reaches a test site.
+- **Sandbox.** `--network none --read-only --cap-drop ALL --security-opt no-new-privileges`, memory and pid caps, non-root uid, tmpfs data, wall-clock timeout, removed in every outcome (`restoreguard/guard.py:229-231`, `frappe_target.py:303-305`, `ui/sandbox.py:96-97`). No secrets inside; the drill image holds only a honey file.
+- **Quarantine.** Any containment signal (network, rootfs write, honey read, OOM, timeout) or static-scan finding = quarantined, not restored (`guard.py:58`, `guard.py:360`).
+- **The model never decides.** Verdicts come from sandbox outcomes and SQL checks; model output (bridge SQL) is policy-checked before it runs (`frappe_target.py:391`).
+
+Full model, threats and gaps: [docs/SECURITY.md](docs/SECURITY.md).
+
+## Run it
+
+On a fresh Ubuntu 24.04 Vultr VM, as root:
 
 ```sh
 git clone https://github.com/jmtekin/super-hackathon-solution.git && cd super-hackathon-solution
-cp .env.example .env    # fill in VULTR_INFERENCE_KEY, and the FRAPPE_* lines for the Frappe target
+cp .env.example .env    # VULTR_INFERENCE_KEY; PUBLIC_HOST for HTTPS; FRAPPE_* for the ERP target
 sh install.sh
 ```
 
-It installs Docker and Python, builds the sandbox and stand-in images, pulls `postgres:16-alpine` and
-`mariadb:11.8`, and starts `restorer.service` (console, public on `RESTORER_PORT`, default 80) and
-`restoreguard.service` (runtime, `127.0.0.1:8600`). Secrets go from `.env` into `/etc/restorer.env` and
-`/etc/restoreguard/` (mode 600) and never into a sandbox. `.env` is gitignored.
+`install.sh` installs Docker, Python and Caddy, builds the sandbox and stand-in images, pulls `postgres:16-alpine` and `mariadb:11.8`, moves secrets from `.env` into `/etc/` (mode 600, never into a sandbox) and starts `restorer.service` (console) and `restoreguard.service` (runtime, `127.0.0.1:8600`). Re-running it is safe. Without `FRAPPE_SOURCE_URL` it runs on the stand-in Postgres backups only. Component details: [restoreguard/README.md](restoreguard/README.md) (runtime), [ui/README.md](ui/README.md) (console, drill, runtime API).
 
-HTTPS: set `PUBLIC_HOST` (e.g. `<ip-with-dashes>.sslip.io`) and `WRITE_PASSWORD`. Caddy then gets the
-certificate and serves the console on `https://PUBLIC_HOST/`; the console moves to `127.0.0.1:8530`.
-Reading is public, every write (Run, demo scenarios, reset, Run drill, Add .sql, rerun) asks for basic auth `WRITE_USER`.
+## Demo
 
-Frappe target: set `FRAPPE_SOURCE_URL`/`FRAPPE_TEST_URL` and the two `api_key:api_secret` tokens. The
-runtime refuses to start the target if the test URL is on port 80, equals the source, or names
-`demo.local`. test.local is restored over the forced-command SSH key in `FRAPPE_SSH_KEY_FILE`, against
-the pinned host key `FRAPPE_SSH_HOST_KEY`. Without `FRAPPE_SOURCE_URL` it runs on the stand-in backups only.
+Three buttons on the live page, each on the newest real ERP backup ([docs/DEMO.md](docs/DEMO.md)):
 
-Tests, from the repo root: `python3 -m unittest tests/test_guard.py tests/test_frappe.py` (needs
-`ui/requirements.txt` installed, since the runtime imports the console's model helpers).
+| Scenario | What happens | Measured |
+|---|---|---|
+| Tonight's backup | restored into `test.local` (app v1), checked | native, 25/25, 36.8 s (106.5 s before the test-site checks ran in parallel) |
+| App upgraded | same backup on `test2.local` (app v2: field renamed, new required field); GLM bridge | healed round 1, 28/28, 56.7 s |
+| Bad backup arrives | poisoned copy | quarantined in 8.5 s, never restored |
 
-## Demo script (about 3 minutes)
+`./demo.sh` runs the four Postgres states (DR ready, not restorable, healed, quarantined) in about 3 minutes.
 
-`./demo.sh` drives the Backups tab live: it drops a good backup (DR ready), a corrupted one (not restorable), a
-schema-drift one (GLM bridge heals it on app 1.0.0) and a poisoned one (quarantined) into the runtime's watched folder,
-one at a time, with `PAUSE` s (default 20) of talking time after each verdict; `./demo.sh reset` clears its copies
-without restarting the runtime. Sources: the newest `restoreguard/backups/*_v1` and the fault kit's `faults/out/`
-(set `RG_HOME` if the runtime lives elsewhere). Not in parallel with `./e2e.sh` or `faults.py`.
+## Tests
 
+- `python3 -m unittest tests/test_guard.py tests/test_frappe.py`: 49 unit tests (production refusal, malformed/missing/unreadable backups, bridge policy, forced-command argv with a fake `ssh`, every rule's failure case). Needs `ui/requirements.txt`.
+- `./e2e.sh`: 20 end-to-end test cases (14 functions, 3 parametrized) against the running runtime (~3.5 min).
+- `python3 restoreguard/faults.py <good backup>`: the fault kit; exits 1 if any fault slips through.
 
-1. **The problem.** Open the console, Backups tab: every backup production made, each with a verdict.
-   "Backups that were never restored are hopes, not backups."
-2. **A real backup, proved.** Pick the newest Frappe backup: restored into a sandboxed MariaDB, counts
-   for every doctype match production's, the Demo Service Request rules hold (`total_cost` = hours x
-   rate), then replayed on `test.local`. Point at "restored into: test instance, production untouched".
-3. **Drift healed.** Drill tab, Run drill: 3 backups x app v1.0/v2.0. The old backup fails natively on
-   the new app (`no such column: move_type`), the model writes a bridge migration, the checks re-run in
-   a fresh sandbox, the cell turns ready; the bridge SQL is downloadable.
-4. **Poisoned dump.** Same matrix: the poisoned dump tries a network exfil, a rootfs write and a memory
-   bomb; all are blocked, the cell is quarantined, the incident log names each signal.
-5. **Fault kit.** `python3 restoreguard/faults.py <good backup>`: bit flip, truncation, deleted rows,
-   `total_cost` x10, poisoned copy; the table shows every fault caught before it reaches `test.local`.
-6. **Proof.** Download the DR Readiness Certificate (`proof.html`) for the run.
+Results and how to reproduce: [docs/EVALUATION.md](docs/EVALUATION.md).
+
+## Team
+
+| Who | Role |
+|---|---|
+| Jonas Harju | product, UI; runtime and tests built with his Claude Code agent |
+| Abdullah Salih | the ERP: Frappe/ERPNext on Vultr, production and test sites, the restore keys |
+| Vaibhav Jain | video |
+| Jonathan Moshe Tekin | team repo |
+
+## Limitations
+
+- Hardened Docker, not a microVM: Vultr's vc2 plans have no nested KVM. Swapping the `docker run` for Firecracker would change nothing else.
+- One sandbox at a time per VM (8 GB), so a backup on two app versions takes two cell times.
+- The demo ERP is small (1 Demo Service Request, 135 doctypes counted); the timing is dominated by `bench restore` and `bench migrate`, not by data size.
+- The Frappe heal covers field renames and new required fields of one doctype (UPDATE-only bridges); structural changes beyond that fail as `no working bridge`.
+- No login: anyone can start a run on the live site (by design for judging). The runtime API listens on 127.0.0.1; the console proxies only reads, rerun and Run (`ui/app.py:920`), and runs queue one at a time.
+- The status is DR READY when any app version passes; the per-version cells show which one.

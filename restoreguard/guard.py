@@ -2,7 +2,7 @@
 
 A backup is only worth something if it restores, the books in it still add up
 and the app runs on it, so every backup the ERP's job writes (a pg_dump -Fc
-plus a manifest, contract in projects/restorer/handoff/PROMPT-FOR-MOHAMED.md)
+plus a manifest, contract in contract/)
 goes through the same cell for every known app version:
 
   checksum -> static scan -> restore in a fresh Postgres 16 sandbox -> row
@@ -10,7 +10,7 @@ goes through the same cell for every known app version:
   image on the restored database and hit /health, /api/dashboard, login ->
   on a schema/app mismatch a GLM-5.3 bridge migration, repaired up to 3 rounds
 
-The sandbox is hardened Docker like BackupAirlock's (projects/restorer,
+The sandbox is hardened Docker like BackupAirlock's drill (../ui,
 whose LLM helpers and containment signals are reused here): no network, caps,
 read-only root, the dump mounted read-only, data on a size-capped tmpfs, a
 wall-clock limit, removed in every outcome and the removal checked. The app
