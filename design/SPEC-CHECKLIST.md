@@ -26,13 +26,11 @@ Spec = BACKUPAIRLOCK-SPEC.md (teammate's), plus Jonas's 7-step plan (RESTOREGUAR
 | Sandbox flags (network none, read-only, caps, 512 MB, pids, 20 s) | Panel "Sandbox" line + certificate "Sandbox policy" | done |
 | Plain-English rule -> assertion (optional) | none | missing (not in either engine) |
 | Jonas step 5: dashboard that shows the backups | Backups tab = every watched backup, newest first, with time, schema, size, verdict | done |
-| Jonas step 7: schema change, bit flips | Shown as rows when the runtime's fault kit drops them into backups/ | waits on runtime (faults/ empty at 14:10) |
-| George 13:55: restore never into prod, target explicit | Panel line "restored into: test instance <sandbox>, destroyed after the checks"; header "each restored into a throwaway test instance, never production"; no restore-to-prod action anywhere; "(production)" column label removed | done in UI; reads `target`/`restore_target` from the runtime if it adds one, else the sandbox name |
+| Jonas step 7: schema change, bit flips | Shown as rows when the runtime's fault kit drops them into backups/ | done: the fault kit's rows (truncated, rows deleted, poisoned, bit flip, stale bit flip, schema v2) show with their reasons (shots backups-*) |
+| George 13:55: restore never into prod, target explicit | Panel line "restored into: test instance <sandbox>, destroyed after the checks"; header "each restored into a throwaway test instance, never production"; no restore-to-prod action anywhere; "(production)" column label removed | done: Backups reads the runtime's `restored_into` (instance, Postgres sandbox, `production_touched: false` -> "production untouched"); Drill names the sandbox that held the test instance |
 | Rerun a backup | Backups panel "Run again" (POST rerun via proxy) | done |
 | Phone layout | <=900 px: matrix stacks per backup, two cells side by side with the app name in each cell, panel below and scrolled to on tap; certificate table as stacked rows; no horizontal scroll at 390 | done |
 
 API changes I would ask the runtime for (not made; its code is not mine):
-- `target` per cell, e.g. `"test instance rg-xxxx (app 2.0.0, own DB, no network)"`, so the UI needs no sandbox-name inference.
 - `sha256` in `/api/backups` summaries (now only in the detail).
 - An incident endpoint for quarantined backups (the drill has `/incident.json`).
-- A systemd unit: the runtime listens on 127.0.0.1:8600 as a plain process; if it stops, the Backups tab says "RestoreGuard runtime unavailable".

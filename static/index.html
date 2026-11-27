@@ -482,7 +482,7 @@ function containment(sigs, scan, events) {
   if (!sigs.length && !(scan || []).length) return "";
   return `<section><h3><span>Containment</span><span>${sigs.length} signals</span></h3>${pol.length ? eventRows(pol, true)
     : `<div class="rows">${sigs.map(s => `<div><span class="m no">●</span><span>${esc(s.signal)}</span><span></span></div>`).join("")}</div>`}</section>
-    ${(scan || []).length ? `<section><h3><span>Static scan of the dump</span><span>${scan.length}</span></h3><div class="code">${esc(scan.map(f => typeof f === "string" ? f : JSON.stringify(f)).join("\n"))}</div></section>` : ""}`;
+    ${(scan || []).length ? `<section><h3><span>Static scan of the dump</span><span>${scan.length}</span></h3><div class="code">${scan.map(f => typeof f === "string" ? esc(f) : `line ${esc(f.line)}  ${esc(f.text)}\n        ${esc(f.why)}`).join("\n")}</div></section>` : ""}`;
 }
 function bridgeSection(bs, llm) {
   if (!bs.length) return "";
@@ -514,7 +514,7 @@ function eventRows(evs, policy) {
 function targetLine(target, sandbox, destroyed) {
   const t = target ? [target.instance, target.database?.replace(/^.*?(Postgres[^,]*?) \S+(, .*)?$/, "$1$2")].filter(Boolean).join(" · ")
     : sandbox ? `test instance ${sandbox}` : "test instance (sandbox)";
-  return `<dl class="kv target"><dt>restored into</dt><dd>${esc(t)}${destroyed === false ? ", NOT destroyed" : destroyed ? ", destroyed after the checks" : ""}</dd></dl>`;
+  return `<dl class="kv target"><dt>restored into</dt><dd>${esc(t)}${destroyed === false ? ", NOT destroyed" : destroyed ? ", destroyed after the checks" : ""}${target?.production_touched === false ? " · production untouched" : ""}</dd></dl>`;
 }
 const policyLine = p => p ? [p.runtime, `network ${String(p.network).split(" ")[0]}`, `rootfs ${p.rootfs}`, `${p.memory} RAM`,
   `${p.cpus} CPU`, `pids ${p.pids_limit}`, `caps ${p.capabilities}`, `${p.timeout_s} s cap`].join(" · ") : "";
