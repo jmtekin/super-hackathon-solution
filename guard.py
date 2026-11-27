@@ -68,8 +68,30 @@ BRIDGE_REPAIR_SYSTEM = """You are RestoreGuard's bridge migration repairer. A br
 Reply with a line starting CAUSE: (one sentence), then the full corrected SQL in one ```sql block."""
 
 
+# The only database an app under test ever sees: the sandbox's own, on its loopback.
+TEST_DSN = "postgresql://postgres@127.0.0.1:5432/restored"
+APP_KEYS = {"version", "image", "schema", "port", "migrations", "label"}
+
+
+def check_app(a):
+    """Refuse an app entry that could point a restore anywhere but a throwaway test instance (Jonas 13:55:
+    "you cant restore into prod"). The runtime has no setting for a target database at all; this
+    makes sure nobody adds one through apps.json."""
+    extra = set(a) - APP_KEYS
+    if extra:
+        raise ValueError(f"app {a.get('version')}: refused keys {', '.join(sorted(extra))}: restores go only into "
+                         "a test instance RestoreGuard creates, never a configured database or host")
+    if missing := APP_KEYS - {"label"} - set(a):
+        raise ValueError(f"app {a.get('version')}: missing {', '.join(sorted(missing))}")
+    for k, v in a.items():
+        if isinstance(v, str) and re.search(r"postgres(ql)?://|\bhost=|@[\w.-]+:\d+/", v, re.I):
+            raise ValueError(f"app {a['version']}: {k} looks like a database address; refused, restores go only "
+                             "into a test instance")
+    return a
+
+
 def apps():
-    return json.loads((HERE / "apps.json").read_text())
+    return [check_app(a) for a in json.loads((HERE / "apps.json").read_text())]
 
 
 def sha256_file(path):
@@ -118,9 +140,14 @@ class Cell:
         self.emit({"type": "check", "check": name, "pass": bool(ok), "detail": detail})
         return ok
 
+    def restored_into(self):
+        return {"instance": f"test instance {self.name}", "database": f"Postgres 16 sandbox {self.name}, network none",
+                "app": f"{self.app.get('image')} as {self.name}-app, in the sandbox's network namespace",
+                "dsn": TEST_DSN, "production_touched": False}
+
     def result(self):
         return {"cell": self.id, "backup": self.backup["id"], "app_version": self.app["version"],
-                "state": self.state, "reason": self.reason, "checks": self.checks, "timings": self.timings,
+                "restored_into": self.restored_into(), "state": self.state, "reason": self.reason, "checks": self.checks, "timings": self.timings,
                 "signals": sorted(self.signals), "static_scan": self.findings, "bridges": self.bridges,
                 "llm_calls": self.llm_calls, "elapsed_s": round(time.monotonic() - self.t0, 2), "events": self.events}
 
@@ -160,7 +187,8 @@ class Sandbox:
         rc, out, err = await docker(*args)
         if rc != 0:
             raise RuntimeError(f"sandbox did not start: {err.decode(errors='replace')[-300:]}")
-        self.cell.emit({"type": "sandbox", "phase": "started", "name": self.name, "policy": policy()})
+        self.cell.emit({"type": "sandbox", "phase": "started", "name": self.name, "policy": policy(),
+                        "restored_into": self.cell.restored_into()["instance"]})
         for _ in range(60):
             rc, _, _ = await docker("exec", self.name, "pg_isready", "-q", "-h", "/var/run/postgresql")
             if rc == 0:
@@ -185,12 +213,7 @@ class Sandbox:
         rc, out, err = await docker("exec", *(["-i"] if stdin is not None else []), self.name, *cmd,
                                     stdin=stdin, timeout=timeout)
         text = err.decode(errors="replace")
-        for line in text.splitlines():
-            self.cell.emit({"type": "log", "stream": "stderr", "line": line[:2000]})
-            for sig, pattern, event in airlock_sandbox.SIGNS:
-                if pattern.search(line) and sig not in self.cell.signals:
-                    self.cell.signals.add(sig)
-                    self.cell.emit({"type": "policy", "signal": sig, "event": event, "detail": line[:300]})
+        self._signals(text, "stderr")
         if rc == "timeout" and "timeout" not in self.cell.signals:
             self.cell.signals.add("timeout")
             self.cell.emit({"type": "policy", "signal": "timeout", "event": f"TIMEOUT: {timeout} s, sandbox killed"})
@@ -198,6 +221,21 @@ class Sandbox:
             self.cell.signals.add("memory")
             self.cell.emit({"type": "policy", "signal": "memory", "event": f"MEMORY CAP HIT: {PG_MEMORY}, process killed"})
         return rc, out.decode(errors="replace"), text
+
+    def _signals(self, text, stream, keep=None):
+        for line in text.splitlines():
+            hits = [x for x in airlock_sandbox.SIGNS if x[1].search(line)]
+            if keep is None or hits or keep.search(line):
+                self.cell.emit({"type": "log", "stream": stream, "line": line[:2000]})
+            for sig, _, event in hits:
+                if sig not in self.cell.signals:
+                    self.cell.signals.add(sig)
+                    self.cell.emit({"type": "policy", "signal": sig, "event": event, "detail": line[:300]})
+
+    async def server_log(self):
+        """Programs a dump starts (COPY ... TO PROGRAM) write to the server's log, not to pg_restore's stderr."""
+        _, out, err = await docker("logs", self.name)
+        self._signals((out + err).decode(errors="replace"), "server", keep=re.compile(r"ERROR|FATAL|PANIC"))
 
     def psql(self, sql, db="restored", timeout=60):
         return self.exec("psql", "-X", "-q", "-At", "-v", "ON_ERROR_STOP=1", "-h", "/var/run/postgresql",
@@ -284,6 +322,7 @@ async def _cell(cell):
         rc, _, err = await sb.exec("pg_restore", "--exit-on-error", "--no-owner", "-h", "/var/run/postgresql",
                                    "-U", "postgres", "-d", "restored", "/input/backup.dump", timeout=150)
         _timed(cell, "restore", t)
+        await sb.server_log()
         if not cell.check("restore completes", rc == 0, airlock._last_line(err)):
             cell.state, cell.reason = "failed", f"restore failed: {airlock._last_line(err)}"
             return
@@ -330,7 +369,7 @@ async def _app_probe(cell, sb, when):
                               "--memory", APP_MEMORY, "--memory-swap", APP_MEMORY, "--cpus", "1", "--pids-limit", "64",
                               "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
                               "--tmpfs", "/tmp:rw,size=16m",
-                              "-e", "DATABASE_URL=postgresql://postgres@127.0.0.1:5432/restored", a["image"])
+                              "-e", f"DATABASE_URL={TEST_DSN}", a["image"])
     if rc != 0:
         return False, f"app image did not start: {err.decode(errors='replace')[-200:]}"
     status, body = None, ""
@@ -450,6 +489,7 @@ def certificate(backup, cells):
             "status": ("QUARANTINED: DO NOT RESTORE TO PROD" if "quarantined" in states else
                        "DR READY" if states & {"native", "healed"} else "NOT RESTORABLE"),
             "app_versions": [{"app": c["app_version"], "result": c["state"], "detail": c["reason"],
+                              "restored_into": c["restored_into"]["instance"],
                               "bridge": c["bridges"][-1]["name"] if c["state"] == "healed" else None,
                               "bridge_sha256": c["bridges"][-1]["sha256"] if c["state"] == "healed" else None,
                               "control_plane_checks": [{k: x[k] for k in ("check", "pass", "detail")} for x in c["checks"]]}

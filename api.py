@@ -125,6 +125,7 @@ async def worker():
 @asynccontextmanager
 async def lifespan(_):
     global queue
+    guard.apps()  # a config that could restore into anything but a test instance stops the service here
     queue = asyncio.Queue()
     for f in sorted(RESULTS.glob("*.json")) if RESULTS.exists() else []:
         b = json.loads(f.read_text())
