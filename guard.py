@@ -108,7 +108,8 @@ class Cell:
         self.name = f"rg-{uuid.uuid4().hex[:10]}"
 
     def emit(self, ev):
-        ev = {"cell": self.id, "t": round(time.monotonic() - self.t0, 2), **ev}
+        ev = {"cell": self.id, "backup": self.backup["id"], "app_version": self.app["version"],
+              "t": round(time.monotonic() - self.t0, 2), **ev}
         self.events.append(ev)
         self._emit(ev)
 
