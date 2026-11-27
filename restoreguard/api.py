@@ -17,7 +17,9 @@ import re
 import time
 import urllib.request
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
@@ -323,9 +325,10 @@ async def new_run(body: dict = Body(...)):
 
 async def _inject(b, fault):
     now = time.time()
-    if b.get("kind") == "frappe":  # production's own stamp style: site-local time, so it sorts with the real ones
+    if b.get("kind") == "frappe":  # production's own stamp style: the site's time zone, not this VM's UTC
         site = b["id"][:-len("-database")].split("-", 1)[1]
-        stem, out = f"{time.strftime('%Y%m%d_%H%M%S', time.localtime(now))}-{site}{RUN_MARK}{fault}-database", FRAPPE_DIR
+        stamp = datetime.fromtimestamp(now, ZoneInfo(os.environ.get("RESTOREGUARD_FRAPPE_TZ", "Europe/Stockholm"))).strftime("%Y%m%d_%H%M%S")
+        stem, out = f"{stamp}-{site}{RUN_MARK}{fault}-database", FRAPPE_DIR
     else:
         version = b["id"].rsplit("_v", 1)[1]
         stem, out = f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime(now))}{RUN_MARK}{fault}_v{version}", DIRS[0]

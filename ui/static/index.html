@@ -129,9 +129,10 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
 .brand .msg{font-size:12px;color:var(--ink-2);max-width:360px;text-align:right}
 .brand .msg.err{color:var(--warn)}
 .runp{position:absolute;right:var(--s7);top:calc(100% + var(--s2));z-index:5;width:400px;max-height:calc(100dvh - 96px);overflow:auto;display:grid;gap:var(--s4);
-  padding:var(--s4);background:var(--surface);border:1px solid var(--line-2);border-radius:4px;box-shadow:0 12px 32px rgba(0,0,0,.45)}
+  padding:var(--s4);background:var(--surface);border:1px solid var(--line-2);border-radius:4px;box-shadow:0 12px 32px rgba(0,0,0,.45);font-weight:400}
 .runp h3{font-size:12px;line-height:16px;font-weight:600;color:var(--ink-2);margin-bottom:var(--s1)}
 .runp label{display:flex;align-items:center;gap:var(--s2);font-size:13px;line-height:28px;cursor:pointer}
+.runp label span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .runp label i{width:8px;height:8px;border-radius:50%;background:var(--c);flex-shrink:0}
 .runp label small{margin-left:auto;padding-left:var(--s3);font-size:12px;color:var(--strong);white-space:nowrap}
 .runp .bks{max-height:196px;overflow:auto;margin-right:calc(-1 * var(--s2));padding-right:var(--s2)}
@@ -781,7 +782,7 @@ function runPanel() {
   runP.targets ||= new Set(ts.map(t => t[0]));
   return `<div class="runp" id="runp" role="dialog" aria-label="Run parameters">
     <section><h3>Backups to check</h3><div class="bks">${ss.map(b => { const [c] = OV[ovState(b)] || ["c-idle"];
-      return `<label class="${c}"><input type="checkbox" name="bk" value="${esc(b.id)}"${runP.bks.has(b.id) ? " checked" : ""}><i></i>${esc(bkName(b))}<small>${esc(clock(b.created_at))}</small></label>`; }).join("")}</div></section>
+      return `<label class="${c}"><input type="checkbox" name="bk" value="${esc(b.id)}"${runP.bks.has(b.id) ? " checked" : ""}><i></i><span title="${esc(b.file)}">${esc(bkName(b))}</span><small>${esc(clock(b.created_at))}</small></label>`; }).join("")}</div></section>
     <section><h3>Restore into</h3><div class="opts">${ts.map(([id, name, sub]) =>
       `<label title="${esc(sub)}"><input type="checkbox" name="tg" value="${esc(id)}"${runP.targets.has(id) ? " checked" : ""}>${esc(name)}${sub ? `<small>${esc(sub)}</small>` : ""}</label>`).join("")}</div></section>
     <section><h3>Inject a fault</h3><div class="opts">${RUN_FAULTS.map(([id, name]) =>
