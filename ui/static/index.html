@@ -158,6 +158,7 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
 .term .t{text-align:right;color:var(--strong)}
 .term .hot{background:var(--hover);box-shadow:0 0 0 4px var(--hover);color:var(--ink)}
 .term .c-bad{color:var(--bad)}
+.term .step{margin-top:var(--s2);color:var(--ink);font-weight:600}
 .term pre{margin:0 0 var(--s1) 60px;font:inherit;color:var(--strong);white-space:pre-wrap;overflow-wrap:anywhere}
 .ck li b{font-size:12px;font-weight:400;color:var(--ink-2)}
 .ck li b span{color:var(--strong);margin-right:var(--s3)}
@@ -444,13 +445,17 @@ function rgStream() {
     if (!ev.cell) return;
     const L = rg.live[ev.cell] ||= {events: [], state: "running"};
     if (L.done) { L.events = []; L.done = false; }
+    if (!L.events.length) L.at0 = Date.now() - 1000 * (+ev.t || 0);
     L.events.push(ev); L.t = ev.t;
+    if (ev.type === "step") { L.doing = ev.step; L.doingAt = Date.now(); }
     if (ev.type === "check") L.step = ev.check;
     if (ev.type === "bridge") { L.state = "healing"; L.step = `bridge round ${ev.round}`; }
     if (ev.type === "verdict") { L.done = true; L.state = ev.state; L.step = ev.reason; rgRefresh(); }
-    if (view !== "drill") draw();
+    if (view !== "drill") drawSoon();
   };
 }
+// bench can print dozens of lines a second: one redraw per frame.
+const drawSoon = () => { drawSoon.f ||= requestAnimationFrame(() => { drawSoon.f = 0; draw(); }); };
 let rgTimer;
 function rgRefresh() {
   clearTimeout(rgTimer);
@@ -635,6 +640,7 @@ const evText = e => e.type === "check" ? `${e.pass ? "✓" : "✕"} ${e.check}${
   : e.type === "llm" ? `${e.model} ${e.purpose} ${e.phase}${e.latency_s ? `, ${e.latency_s} s` : ""}`
   : e.type === "bridge" ? `bridge ${e.name}, round ${e.round}`
   : e.type === "verdict" ? `verdict: ${e.state}, ${e.reason}`
+  : e.type === "step" ? e.step
   : e.type === "log" ? `${e.stream}: ${e.line}`
   : e.event || e.detail || e.type;
 function eventRows(evs, policy) {
@@ -704,15 +710,18 @@ function ovSplit(c) {
 }
 // Every check under Jonas's three terms (15:35 "Verify / Heal / Restore"). A check that a passing backup of the same kind
 // runs but this one never reached is skipped.
-// The stream's events of the shown cell (any cell of the backup before its details exist).
-const ovLive = (b, c) => Object.values(rg.live).find(L => L.events[0]?.backup === b.id && (!c || L.events[0].cell === c.cell));
+// The stream's events of the shown cell; with no cell, the one running now (a backup's cells run one after another).
+const ovLive = (b, c) => { const ls = Object.values(rg.live).filter(L => L.events[0]?.backup === b.id);
+  return c ? ls.find(L => L.events[0].cell === c.cell) : ls.find(L => !L.done) || ls.at(-1); };
 function ovChecks(b) {
   const run = ["running", "queued"].includes(b.status), done = ovCell(rg.details[b.id]);
   // While it runs, the previous run's results would read as this run's: only the stream's checks count.
-  const L = run && ovLive(b, done), evs = L && !L.done ? L.events : [];
+  const L = run && ovLive(b), evs = L && !L.done ? L.events : [];
   const c = run ? {state: "running", checks: evs.filter(e => e.type === "check"), bridges: evs.filter(e => e.type === "bridge")} : done;
   if (!c) return "";
-  const ref = ovSplit(ovCell(rg.details[rg.summaries.find(x => x.kind === b.kind && x.status === "dr_ready")?.id]));
+  // The names to expect: the same app version's cell of the newest restorable backup of this kind.
+  const refD = rg.details[rg.summaries.find(x => x.kind === b.kind && x.status === "dr_ready")?.id];
+  const ref = ovSplit(L && refD?.cells?.[L.events[0].app_version] || ovCell(refD));
   const missing = run ? "waiting" : "skipped";
   const fail = b.status === "quarantined" ? "blocked" : "fail";
   const list = (m, refm) => [...new Set([...refm.keys(), ...m.keys()])].map(n => [n, m.has(n) ? (m.get(n) ? "done" : fail) : missing]);
@@ -760,18 +769,19 @@ document.addEventListener("click", e => { if (e.target.closest?.(".ck")) ovHot(e
 // backup runs, the stream's events.
 function ovTerm(b) {
   const d = rg.details[b.id], c = ovCell(d), key = c && Object.keys(d.cells).find(k => d.cells[k] === c);
-  const live = ovLive(b, c);
-  const evs = live?.events.length && (!live.done || !d?.logs?.[key]) ? live.events : d?.logs?.[key] || [];
+  const run = ["running", "queued"].includes(b.status), live = run ? ovLive(b) : ovLive(b, c);
+  const evs = run ? (live && !live.done ? live.events : []) : live?.events.length && (!live.done || !d?.logs?.[key]) ? live.events : d?.logs?.[key] || [];
   const sql = Object.fromEntries((c?.bridges || []).map(x => [x.name, x.sql]));
   const name = e => e.type === "bridge" ? `bridge round ${e.round}` : e.type !== "check" ? "" : baseName(e.check) + (!e.pass && /\(native\)/.test(e.check) ? " on the old schema" : "");
-  const line = e => `<div class="${e.type === "policy" || e.type === "check" && !e.pass ? "c-bad" : ""}"${name(e) ? ` data-n="${esc(name(e))}"` : ""}><span class="t">${e.t != null ? (+e.t).toFixed(2) : ""}</span><span>${esc(calm(evText(e)))}</span></div>`
+  const line = e => `<div class="${e.type === "policy" || e.type === "check" && !e.pass ? "c-bad" : e.type === "step" ? "step" : ""}"${name(e) ? ` data-n="${esc(name(e))}"` : ""}><span class="t">${e.t != null ? (+e.t).toFixed(2) : ""}</span><span>${esc(calm(evText(e)))}</span></div>`
     + (e.type === "bridge" && sql[e.name] ? `<pre>${esc(sql[e.name])}</pre>` : "");
-  return `<div class="term" id="term"${live && !live.done ? " data-live" : ""}>${evs.length ? evs.map(line).join("") : `<div><span class="t"></span><span>${["running", "queued"].includes(b.status) ? "waiting for the sandbox" : "no log"}</span></div>`}</div>`;
+  return `<div class="term" id="term"${live && !live.done ? " data-live" : ""}>${evs.length ? evs.map(line).join("") : `<div><span class="t"></span><span>${b.status === "queued" ? "queued behind the backup that is running" : run ? "starting" : "no log"}</span></div>`}</div>`;
 }
 // The verdict in numbers, under the name: checks, time, bridge rounds, where it was restored.
 function ovSum(b) {
   const d = rg.details[b.id] || b, c = ovCell(d), run = ["running", "queued"].includes(b.status);
-  if (run || !d.checks_total) return "";
+  if (run) return ovNow(b);
+  if (!d.checks_total) return "";
   const rounds = c?.bridges?.length, into = c?.restored_into?.instance?.replace(/ rg-\w+/, "");
   // Checks and time both of the shown cell (one app version), each check at its final result.
   const key = c && Object.keys(d.cells || {}).find(k => d.cells[k] === c), res = c ? ovSplit(c).flatMap(m => [...m.values()]) : [];
@@ -780,6 +790,17 @@ function ovSum(b) {
     ${rounds ? `<span>schema bridged by ${esc(c.llm_calls?.at(-1)?.model || "the model")} in round ${rounds}</span>` : ""}
     ${into ? `<span>restored into ${esc(into)}</span>` : ""}</p>`;
 }
+// While it runs: what the cell is doing now and for how long, and how long the cell has run (ticked by the clock below).
+function ovNow(b) {
+  const L = ovLive(b), on = L && !L.done && L;
+  if (!on) return `<p class="sum"><span><strong>${b.status === "queued" ? "Queued" : "Starting"}</strong></span></p>`;
+  const app = on.events[0].app_version;
+  return `<p class="sum"><span><strong>${esc(on.doing || "Starting")}</strong>${on.doingAt ? ` <span data-since="${on.doingAt}">${dur(Date.now() - on.doingAt)}</span>` : ""}</span>
+    <span>on ${esc(/^\d/.test(app) ? `app ${app}` : app)}</span><span>running <span data-since="${on.at0}" data-clock>${clk(Date.now() - on.at0)}</span></span></p>`;
+}
+const dur = ms => `${Math.max(0, Math.floor(ms / 1000))} s`;
+const clk = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+setInterval(() => document.querySelectorAll("[data-since]").forEach(el => el.textContent = (el.hasAttribute("data-clock") ? clk : dur)(Date.now() - +el.dataset.since)), 1000);
 function ovDetail(b) {
   const [c, word] = OV[ovState(b)] || ["c-idle", b.status];
   return `<header><h2 title="${esc(b.file)}">${esc(bkName(b))}</h2><span class="when">${esc(clock(b.created_at))}</span><span class="when">from ${esc(bkSource(b))}</span><div class="st ${c}"><i></i><b>${esc(word)}</b></div></header>${ovSum(b)}${ovChecks(b)}${ovTerm(b)}`;
@@ -818,19 +839,22 @@ function runPanel() {
 }
 function runCtl() {
   const b = busy();
-  if (!b) runP.scen = null;
+  if (!b) runP.scen = runP.t0 = null;
+  // Since the click; after a reload, since the runtime started the first backup of the run.
+  const t0 = b && (runP.t0 || 1000 * Math.min(...rg.summaries.map(x => x.status === "running" && x.started_at).filter(Boolean)));
   return `<div class="ctl"><span class="msg${runP.err ? " err" : ""}" id="msg" role="status">${esc(runP.msg)}</span>
     <div class="scen" role="group" aria-label="Demo scenarios">${SCENARIOS.map(x => `<button data-scen="${x.key}" title="${esc(x.story)}" aria-pressed="${runP.scen === x.key}"${b ? " disabled" : ""}>${esc(x.name)}</button>`).join("")}</div>
     <button class="quiet" id="reset" title="Remove the copies runs made and put back the results they replaced"${b ? " disabled" : ""}>Reset</button>
-    <button class="btn primary" id="runbtn" aria-expanded="${runP.open}"${b ? " disabled" : ""}>${b ? "Running" : "Run"}</button></div>${runPanel()}`;
+    <button class="btn primary" id="runbtn" aria-expanded="${runP.open}"${b ? " disabled" : ""}>${b ? `Running${isFinite(t0) ? ` <span data-since="${t0}" data-clock>${clk(Date.now() - t0)}</span>` : ""}` : "Run"}</button></div>${runPanel()}`;
 }
 const runMsg = (t, err) => { runP.msg = t || ""; runP.err = !!err; const m = $("#msg"); if (m) { m.textContent = runP.msg; m.classList.toggle("err", runP.err); } };
 async function startRun(body, scen) {
   runMsg("Starting");
+  const t0 = Date.now();
   const r = await fetch("rg/api/runs", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
   if (!r.ok) return runMsg(`Not started: ${await why(r)}`, true);
   const {queued} = await r.json();
-  runP.open = false; runP.scen = scen || null;
+  runP.open = false; runP.scen = scen || null; runP.t0 = t0;
   ovSel.id = queued[0];
   runMsg("");
   rg.summaries = await getJSON("rg/api/backups");

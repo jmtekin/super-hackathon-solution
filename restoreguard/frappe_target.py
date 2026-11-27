@@ -258,15 +258,15 @@ def vm_file(cfg, name):
     return re.fullmatch(rf"\d{{8}}_\d{{6}}-{site}-database\.sql\.gz", name) is not None
 
 
-async def vm_restore(cfg, name, bridge=None):
+async def vm_restore(cfg, name, bridge=None, on_line=lambda line: None):
     """`bench --site <test site> restore` of production's backup `name` + migrate, on the VM; with `bridge`,
-    the forced command then runs that SQL in the test site's own database. Returns (rc, last line)."""
+    the forced command then runs that SQL in the test site's own database. bench's output goes to on_line as it
+    comes. Returns (rc, last line)."""
     s = cfg["ssh"]
-    rc, out, err = await guard._proc("ssh", "-F", "/dev/null", "-i", s["key"], "-o", "BatchMode=yes",
-                                     "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=15",
-                                     "-o", "ServerAliveInterval=30", s["login"], name, *(["bridge"] if bridge else []),
-                                     stdin=bridge.encode() if bridge else None, timeout=RESTORE_TIMEOUT_S)
-    return rc, guard.airlock._last_line(err.decode(errors="replace")) or guard.airlock._last_line(out.decode(errors="replace"))
+    return await guard._stream("ssh", "-F", "/dev/null", "-i", s["key"], "-o", "BatchMode=yes",
+                               "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=15",
+                               "-o", "ServerAliveInterval=30", s["login"], name, *(["bridge"] if bridge else []),
+                               on_line=on_line, stdin=bridge.encode() if bridge else None, timeout=RESTORE_TIMEOUT_S)
 
 
 def targets(cfg):
@@ -409,6 +409,7 @@ def _fail(cell, why):
 async def _cell(cell):
     b, m, cfg = cell.backup, cell.backup["manifest"], cell.app["cfg"]
     doctype = cfg["doctype"]
+    cell.step("Verify the file")
     t = time.monotonic()
     digest = await asyncio.to_thread(guard.sha256_file, b["path"])
     guard._timed(cell, "checksum", t)
@@ -424,15 +425,17 @@ async def _cell(cell):
         return _fail(cell, f"dump unreadable: {err}")
     test = Site(cfg, "test")
     app_fields = await asyncio.to_thread(test.fields, doctype)
+    cell.step("Start the MariaDB sandbox")
     async with DbSandbox(cell) as sb:
+        cell.step("Restore into the sandbox")
         t = time.monotonic()
-        rc, _, err = await sb.exec("bash", "-o", "pipefail", "-c", "gunzip -c /input/backup.sql.gz | mariadb -uroot restored",
-                                   timeout=150)
+        rc, _, err = await _sandbox_restore(cell, sb)
         guard._timed(cell, "restore", t)
         if not cell.check("restore completes", rc == 0, guard.airlock._last_line(err)):
             return _fail(cell, f"restore failed: {guard.airlock._last_line(err)}")
         if cell.findings:
             return  # detonated in the sandbox for the forensic log; run_cell quarantines it, test.local never sees it
+        cell.step("Check the sandbox copy")
         t = time.monotonic()
         _, out, _ = await sb.sql("SELECT table_name FROM information_schema.tables WHERE table_schema = 'restored'")
         present = {n[3:] for n in out.splitlines() if n.startswith("tab")}
@@ -477,12 +480,46 @@ async def _cell(cell):
     await _vm(cell, fields, rows, app_fields, sql)
 
 
+async def _sandbox_restore(cell, sb):
+    """gunzip | mariadb prints nothing until it ends (~20 s for a full site): the tables loaded so far are the progress line."""
+    job = asyncio.ensure_future(sb.exec("bash", "-o", "pipefail", "-c", "gunzip -c /input/backup.sql.gz | mariadb -uroot restored",
+                                        timeout=150))
+    seen = 0
+    while not (await asyncio.wait({job}, timeout=2))[0]:
+        _, out, _ = await guard.docker("exec", sb.name, "mariadb", "-uroot", "-N", "-B", "-e",
+                                       "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'restored'")
+        n = int(out) if out.strip().isdigit() else 0
+        if n > seen:
+            seen = n
+            cell.emit({"type": "log", "stream": "sandbox", "line": f"{n} tables loaded"})
+    return job.result()
+
+
+def _vm_lines(cell, site):
+    """bench's lines into the run log as they come; a progress bar redrawn with \\r is passed on at most once a
+    second, and its migrate phase gets its own step."""
+    last = {"key": None, "at": 0.0, "migrate": False}
+
+    def on_line(line):
+        if not last["migrate"] and "migrat" in line.lower():
+            last["migrate"] = True
+            cell.step(f"Migrate {site}")
+        key, now = line.split("[")[0].split(":")[0], time.monotonic()
+        if key == last["key"] and now - last["at"] < 1:
+            return
+        last.update(key=key, at=now)
+        cell.emit({"type": "log", "stream": "vm", "line": line})
+    return on_line
+
+
 async def _restore_on_vm(cell, bridge=None):
     b, cfg = cell.backup, cell.app["cfg"]
+    site = cfg["test"]["site"]
+    cell.step(f"Restore {site} on the VM" + (" with the bridge" if bridge else ""))
     t = time.monotonic()
     cell.emit({"type": "restore", "phase": "started", "file": b["file"], "bridge": bool(bridge),
                "restored_into": cell.restored_into()["instance"]})
-    rc, last = await vm_restore(cfg, b["file"], bridge and f"START TRANSACTION;\n{bridge}\nCOMMIT;\n")
+    rc, last = await vm_restore(cfg, b["file"], bridge and f"START TRANSACTION;\n{bridge}\nCOMMIT;\n", _vm_lines(cell, site))
     guard._timed(cell, "vm_restore_bridged" if bridge else "vm_restore", t)
     cell.emit({"type": "restore", "phase": "done", "rc": rc, "s": round(time.monotonic() - t, 2)})
     return rc, last
@@ -526,6 +563,7 @@ async def _bridge(cell, sb, fields, rows, want, native):
               f"Fields in the new app version ({cfg['test']['app']}): {json.dumps(want)}\n"
               f"After bench migrate alone: {json.dumps(native)}\n"
               f"Backup rows (up to 20): {json.dumps(rows[:20], default=str)[:6000]}")
+    cell.step("Heal: the model writes a schema bridge")
     reply = await guard.airlock.llm(cell, "bridge", BRIDGE_SYSTEM, prompt)
     for rnd in range(1, guard.MAX_BRIDGE_ROUNDS + 1):
         sql = guard.airlock._script(reply)
@@ -608,13 +646,18 @@ async def _vm(cell, fields, rows, want, bridge=None):
     if not cell.check(f"{site} restored on the VM ({how})", rc == 0, f"exit {rc}: {last}" if rc else last):
         return _fail(cell, f"restore on the VM failed (exit {rc}); {site} may be part restored")
     test = Site(cfg, "test")
+    cell.step(f"Check {site}")
     t = time.monotonic()
     status = (await asyncio.to_thread(test.call, "/login"))[0]
     cell.check(f"{site} login page answers", status == 200, f"HTTP {status}")
     user = await asyncio.to_thread(test.method, "frappe.auth.get_logged_user")
     if not cell.check(f"{site} token API answers (get_logged_user)", user, f"user {user}"):
         return _fail(cell, f"{site} does not answer after the restore")
-    counts = await asyncio.to_thread(lambda: {d: test.method("frappe.client.get_count", doctype=d) for d in m["row_counts"]})
+    counts = {}
+    for i, d in enumerate(m["row_counts"], 1):  # ~70 s at the VM's rate: a progress line every 15
+        counts[d] = await asyncio.to_thread(test.method, "frappe.client.get_count", doctype=d)
+        if i % 15 == 0 or i == len(m["row_counts"]):
+            cell.emit({"type": "log", "stream": site, "line": f"get_count: {i} of {len(m['row_counts'])} doctypes counted"})
     off = [f"{d}: {n} vs source {m['row_counts'][d]}" for d, n in counts.items() if n != m["row_counts"][d]]
     cell.check(f"on {site}: row counts match the source ({len(counts)} doctypes)", not off,
                "; ".join(off[:5]) or f"get_count on {site} vs {cfg['source']['site']} at download")
@@ -627,6 +670,7 @@ async def _vm(cell, fields, rows, want, bridge=None):
         cell.check(f"on {site}: {name}", passed, detail)
     if failed := [c["check"] for c in cell.checks if not c["pass"]]:
         return _fail(cell, failed[0])
+    cell.step(f"Screenshot {site}")
     await _shot(cell, test)
     if bridge:
         rnd = len(cell.bridges)

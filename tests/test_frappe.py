@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -286,6 +287,30 @@ class VmStep(unittest.TestCase):
         checks = self.run_vm(cell, FakeSite(self.counts, [{**ROW2, "category": None}]), FIELDS2, "UPDATE x;")
         self.assertEqual(cell.state, "failed")
         self.assertFalse(checks["on test2.local: required: category"]["pass"])
+
+    def test_events_arrive_while_the_vm_restores(self):
+        """The console's live view: bench's lines before the restore ends, one step per phase, checks after their step."""
+        (self.dir / "ssh").write_text("#!/bin/sh\necho 'Restoring Database file...'\nsleep 1\n"
+                                      "for i in $(seq 50); do printf 'Updating DocTypes for frappe : [==] %s%%\\r' $i; done\n"
+                                      "echo\necho 'Migrating test.local'\necho 'db_password = hunter2'\n")
+        got = []
+        cell = ft.FrappeCell({"id": FILE[:-7], "file": FILE, "manifest": {"row_counts": self.counts}}, ft.targets(CONFIG)[0],
+                             lambda ev: got.append((time.monotonic(), ev)))
+        self.run_vm(cell, FakeSite(self.counts, [ROW]))
+        self.assertEqual(cell.state, "native", cell.reason)
+        evs = [e for _, e in got]
+        self.assertEqual([e["step"] for e in evs if e["type"] == "step"],
+                         ["Restore test.local on the VM", "Migrate test.local", "Check test.local", "Screenshot test.local"])
+        vm = [(at, e["line"]) for at, e in got if e.get("stream") == "vm"]
+        done = next(at for at, e in got if e["type"] == "restore" and e["phase"] == "done")
+        self.assertEqual(vm[0][1], "Restoring Database file...")
+        self.assertGreater(done - vm[0][0], 0.8, "bench's first line came only when it ended")
+        self.assertLess(sum("Updating DocTypes" in line for _, line in vm), 5, "every progress redraw was passed on")
+        self.assertNotIn("hunter2", json.dumps(evs))
+        kinds = [e.get("step") or e.get("check") or e.get("line") for e in evs]
+        self.assertLess(kinds.index("Check test.local"), kinds.index("test.local login page answers"))
+        self.assertLess(kinds.index("get_count: 2 of 2 doctypes counted"), kinds.index("on test.local: row counts match the source (2 doctypes)"))
+        self.assertEqual(evs[-1]["type"], "log")  # the screenshot line; run_cell adds the verdict
 
     def test_vm_file_names(self):
         self.assertTrue(ft.vm_file(CFG, FILE))
