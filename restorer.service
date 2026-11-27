@@ -1,0 +1,17 @@
+[Unit]
+Description=Restorer: backup restore drills in disposable sandboxes (Vultr hackathon demo; public via Funnel :10000/restorer)
+After=network-online.target docker.service
+
+[Service]
+User=agent
+Group=agent
+SupplementaryGroups=docker
+WorkingDirectory=/opt/agent/projects/restorer
+ExecStart=/opt/agent/projects/restorer/.venv/bin/python app.py
+Restart=always
+RestartSec=5
+MemoryMax=1G
+Nice=5
+
+[Install]
+WantedBy=multi-user.target

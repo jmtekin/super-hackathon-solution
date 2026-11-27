@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Restorer: know your backup works before the outage does</title>
+<style>
+:root{--bg:#f6f6f3;--card:#fff;--ink:#0d0f12;--mute:#6b7280;--line:#e5e5e0;--ok:#15803d;--okbg:#dcfce7;--bad:#b91c1c;--badbg:#fee2e2;--warn:#b45309;--term:#0d1117;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
+header{display:flex;align-items:center;gap:16px;padding:14px 28px;border-bottom:1px solid var(--line);background:var(--card);position:sticky;top:0;z-index:5}
+.brand{font-weight:700;font-size:18px;letter-spacing:-.01em}
+.brand span{display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--ink);margin-right:8px;transform:rotate(45deg)}
+.tag{color:var(--mute)}
+.health{margin-left:auto;display:flex;align-items:center;gap:10px;font:12px var(--mono);padding:6px 12px;border-radius:999px;background:var(--okbg);color:var(--ok);border:1px solid #bbf7d0}
+.health.down{background:var(--badbg);color:var(--bad);border-color:#fecaca}
+.dot{width:8px;height:8px;border-radius:50%;background:currentColor}
+.dot.beat{animation:beat .6s ease-out}
+@keyframes beat{0%{box-shadow:0 0 0 0 rgba(21,128,61,.6)}100%{box-shadow:0 0 0 9px rgba(21,128,61,0)}}
+main{display:grid;grid-template-columns:300px 1fr;gap:24px;padding:24px 28px;max-width:1480px;margin:0 auto}
+h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute);margin:0 0 10px;font-weight:600}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+.fx{cursor:pointer;margin-bottom:10px;transition:border-color .15s}
+.fx:hover{border-color:#a3a3a3}
+.fx.sel{border-color:var(--ink);box-shadow:0 0 0 1px var(--ink)}
+.fx b{display:block;margin-bottom:2px}
+.fx small{color:var(--mute)}
+.fx .goal{font-size:12px;margin-top:8px;color:#374151}
+button.run{width:100%;padding:11px;border:0;border-radius:10px;background:var(--ink);color:#fff;font:600 14px inherit;font-family:inherit;cursor:pointer;margin:4px 0 20px}
+button.run:disabled{opacity:.45;cursor:default}
+.policy{font:12px var(--mono)}
+.policy div{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed var(--line)}
+.policy div:last-child{border:0}
+.policy em{font-style:normal;color:var(--ok)}
+.policy .hot em{color:var(--bad);font-weight:700}
+.stack{display:grid;gap:20px;align-content:start}
+.row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:20px}
+.verdict{display:none;padding:22px 24px;border-radius:12px;border:1px solid}
+.verdict.ok{display:block;background:var(--okbg);border-color:#86efac;color:#14532d}
+.verdict.bad{display:block;background:var(--badbg);border-color:#fca5a5;color:#7f1d1d}
+.verdict h1{margin:0 0 4px;font-size:24px;letter-spacing:-.02em}
+.verdict p{margin:6px 0 0;max-width:820px}
+.verdict .meta{font:12px var(--mono);opacity:.8;margin-top:10px}
+.verdict a{display:inline-block;margin:14px 8px 0 0;padding:8px 14px;border-radius:8px;background:rgba(0,0,0,.85);color:#fff;text-decoration:none;font-weight:600;font-size:13px}
+.empty{color:var(--mute);padding:40px 0;text-align:center}
+ol.tl{list-style:none;margin:0;padding:0}
+.tl li{display:grid;grid-template-columns:22px 1fr auto;gap:10px;padding:7px 0;border-bottom:1px solid #f1f1ee;align-items:start}
+.tl .ic{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:11px;color:#fff;margin-top:1px}
+.tl .running .ic{border:2px solid var(--ink);border-right-color:transparent;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tl .ok .ic{background:var(--ok)} .tl .fail .ic{background:var(--bad)} .tl .skipped .ic{background:#9ca3af}
+.tl .info .ic{background:#e5e7eb;color:#374151}
+.tl .name{font-weight:600}
+.tl .sub{color:var(--mute);font-size:12.5px}
+.tl .t{font:11px var(--mono);color:var(--mute)}
+.tl .chip{font:11px var(--mono);background:#f3f4f6;border-radius:5px;padding:1px 6px;margin-left:6px;color:#374151;font-weight:400}
+.tl li.alarm{background:var(--badbg);margin:3px -8px;padding:7px 8px;border-radius:8px;border:0;animation:flash .5s 3}
+.tl li.alarm .name{color:var(--bad);font-family:var(--mono);letter-spacing:.02em}
+.tl li.alarm .ic{background:var(--bad)}
+@keyframes flash{50%{background:#fecaca}}
+.meter{margin:8px 0 12px}
+.meter label{display:flex;justify-content:space-between;font:12px var(--mono);color:var(--mute);margin-bottom:4px}
+.bar{height:8px;background:#efefeb;border-radius:4px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--ink);transition:width .25s}
+.bar.cap i{background:var(--bad)}
+.term{background:var(--term);color:#c9d1d9;font:12px/1.55 var(--mono);border-radius:10px;padding:12px 14px;height:250px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+.term .e{color:#ff7b72} .term .s{color:#7ee787} .term .p{color:#ffa657;font-weight:700}
+pre.code,pre.diff{font:12px/1.5 var(--mono);background:#fafaf8;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0 0;overflow:auto;max-height:260px;white-space:pre}
+pre.diff .a{color:var(--ok);background:#f0fdf4;display:block} pre.diff .d{color:var(--bad);background:#fef2f2;display:block} pre.diff .h{color:var(--mute);display:block}
+.cause{font-size:13px;margin-top:6px}
+.checks{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.ck{border-left:4px solid var(--line)}
+.ck.pass{border-left-color:var(--ok)} .ck.fail{border-left-color:var(--bad)}
+.ck .st{font:700 11px var(--mono);letter-spacing:.06em}
+.ck.pass .st{color:var(--ok)} .ck.fail .st{color:var(--bad)}
+.ck b{display:block;margin:2px 0 4px}
+.ck table{width:100%;font:11px var(--mono);border-collapse:collapse;margin-top:6px}
+.ck td{padding:2px 0;border-top:1px solid #f1f1ee}
+.ck td.x{color:var(--bad)}
+.ev{font:12px var(--mono)}
+.ev div{display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px dashed var(--line)}
+.ev div span:last-child{color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%}
+.hide{display:none}
+footer{color:var(--mute);font-size:12px;text-align:center;padding:10px 0 30px}
+@media(max-width:1000px){main{grid-template-columns:1fr}.row2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span></span>Restorer</div>
+  <div class="tag">Know your backup works before the outage does.</div>
+  <div class="health" id="health"><i class="dot" id="hdot"></i><span id="htext">Control Plane /health ...</span></div>
+</header>
+<main>
+  <aside>
+    <h2>Backup fixture</h2>
+    <div id="fixtures"></div>
+    <button class="run" id="run" disabled>Run restore drill</button>
+    <h2>Sandbox policy</h2>
+    <div class="card policy" id="policy">
+      <div><span>network</span><em>none</em></div>
+      <div><span>cpu</span><em>1 core cap</em></div>
+      <div><span>memory</span><em>256 MB, no swap</em></div>
+      <div><span>pids</span><em>128 max</em></div>
+      <div><span>root filesystem</span><em>read-only</em></div>
+      <div><span>backup volume</span><em>read-only</em></div>
+      <div><span>capabilities</span><em>all dropped</em></div>
+      <div><span>user</span><em>nobody</em></div>
+      <div id="ptimeout"><span>wall clock</span><em>60 s</em></div>
+      <div><span>inference key</span><em>control plane only</em></div>
+    </div>
+  </aside>
+  <section class="stack">
+    <div class="verdict" id="verdict"></div>
+    <div class="row2">
+      <div class="card"><h2>Run timeline</h2><ol class="tl" id="tl"><li class="empty" style="display:block">Pick a fixture and run a drill.</li></ol></div>
+      <div class="stack">
+        <div class="card">
+          <h2>Sandbox <span id="sbname" style="text-transform:none;font-family:var(--mono)"></span></h2>
+          <div class="meter"><label><span>CPU</span><span id="cpuv">idle</span></label><div class="bar" id="cpubar"><i></i></div></div>
+          <div class="meter"><label><span>Wall clock</span><span id="wallv">0 / 60 s</span></label><div class="bar" id="wallbar"><i></i></div></div>
+          <div class="term" id="term"></div>
+        </div>
+        <div class="card hide" id="repair"><h2>Repair: stderr in, fixed script out</h2><div class="cause" id="cause"></div><pre class="diff" id="diff"></pre></div>
+        <div class="card hide" id="plan"><h2>Restore plan (Vultr Serverless Inference)</h2><div class="cause" id="plantext"></div><pre class="code" id="script"></pre></div>
+      </div>
+    </div>
+    <div class="hide" id="evwrap">
+      <h2>Evidence</h2>
+      <div class="checks" id="checks"></div>
+      <div class="checks" style="margin-top:14px">
+        <div class="card ev" id="receipts"></div>
+        <div class="card ev" id="sums"></div>
+      </div>
+    </div>
+  </section>
+</main>
+<footer>Control plane: FastAPI on a Vultr VM. Inference: Vultr Serverless Inference. Every restore runs in a disposable sandbox.</footer>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let fixtures = [], sel = null, es = null, timeout = 60, wallTimer = null, sbStart = 0;
+
+let beats = 0;
+async function health() {
+  const t = performance.now();
+  try {
+    const r = await fetch("health", {cache: "no-store"});
+    const ms = Math.round(performance.now() - t);
+    beats++;
+    $("health").classList.toggle("down", !r.ok);
+    $("htext").textContent = `Control Plane /health ${r.status} · ${ms} ms · #${beats}`;
+    const d = $("hdot"); d.classList.remove("beat"); void d.offsetWidth; d.classList.add("beat");
+  } catch (e) {
+    $("health").classList.add("down"); $("htext").textContent = "Control Plane /health unreachable";
+  }
+}
+setInterval(health, 1000); health();
+
+async function loadFixtures() {
+  fixtures = await (await fetch("api/fixtures")).json();
+  $("fixtures").innerHTML = fixtures.map(f => `<div class="card fx" data-id="${f.id}"><b>${esc(f.title)}</b><small>${esc(f.blurb)}</small><div class="goal">Goal: ${esc(f.goal)}</div></div>`).join("");
+  document.querySelectorAll(".fx").forEach(el => el.onclick = () => pick(el.dataset.id));
+  pick(new URLSearchParams(location.search).get("fixture") || fixtures[0].id);
+}
+function pick(id) {
+  sel = fixtures.find(f => f.id === id) || fixtures[0];
+  document.querySelectorAll(".fx").forEach(el => el.classList.toggle("sel", el.dataset.id === sel.id));
+  timeout = sel.timeout;
+  $("ptimeout").querySelector("em").textContent = `${timeout} s, then destroyed`;
+  $("ptimeout").classList.toggle("hot", timeout <= 5);
+  $("wallv").textContent = `0 / ${timeout} s`;
+  if (!es) $("run").disabled = false;
+}
+
+function reset() {
+  $("tl").innerHTML = ""; $("term").innerHTML = ""; $("checks").innerHTML = "";
+  $("verdict").className = "verdict"; ["repair","plan","evwrap"].forEach(i => $(i).classList.add("hide"));
+  setBar("cpubar", 0); setBar("wallbar", 0); $("cpuv").textContent = "idle"; $("sbname").textContent = "";
+  steps = {};
+}
+let steps = {};
+function li(cls, icon, name, sub, t) {
+  const el = document.createElement("li");
+  el.className = cls;
+  el.innerHTML = `<i class="ic">${icon}</i><div><div class="name">${name}</div><div class="sub">${sub || ""}</div></div><span class="t">+${t.toFixed(1)}s</span>`;
+  $("tl").appendChild(el);
+  return el;
+}
+const ICON = {ok: "✓", fail: "✕", skipped: "–", running: "", info: "•"};
+function setBar(id, frac, cap) {
+  $(id).querySelector("i").style.width = Math.min(100, frac * 100) + "%";
+  $(id).classList.toggle("cap", !!cap);
+}
+function term(line, cls) {
+  const t = $("term"); const d = document.createElement("div");
+  if (cls) d.className = cls; d.textContent = line; t.appendChild(d); t.scrollTop = t.scrollHeight;
+}
+
+function onEvent(ev) {
+  if (ev.type === "step") {
+    const prev = steps[ev.name];
+    const sub = esc(ev.detail || (ev.exit !== undefined ? `exit ${ev.exit} · ${ev.elapsed} s · ${ev.destroyed ? "sandbox destroyed" : "NOT destroyed"}` : ""));
+    if (prev && prev.classList.contains("running")) {
+      prev.className = ev.status;
+      prev.querySelector(".ic").textContent = ICON[ev.status] || "";
+      if (sub) prev.querySelector(".sub").innerHTML = sub;
+      prev.querySelector(".t").textContent = `+${ev.t.toFixed(1)}s`;
+    } else {
+      steps[ev.name] = li(ev.status, ICON[ev.status] || "", esc(ev.name), sub, ev.t);
+    }
+    if (ev.name === "Plan restore" && ev.script) { $("plan").classList.remove("hide"); $("plantext").innerHTML = esc(ev.plan).replace(/\n/g, "<br>"); $("script").textContent = ev.script; }
+    if (ev.name === "Repair script" && ev.diff !== undefined) {
+      $("repair").classList.remove("hide"); $("cause").textContent = ev.cause;
+      $("diff").innerHTML = ev.diff.split("\n").map(l => `<span class="${l.startsWith("+++") || l.startsWith("---") || l.startsWith("@@") ? "h" : l[0] === "+" ? "a" : l[0] === "-" ? "d" : ""}">${esc(l) || " "}</span>`).join("");
+    }
+  } else if (ev.type === "llm" && ev.phase === "done") {
+    const last = [...$("tl").children].reverse().find(e => e.classList.contains("running"));
+    if (last) last.querySelector(".name").insertAdjacentHTML("beforeend", `<span class="chip">${esc(ev.model)} · ${ev.latency_s} s${ev.fallback ? " · fallback" : ""}</span>`);
+  } else if (ev.type === "llm" && ev.phase === "error") {
+    li("info", ICON.info, `Model ${esc(ev.model)} failed, falling back`, esc(ev.error), ev.t);
+  } else if (ev.type === "sandbox") {
+    if (ev.phase === "started") {
+      $("sbname").textContent = ev.name; term(`$ docker run --network none --cpus 1 --memory 256m --read-only ... ${ev.name}`, "s");
+      li("info", ICON.info, "Sandbox created", `<span class="chip">${esc(ev.name)}</span><span class="chip">network none</span><span class="chip">timeout ${ev.policy.timeout_s} s</span>`, ev.t);
+      sbStart = performance.now(); clearInterval(wallTimer);
+      wallTimer = setInterval(() => { const s = (performance.now() - sbStart) / 1000; $("wallv").textContent = `${s.toFixed(1)} / ${timeout} s`; setBar("wallbar", s / timeout, s / timeout > .8); }, 100);
+    } else if (ev.phase === "exited") {
+      clearInterval(wallTimer); $("wallv").textContent = `${ev.elapsed} / ${timeout} s`; setBar("wallbar", ev.elapsed / timeout, ev.exit === "timeout");
+      term(`exit: ${ev.exit}  (${ev.elapsed} s)`, ev.exit === 0 ? "s" : "p");
+      $("cpuv").textContent = "stopped";
+    } else {
+      term(ev.phase === "destroyed" ? `sandbox destroyed: ${ev.name}` : `WARNING: ${ev.name} still present`, ev.phase === "destroyed" ? "s" : "p");
+      li(ev.phase === "destroyed" ? "ok" : "fail", ev.phase === "destroyed" ? ICON.ok : ICON.fail, ev.phase === "destroyed" ? "Sandbox destroyed" : "Sandbox NOT destroyed", "container removed, removal checked with docker inspect", ev.t);
+    }
+  } else if (ev.type === "log") {
+    term(ev.line, ev.stream === "stderr" ? "e" : "");
+  } else if (ev.type === "cpu") {
+    $("cpuv").textContent = `${ev.pct.toFixed(0)}% of ${ev.cap.toFixed(0)}% cap · ${ev.mem_mb} MB`;
+    setBar("cpubar", ev.pct / ev.cap, ev.pct >= ev.cap * .9);
+    if (ev.pct >= ev.cap * .9 && !steps.__cpu) steps.__cpu = Object.assign(li("fail alarm", "!", "CPU: AT CAP", `${ev.pct.toFixed(0)}% of 1 core, throttled by the sandbox, host unaffected`, ev.t));
+  } else if (ev.type === "policy") {
+    term(ev.event, "p");
+    li("fail alarm", "!", esc(ev.event.split(",")[0]), esc(ev.detail || "orchestrator kills the container"), ev.t);
+  } else if (ev.type === "check") {
+    $("evwrap").classList.remove("hide");
+    $("checks").insertAdjacentHTML("beforeend", `<div class="card ck ${ev.pass ? "pass" : "fail"}"><span class="st">${ev.pass ? "PASS" : "FAIL"}</span><b>${esc(ev.check)}</b><div class="sub">${esc(ev.detail)}</div><table>${ev.items.slice(0, 6).map(i => `<tr><td>${esc(String(i.what).slice(0, 26))}</td><td class="${i.pass ? "" : "x"}" style="text-align:right">${esc(Array.isArray(i.got) ? i.got.join(", ") : i.got)}</td></tr>`).join("")}</table></div>`);
+  } else if (ev.type === "verdict") {
+    showVerdict(ev);
+  }
+}
+
+async function showVerdict(ev) {
+  const id = current, p = await (await fetch(`api/runs/${id}/proof.json`)).json();
+  const v = $("verdict");
+  v.className = "verdict " + (ev.level === "ok" ? "ok" : "bad");
+  v.innerHTML = `<h2 style="color:inherit;opacity:.7">Recovery Proof</h2><h1>${esc(ev.headline)}</h1><div>${esc(ev.reason)}</div><p>${esc(p.explanation)}</p>
+    <div class="meta">run ${esc(id)} · ${ev.elapsed_s} s end to end · proof sha256 ${esc(ev.proof_sha256.slice(0, 16))}</div>
+    <a href="api/runs/${id}/proof.json">Download proof JSON</a><a href="api/runs/${id}/proof.html">Download proof HTML</a>`;
+  $("evwrap").classList.remove("hide");
+  $("receipts").innerHTML = `<h2>Command receipts</h2>` + p.command_receipts.map(a => `<div><span>attempt ${a.n}: exit ${esc(a.exit)}</span><span>${a.elapsed} s · ${a.destroyed ? "destroyed" : "NOT destroyed"} · ${a.script_sha256.slice(0, 10)}</span></div>`).join("")
+    + p.llm_calls.map(c => `<div><span>${esc(c.purpose)}: ${esc(c.model)}</span><span>${c.latency_s} s · ${c.tokens ?? "?"} tok</span></div>`).join("");
+  $("sums").innerHTML = `<h2>Checksums (sha256)</h2>` + Object.entries(p.backup_sha256).map(([f, h]) => `<div><span>${esc(f)}</span><span>${h.slice(0, 16)}</span></div>`).join("")
+    + `<div><span>restored.db</span><span>${p.restored_db_sha256 ? p.restored_db_sha256.slice(0, 16) : "not trusted, not kept"}</span></div><div><span>elapsed</span><span>${p.elapsed_s} s</span></div>`;
+  v.scrollIntoView({behavior: "smooth", block: "start"});
+}
+
+let current = null;
+$("run").onclick = async () => {
+  $("run").disabled = true; reset();
+  const r = await fetch(`api/runs/${sel.id}`, {method: "POST"});
+  if (!r.ok) { li("fail", ICON.fail, "Could not start", esc((await r.json()).detail), 0); $("run").disabled = false; return; }
+  current = (await r.json()).run_id;
+  es = new EventSource(`api/runs/${current}/events`);
+  es.onmessage = m => onEvent(JSON.parse(m.data));
+  es.addEventListener("end", () => { es.close(); es = null; $("run").disabled = false; clearInterval(wallTimer); });
+};
+loadFixtures();
+</script>
+</body>
+</html>
