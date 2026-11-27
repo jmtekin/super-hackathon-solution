@@ -375,14 +375,14 @@ function matrixSandbox(ev) {
   } else if (ev.type === "log") {
     if (!ev.line.startsWith("@@SUITE ")) term(`${where} ${ev.line}`, ev.stream === "stderr" ? "e" : "");
   } else if (ev.type === "cpu") {
-    if (M.hot.has(ev.backup)) { $("memv").textContent = `${ev.mem_mb.toFixed(0)} / 512 MB`; setBar("membar", ev.mem_mb / 512, ev.mem_mb > 400); }
+    if (M.hot.has(ev.backup) && !$("b-cap").classList.contains("on")) { $("memv").textContent = `${ev.mem_mb.toFixed(0)} / 512 MB`; setBar("membar", ev.mem_mb / 512, ev.mem_mb > 400); }
   } else if (ev.type === "policy") {
     term(`${where} ${ev.event}`, "p");
     if (ev.signal === "honey") $("honey").textContent = `Honey file /root/.env read: "${ev.detail}". A decoy: no real secret is in any sandbox.`;
     const b = $(`b-${ev.signal === "memory" || ev.signal === "timeout" ? "cap" : ev.signal}`);
     if (b && !b.classList.contains("on")) {
       b.classList.add("on");
-      if (b.id === "b-cap") { $("capv").textContent = ev.signal === "memory" ? "512 MB HIT" : `${timeout} s HIT`; setBar("membar", ev.signal === "memory" ? 1 : 0, true); }
+      if (b.id === "b-cap") { $("capv").textContent = ev.signal === "memory" ? "512 MB HIT" : `${timeout} s HIT`; setBar("membar", ev.signal === "memory" ? 1 : 0, true); if (ev.signal === "memory") $("memv").textContent = "512 / 512 MB, killed"; }
     }
     if (!steps["__" + ev.signal]) steps["__" + ev.signal] = li("fail alarm child", "!", esc(ev.event.split(",")[0]), esc(ev.detail || ev.event), ev.t);
   }
