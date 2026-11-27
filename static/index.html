@@ -3,507 +3,607 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BackupAirlock: prove every backup restores, before you need it</title>
+<title>BackupAirlock: which backup restores into which app version</title>
 <style>
-:root{--bg:#f6f6f3;--card:#fff;--ink:#0d0f12;--mute:#6b7280;--line:#e5e5e0;--ok:#15803d;--okbg:#dcfce7;--bad:#b91c1c;--badbg:#fee2e2;--warn:#b45309;--term:#0d1117;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
-header{display:flex;align-items:center;gap:16px;padding:14px 28px;border-bottom:1px solid var(--line);background:var(--card);position:sticky;top:0;z-index:5}
-.brand{font-weight:700;font-size:18px;letter-spacing:-.01em}
-.brand span{display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--ink);margin-right:8px;transform:rotate(45deg)}
-.tag{color:var(--mute)}
-.ver{font:11px var(--mono);color:var(--mute);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
-.health{margin-left:auto;display:flex;align-items:center;gap:10px;font:12px var(--mono);padding:6px 12px;border-radius:999px;background:var(--okbg);color:var(--ok);border:1px solid #bbf7d0}
-.health.down{background:var(--badbg);color:var(--bad);border-color:#fecaca}
-.dot{width:8px;height:8px;border-radius:50%;background:currentColor}
-.dot.beat{animation:beat .6s ease-out}
-@keyframes beat{0%{box-shadow:0 0 0 0 rgba(21,128,61,.6)}100%{box-shadow:0 0 0 9px rgba(21,128,61,0)}}
-main{display:grid;grid-template-columns:300px 1fr;gap:24px;padding:24px 28px;max-width:1480px;margin:0 auto}
-h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute);margin:0 0 10px;font-weight:600}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
-.fx{cursor:pointer;margin-bottom:10px;transition:border-color .15s}
-.fx:hover{border-color:#a3a3a3}
-.fx.sel{border-color:var(--ink);box-shadow:0 0 0 1px var(--ink)}
-.fx b{display:block;margin-bottom:2px}
-.fx small{color:var(--mute)}
-.fx .goal{font-size:12px;margin-top:8px;color:#374151}
-button.run{width:100%;padding:11px;border:0;border-radius:10px;background:var(--ink);color:#fff;font:600 14px inherit;font-family:inherit;cursor:pointer;margin:4px 0 20px}
-button.run:disabled{opacity:.45;cursor:default}
-.policy{font:12px var(--mono)}
-.policy div{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed var(--line)}
-.policy div:last-child{border:0}
-.policy em{font-style:normal;color:var(--ok)}
-.policy .hot em{color:var(--bad);font-weight:700}
-.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:20px;align-content:start;min-width:0}
-.row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:20px}
-.verdict{display:none;padding:22px 24px;border-radius:12px;border:1px solid}
-.verdict.ok{display:block;background:var(--okbg);border-color:#86efac;color:#14532d}
-.verdict.bad{display:block;background:var(--badbg);border-color:#fca5a5;color:#7f1d1d}
-.verdict h1{margin:0 0 4px;font-size:24px;letter-spacing:-.02em}
-.verdict p{margin:6px 0 0;max-width:820px}
-.verdict .meta{font:12px var(--mono);opacity:.8;margin-top:10px}
-.verdict a{display:inline-block;margin:14px 8px 0 0;padding:8px 14px;border-radius:8px;background:rgba(0,0,0,.85);color:#fff;text-decoration:none;font-weight:600;font-size:13px}
-.empty{color:var(--mute);padding:40px 0;text-align:center}
-ol.tl{list-style:none;margin:0;padding:0}
-.tl li{display:grid;grid-template-columns:22px 1fr auto;gap:10px;padding:7px 0;border-bottom:1px solid #f1f1ee;align-items:start}
-.tl .ic{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:11px;color:#fff;margin-top:1px}
-.tl .running .ic{border:2px solid var(--ink);border-right-color:transparent;animation:spin .8s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-.tl .ok .ic{background:var(--ok)} .tl .fail .ic{background:var(--bad)} .tl .skipped .ic{background:#9ca3af}
-.tl .info .ic{background:#e5e7eb;color:#374151}
-.tl .name{font-weight:600}
-.tl .sub{color:var(--mute);font-size:12.5px}
-.tl .t{font:11px var(--mono);color:var(--mute)}
-.tl .chip{font:11px var(--mono);background:#f3f4f6;border-radius:5px;padding:1px 6px;margin-left:6px;color:#374151;font-weight:400}
-.tl li.child{margin-left:28px}
-.tl li.alarm{background:var(--badbg);margin:3px -8px;padding:7px 8px;border-radius:8px;border:0;animation:flash .5s 3}
-.tl li.alarm .name{color:var(--bad);font-family:var(--mono);letter-spacing:.02em}
-.tl li.alarm .ic{background:var(--bad)}
-@keyframes flash{50%{background:#fecaca}}
-.meter{margin:8px 0 12px}
-.meter label{display:flex;justify-content:space-between;font:12px var(--mono);color:var(--mute);margin-bottom:4px}
-.bar{height:8px;background:#efefeb;border-radius:4px;overflow:hidden}
-.bar i{display:block;height:100%;width:0;background:var(--ink);transition:width .25s}
-.bar.cap i{background:var(--bad)}
-.term{background:var(--term);color:#c9d1d9;font:12px/1.55 var(--mono);border-radius:10px;padding:12px 14px;height:250px;overflow:auto;white-space:pre-wrap;word-break:break-word}
-.term .e{color:#ff7b72} .term .s{color:#7ee787} .term .p{color:#ffa657;font-weight:700}
-pre.code,pre.diff{font:12px/1.5 var(--mono);background:#fafaf8;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0 0;overflow:auto;max-height:260px;white-space:pre}
-pre.diff span{display:block} pre.diff .a{color:var(--ok);background:#f0fdf4} pre.diff .d{color:var(--bad);background:#fef2f2} pre.diff .h{color:var(--mute)}
-.cause{font-size:13px;margin-top:6px}
-.checks{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
-.ck{border-left:4px solid var(--line)}
-.ck.pass{border-left-color:var(--ok)} .ck.fail{border-left-color:var(--bad)}
-.ck .st{font:700 11px var(--mono);letter-spacing:.06em}
-.ck.pass .st{color:var(--ok)} .ck.fail .st{color:var(--bad)}
-.ck b{display:block;margin:2px 0 4px}
-.ck table{width:100%;font:11px var(--mono);border-collapse:collapse;margin-top:6px}
-.ck table{table-layout:fixed}
-.ck td{padding:2px 0;border-top:1px solid #f1f1ee;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ck td.x{color:var(--bad)}
-.ev{font:12px var(--mono)}
-.ev div{display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px dashed var(--line)}
-.ev div span:last-child{color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%}
-.chain .strip,.chain .grid{display:grid;grid-template-columns:136px repeat(10,minmax(0,1fr));align-items:center}
-.strip{position:relative;padding:18px 0 10px}
-.strip:before{content:"";position:absolute;left:calc(136px + 5%);right:5%;top:29px;height:2px;background:var(--line)}
-.night{position:relative;text-align:center;font:11px var(--mono);color:var(--mute)}
-.night .d{width:22px;height:22px;border-radius:50%;margin:0 auto 6px;background:#fff;border:2px solid #d4d4d0;display:grid;place-items:center;color:#fff;font-size:11px;font-weight:700}
-.night b{display:block;color:var(--ink);font-size:12px}
-.night .st{display:block;margin-top:2px;font-weight:600}
-.night.probing .d,.night.adapting .d{border-color:var(--ink);border-right-color:transparent;animation:spin .8s linear infinite}
-.night.adapting .d{border-color:var(--warn);border-right-color:transparent}
-.night.incompatible .d{background:var(--bad);border-color:var(--bad)} .night.incompatible .st{color:var(--bad)}
-.night.adapted .d{background:#fff;border:6px solid var(--ok)} .night.adapted .st{color:var(--ok)}
-.night.native .d{background:var(--ok);border-color:var(--ok)} .night.native .st{color:var(--ok)}
-.night.failed .d{background:var(--bad);border-color:var(--bad)} .night.failed .st{color:var(--bad)}
-.night.drift:before{content:"";position:absolute;left:0;top:-4px;height:34px;border-left:2px dashed var(--warn)}
-.night.drift:after{content:"ERP upgrade";position:absolute;left:0;top:-18px;transform:translateX(-50%);font:10px var(--mono);color:var(--warn);white-space:nowrap}
-.chain .grid{font:12px var(--mono);border-top:1px solid var(--line)}
-.grid>div{padding:5px 0;border-bottom:1px solid #f1f1ee;text-align:center}
-.grid>.lbl{text-align:left;color:#374151}
-.grid .y{color:var(--ok);font-weight:700} .grid .n{color:var(--bad);font-weight:700} .grid .na{color:#c4c4bf}
-.grid .w:after{content:"";display:inline-block;width:9px;height:9px;border:2px solid var(--ink);border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite}
-.chainerr{font:12px var(--mono);color:var(--bad);margin-top:10px}
-.changes{font-size:13px;margin:4px 0 0;padding-left:18px}
-body.chainmode .meter,body.matrixmode #sbcard .meter{display:none}
-.mx{display:grid;grid-template-columns:minmax(210px,1.15fr) repeat(2,minmax(0,1fr));gap:8px;align-items:stretch}
-.mx .hd{font:600 12px var(--mono);padding:0 2px;align-self:end}
-.mx .hd span{color:var(--mute);font-weight:400}
-.mx .bk{padding:8px 0;border-top:1px solid #f1f1ee}
-.mx .bk b{display:block;font:600 13px var(--mono)}
-.mx .bk small{display:block;color:var(--mute);font-size:12px}
-.mx .bk code{font:11px var(--mono);color:var(--mute)}
-.mc{border-radius:10px;padding:10px 12px;border:1px solid var(--line);background:#fafaf8;cursor:pointer;min-height:78px;min-width:0;transition:background .2s}
-.mc .st{font:700 12px var(--mono);letter-spacing:.04em;color:var(--mute)}
-.mc .dt{font-size:12px;margin-top:3px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
-.mc .dots{margin-top:6px;display:flex;gap:4px;flex-wrap:wrap}
-.mc .dots i{width:9px;height:9px;border-radius:2px;background:#d4d4d0}
-.mc .dots i.y{background:var(--ok)} .mc .dots i.n{background:var(--bad)}
-.mc.running .st:after{content:"";display:inline-block;width:8px;height:8px;margin-left:8px;border:2px solid var(--ink);border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite}
-.mc.native,.mc.healed{background:var(--okbg);border-color:#86efac} .mc.native .st,.mc.healed .st{color:var(--ok)}
-.mc.drift,.mc.failed{background:var(--badbg);border-color:#fca5a5} .mc.drift .st,.mc.failed .st{color:var(--bad)}
-.mc.healing{background:#fef3c7;border-color:#fcd34d} .mc.healing .st{color:var(--warn)}
-.mc.quarantined{background:#1c1917;border-color:#1c1917;color:#e7e5e4} .mc.quarantined .st{color:#fca5a5}
-.mc.sel{box-shadow:0 0 0 2px var(--ink)}
-.legend{display:flex;gap:16px;margin-top:12px;font:11px var(--mono);color:var(--mute)}
-.legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px}
-.badges{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
-.badge{border:1px dashed #d4d4d0;border-radius:10px;padding:12px;font:700 12px/1.35 var(--mono);color:#a3a3a3;letter-spacing:.02em}
-.badge small{display:block;font-weight:400;margin-top:4px}
-.badge.on{border:1px solid var(--bad);background:var(--bad);color:#fff;animation:alarm .45s 4}
-@keyframes alarm{50%{background:#ef4444}}
-.honey{font:12px var(--mono);color:var(--bad);margin-top:10px}
-.tests div{display:grid;grid-template-columns:42px minmax(0,190px) 1fr;gap:10px;padding:4px 0;border-bottom:1px solid #f1f1ee;font-size:12.5px}
-.tests span{font:700 11px var(--mono)} .tests .pass span{color:var(--ok)} .tests .fail span{color:var(--bad)}
-.tests em{font-style:normal;color:#374151;word-break:break-word}
-#cdbody h3{font-size:12px;margin:14px 0 4px}
-.up input{font-size:12px;width:100%}
-.up .sub{color:var(--mute);font-size:12px;margin-top:6px}
-.hide{display:none}
-footer{color:var(--mute);font-size:12px;text-align:center;padding:10px 0 30px}
-@media(max-width:1000px){main{grid-template-columns:1fr}.row2{grid-template-columns:1fr}}
+/* Console: graphite, hairlines, 2-4 px radii, status = small mark + word. One accent (selection, focus, links).
+   State hues: ready green, drift / not restorable amber, quarantined red (danger only). Grey = not decided yet.
+   Type 12 / 13 / 14 / 16 / 20. Space 4 8 12 16 24 32 48. */
+:root{
+  --bg:#101418;--surface:#151a1f;--raise:#1b2127;--code:#0c1013;
+  --line:#242b32;--line-2:#333c45;--ink:#e3e6ea;--ink-2:#b7bec6;--muted:#879099;
+  --ok:#6fbf8e;--warn:#d4a55a;--bad:#e0706a;--accent:#86a9e6;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline;text-underline-offset:3px}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mono{font-family:var(--mono);font-size:12px}
+.muted{color:var(--muted)}
+.page{max-width:1440px;margin:0 auto;padding:24px 48px 48px}
+
+/* header */
+.bar{display:flex;align-items:center;gap:24px;height:40px}
+.brand{font-weight:600;font-size:14px;letter-spacing:.01em}
+.tabs{display:flex;gap:4px}
+.tabs button{height:32px;padding:0 12px;border-radius:3px;color:var(--muted);font-size:13px}
+.tabs button[aria-selected=true]{color:var(--ink);background:var(--raise)}
+.live{margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}
+.live i{width:6px;height:6px;border-radius:1px;background:var(--line-2)}
+.live.on i{background:var(--ok)}
+.top{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;margin-top:24px;padding-bottom:24px;border-bottom:1px solid var(--line)}
+.meta{font-size:12px;color:var(--muted)}
+h1{font-size:20px;line-height:28px;font-weight:600;margin-top:4px}
+h1 em{font-style:normal;color:var(--bad)}
+.actions{display:flex;gap:8px;align-items:center;flex-shrink:0}
+.btn{height:32px;padding:0 12px;border-radius:3px;font-size:13px;font-weight:600;line-height:30px;border:1px solid var(--line-2);color:var(--ink);white-space:nowrap;display:inline-block}
+.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn:hover{text-decoration:none}
+.note{font-size:12px;color:var(--muted);margin-top:8px}
+.note:empty{display:none}
+
+/* main grid: matrix 7 columns, panel 5 */
+.main{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,5fr);gap:32px;margin-top:24px;align-items:start}
+.colhead{font:11px/16px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding-bottom:8px}
+.matrix{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr);column-gap:8px}
+.matrix > .row{display:contents}
+.bk{padding:12px 12px 12px 0;border-top:1px solid var(--line);min-width:0}
+.bk .name{font:600 13px/20px var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bk .sub{font-size:12px;color:var(--muted);margin-top:2px}
+.bk .v{margin-top:6px;font-size:12px;font-weight:600}
+.cell{margin:8px 0;padding:10px 12px;border:1px solid var(--line);border-radius:3px;background:var(--surface);text-align:left;min-width:0;display:block;width:100%}
+.cell{display:flex;flex-direction:column;justify-content:flex-start}
+.cell:hover{border-color:var(--line-2)}
+.cell[aria-pressed=true]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.st{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;line-height:20px}
+.st i{width:8px;height:8px;border-radius:1px;flex-shrink:0;background:var(--c)}
+.st i.hollow{background:none;box-shadow:inset 0 0 0 1.5px var(--c)}
+.st b{color:var(--c);font-weight:600}
+.st span{font-weight:400;color:var(--ink-2)}
+.cell .d{font-size:12px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cell .app{display:none;font:11px/16px var(--mono);color:var(--muted);margin-bottom:4px}
+.c-ok{--c:var(--ok)}.c-warn{--c:var(--warn)}.c-bad{--c:var(--bad)}.c-idle{--c:var(--muted)}.c-run{--c:var(--ink)}
+.empty{padding:24px 0;color:var(--muted);border-top:1px solid var(--line)}
+
+/* panel */
+.panel{border:1px solid var(--line);border-radius:4px;background:var(--surface);padding:24px;min-width:0}
+.panel h2{font-size:16px;line-height:24px;font-weight:600;overflow-wrap:anywhere}
+.panel h2 .mono{font-size:14px}
+.panel .lead{margin-top:4px;color:var(--ink-2);font-size:13px}
+.panel section{margin-top:24px}
+.panel h3{font:11px/16px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding-bottom:8px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:12px}
+.rows > div{display:grid;grid-template-columns:16px minmax(0,1fr) minmax(0,1fr);column-gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px;line-height:20px}
+.rows .m{font-weight:700}
+.rows .ok{color:var(--ok)}.rows .no{color:var(--bad)}.rows .warn{color:var(--warn)}
+.rows .d{color:var(--muted);overflow-wrap:anywhere}
+.rows .n small{color:var(--muted);font-size:12px}
+.rows.ev > div{grid-template-columns:48px minmax(0,1fr)}
+.rows.ev .t{font:12px/20px var(--mono);color:var(--muted)}
+.rows.ev .st{align-items:flex-start;font-weight:400}
+.rows.ev .st i{margin-top:6px}
+.rows.ev .st .muted{display:block}
+.rows.ev span{overflow-wrap:anywhere;min-width:0}
+.code{margin-top:8px;background:var(--code);border-radius:3px;padding:12px;font:12px/20px var(--mono);color:var(--ink-2);white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto}
+.kv{display:grid;grid-template-columns:auto 1fr;column-gap:16px;row-gap:4px;margin-top:8px;font-size:12px}
+.kv dt{color:var(--muted)}
+.kv dd{font-family:var(--mono);overflow-wrap:anywhere}
+.kv.target{margin-top:8px;padding:8px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.links{display:flex;flex-wrap:wrap;gap:16px;margin-top:12px;font-size:13px}
+.timing{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) 56px;column-gap:12px;align-items:center;font-size:12px;padding:4px 0}
+.timing .s{text-align:right;font-family:var(--mono)}
+.timing .b i{display:block;height:4px;border-radius:1px;background:var(--line-2)}
+details summary{cursor:pointer;color:var(--accent);font-size:13px;margin-top:12px}
+details.grp summary{list-style:none;margin:0}
+details.grp summary::-webkit-details-marker{display:none}
+details.grp summary h3{color:var(--muted)}
+details.grp summary h3 b{color:var(--ok);font-weight:400}
+
+/* certificate */
+.cert{max-width:880px;margin-top:24px}
+.cert .head{display:flex;justify-content:space-between;align-items:flex-start;gap:24px}
+.cert h2{font-size:20px;line-height:28px;font-weight:600}
+.cert table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
+.cert th{font:11px/16px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;text-align:left;padding:8px 12px 8px 0;border-bottom:1px solid var(--line-2)}
+.cert td{padding:8px 12px 8px 0;border-bottom:1px solid var(--line);vertical-align:top}
+.cert section{margin-top:32px}
+.cert .stamp{font-size:13px;margin-top:4px}
+
+@media (max-width:900px){
+  .page{padding:16px}
+  .bar{gap:12px}
+  .live span{display:none}
+  .top{display:block}
+  .actions{margin-top:16px;flex-wrap:wrap}
+  h1{font-size:18px;line-height:26px}
+  .main{display:block}
+  .matrix{grid-template-columns:1fr 1fr}
+  .matrix > .colhead{display:none}
+  .cell .app{display:block}
+  .cell .d{white-space:normal}
+  .bk{grid-column:1 / 3;padding:12px 0 0}
+  .cell{margin:8px 0 4px}
+  .panel{margin-top:24px;padding:16px}
+  .rows > div{grid-template-columns:16px minmax(0,1fr)}
+  .rows .d{grid-column:2}
+  .cert .head{display:block}
+  .cert .head .actions{margin-top:12px}
+  .cert table,.cert tbody,.cert tr,.cert td{display:block}
+  .cert tr:first-child{display:none}
+  .cert tr{padding:8px 0;border-bottom:1px solid var(--line)}
+  .cert td{border:0;padding:2px 0;overflow-wrap:anywhere}
+  .cert td:empty{display:none}
+  .timing{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) 48px}
+}
+@media print{
+  :root{--bg:#fff;--surface:#fff;--raise:#fff;--code:#f4f4f2;--line:#ddd;--line-2:#bbb;--ink:#111;--ink-2:#333;--muted:#555;--ok:#1d6b3e;--warn:#7a5200;--bad:#a3201a;--accent:#111}
+  .bar,.top,.no-print{display:none}
+  .page{padding:0}
+}
 </style>
 </head>
 <body>
-<header>
-  <div class="brand"><span></span>BackupAirlock</div><span class="ver">v3</span>
-  <div class="tag">Restores every backup against every app version in sealed sandboxes: proves the books, heals drift, quarantines poisoned dumps.</div>
-  <div class="health" id="health"><i class="dot" id="hdot"></i><span id="htext">Control Plane /health ...</span></div>
-</header>
-<main>
-  <aside>
-    <h2>Run</h2>
-    <div id="fixtures"></div>
-    <div class="card up hide" id="up"><h2>Your backup (optional)</h2><input type="file" id="file" accept=".sql,text/plain"><div class="sub" id="upst">A SQLite .sql dump, up to 25 MB. It joins the matrix as a 4th row.</div></div>
-    <button class="run" id="run" disabled>Run restore drill</button>
-    <h2>Sandbox policy</h2>
-    <div class="card policy" id="policy">
-      <div><span>network</span><em>none</em></div>
-      <div><span>cpu</span><em>1 core cap</em></div>
-      <div><span>memory</span><em>512 MB, no swap</em></div>
-      <div><span>pids</span><em>64 max</em></div>
-      <div><span>root filesystem</span><em>read-only</em></div>
-      <div><span>backup volume</span><em>read-only</em></div>
-      <div><span>capabilities</span><em>all dropped</em></div>
-      <div><span>user</span><em>nobody</em></div>
-      <div id="ptimeout"><span>wall clock</span><em>60 s</em></div>
-      <div><span>secrets</span><em>none (honey file only)</em></div>
-      <div><span>inference key</span><em>control plane only</em></div>
+<div class="page">
+  <div class="bar">
+    <span class="brand">BackupAirlock</span>
+    <div class="tabs" role="tablist">
+      <button role="tab" data-view="backups">Backups</button>
+      <button role="tab" data-view="drill">Drill</button>
     </div>
-  </aside>
-  <section class="stack">
-    <div class="verdict" id="verdict"></div>
-    <div class="card hide" id="matrix"><h2>Backup x App Version Compatibility Matrix · one sandbox per cell</h2><div class="mx" id="mx"></div>
-      <div class="legend"><span><i style="background:var(--ok)"></i>green: native or healed</span><span><i style="background:#fcd34d"></i>yellow: healing</span><span><i style="background:var(--bad)"></i>red: drift</span><span><i style="background:#1c1917"></i>quarantined</span><span>squares: suite tests, then control-plane checks</span></div></div>
-    <div class="card hide" id="contain"><h2 id="containtitle">Containment</h2>
-      <div class="badges"><div class="badge" id="b-network">NETWORK AIR-GAP ENFORCED<small>0 BYTES EXFILTRATED</small></div><div class="badge" id="b-rootfs">READ-ONLY ROOTFS PROTECTED<small>no write outside /work</small></div><div class="badge" id="b-cap">MEMORY/TIMEOUT CAP HIT<small id="capv">512 MB / 20 s</small></div></div>
-      <div class="meter"><label><span>Memory of the poisoned sandbox</span><span id="memv">0 / 512 MB</span></label><div class="bar" id="membar"><i></i></div></div>
-      <div class="honey" id="honey"></div></div>
-    <div class="card hide" id="celldetail"><h2 id="cdtitle">Cell</h2><div id="cdbody"></div></div>
-    <div class="card chain hide" id="chain"><h2 id="chaintitle">Backup chain</h2><div class="strip" id="strip"></div><div class="grid" id="grid"></div><div class="chainerr" id="chainerr"></div></div>
-    <div class="row2">
-      <div class="card"><h2>Run timeline</h2><ol class="tl" id="tl"><li class="empty" style="display:block">Pick a fixture and run a drill.</li></ol></div>
-      <div class="stack">
-        <div class="card" id="sbcard">
-          <h2>Sandbox <span id="sbname" style="text-transform:none;font-family:var(--mono)"></span></h2>
-          <div class="meter"><label><span>CPU</span><span id="cpuv">idle</span></label><div class="bar" id="cpubar"><i></i></div></div>
-          <div class="meter"><label><span>Wall clock</span><span id="wallv">0 / 60 s</span></label><div class="bar" id="wallbar"><i></i></div></div>
-          <div class="term" id="term"></div>
-        </div>
-        <div class="card hide" id="repair"><h2>Repair: stderr in, fixed script out</h2><div class="cause" id="cause"></div><pre class="diff" id="diff"></pre></div>
-        <div class="card hide" id="migration"><h2 id="migtitle">Migration (Vultr Serverless Inference)</h2><ul class="changes" id="changes"></ul><pre class="diff" id="schemadiff"></pre><pre class="code" id="migsql"></pre></div>
-        <div class="card hide" id="plan"><h2>Restore plan (Vultr Serverless Inference)</h2><div class="cause" id="plantext"></div><pre class="code" id="script"></pre></div>
-      </div>
+    <div class="live" id="live"><i></i><span>offline</span></div>
+  </div>
+  <div class="top">
+    <div style="min-width:0">
+      <div class="meta" id="meta"></div>
+      <h1 id="headline">Loading</h1>
     </div>
-    <div class="hide" id="evwrap">
-      <h2>Evidence</h2>
-      <div class="checks" id="checks"></div>
-      <div class="checks" style="margin-top:14px">
-        <div class="card ev" id="receipts"></div>
-        <div class="card ev" id="sums"></div>
-      </div>
-    </div>
-  </section>
-</main>
-<footer>BackupAirlock. Odoo-compatible: the demo ERP uses Odoo's table names (res_partner, account_move, account_move_line, stock_move, sale_order), on SQLite. Control plane: FastAPI on a Vultr VM. Inference: Vultr Serverless Inference. Every restore runs in a disposable sandbox.</footer>
+    <div class="actions" id="actions"></div>
+  </div>
+  <div class="note" id="note"></div>
+  <div id="body"></div>
+</div>
 <script>
-// Relative API paths need a trailing slash behind the Funnel /restorer prefix.
-if (!location.pathname.endsWith("/")) location.replace(location.pathname + "/" + location.search);
-const $ = id => document.getElementById(id);
-const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let fixtures = [], sel = null, es = null, timeout = 60, wallTimer = null, sbStart = 0, uploadId = "";
+"use strict";
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const mb = n => n == null ? "" : (n / 1048576).toFixed(n < 10485760 ? 2 : 1) + " MB";
+const sec = s => s == null ? "" : `${(+s).toFixed(1)} s`;
+const clock = d => new Date(d).toLocaleString("en-GB", {timeZone: "Europe/Stockholm", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"});
+const getJSON = async u => { const r = await fetch(u); if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 120)}`); return r.json(); };
 
-let beats = 0;
-async function health() {
-  const t = performance.now();
+// One vocabulary for both engines. Healed is ready (it restores, with the bridge); red is only ever quarantine.
+const STATES = {
+  native:      ["c-ok",   "Ready", "native"],
+  healed:      ["c-ok",   "Ready", "healed"],
+  drift:       ["c-warn", "Drift", ""],
+  healing:     ["c-warn", "Drift", "healing"],
+  failed:      ["c-warn", "Not restorable", ""],
+  quarantined: ["c-bad",  "Quarantined", ""],
+  running:     ["c-run",  "Running", "", true],
+  queued:      ["c-idle", "Queued", "", true],
+  not_run:     ["c-idle", "Not run", "", true],
+};
+const VERDICTS = {
+  ready: ["c-ok", "DR ready"], dr_ready: ["c-ok", "DR ready"], quarantined: ["c-bad", "Quarantined, do not restore"],
+  not_restorable: ["c-warn", "Not restorable"], failed: ["c-warn", "Not restorable"],
+  running: ["c-run", "Running"], queued: ["c-idle", "Queued"],
+};
+function mark(state, extra) {
+  const [cls, word, tag, hollow] = STATES[state] || ["c-idle", state, ""];
+  const t = extra ?? tag;
+  return `<div class="st ${cls}"><i class="${hollow ? "hollow" : ""}"></i><b>${esc(word)}</b>${t ? `<span>${esc(t)}</span>` : ""}</div>`;
+}
+function verdictLine(v) {
+  const [cls, word] = VERDICTS[v] || ["c-idle", v];
+  return `<div class="v st ${cls}"><b>${esc(word)}</b></div>`;
+}
+// Uppercase policy events ("NETWORK: DENIED, ...") read as shouting; keep the words, drop the caps.
+const calm = s => String(s || "").replace(/^([A-Z][A-Z /-]+):/, (_, p) => p.charAt(0) + p.slice(1).toLowerCase() + ":")
+  .replace(/\b(DENIED|READ-ONLY|NOT DESTROYED|TIMEOUT|CAP HIT)\b/g, w => w.toLowerCase());
+
+/* Check groups, as the spec names them: manifest, business logic, app boot. */
+function group(name) {
+  if (/business rules|books balance|invoice|receivable|stock|orphan|ledger|fk integrity/i.test(name)) return "Business logic";
+  if (/^app |api health|login|smoke/i.test(name)) return "App boot";
+  return "Manifest and restore";
+}
+function groups(checks) {
+  const out = {"Manifest and restore": [], "Business logic": [], "App boot": []};
+  for (const c of checks) out[group(c.name)].push(c);
+  return Object.entries(out).filter(([, v]) => v.length);
+}
+
+/* ---------- Backups view: the RestoreGuard runtime (watched ERP backups) ---------- */
+const rg = {summaries: [], versions: [], details: {}, live: {}, sel: null, es: null};
+
+async function rgLoad() {
+  const [list, health] = await Promise.all([getJSON("rg/api/backups"), getJSON("rg/health")]);
+  rg.summaries = list;
+  rg.versions = health.app_versions;
+  if (!rg.sel && list.length) {
+    const b = list.find(b => b.status !== "queued") || list[0];
+    rg.sel = {b: b.id, v: rg.versions[rg.versions.length - 1]};
+  }
+  if (rg.sel) await rgDetail(rg.sel.b);
+}
+async function rgDetail(id, force) {
+  const s = rg.summaries.find(b => b.id === id);
+  if (!s || (!force && rg.details[id] && rg.details[id].status === s.status)) return;
+  rg.details[id] = await getJSON(`rg/api/backups/${encodeURIComponent(id)}`);
+}
+function rgCell(id, v) {
+  const s = rg.summaries.find(b => b.id === id);
+  const live = rg.live[`${id}@${v}`];
+  if (s.status === "running" && live && !s.cells[v]) return {state: live.state || "running", reason: live.step, elapsed_s: live.t};
+  if (s.cells[v]) return s.cells[v];
+  return {state: s.status === "queued" || s.status === "running" ? s.status : "not_run", reason: ""};
+}
+function rgView() {
+  const ss = rg.summaries;
+  const done = ss.filter(b => !["queued", "running"].includes(b.status));
+  const ready = done.filter(b => b.status === "dr_ready"), q = done.filter(b => b.status === "quarantined");
+  const newest = ready.slice().sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))[0];
+  return {
+    meta: `RestoreGuard · Nordvik Handel ERP (stand-in app) · ${ss.length} backups watched · each restored into a throwaway test instance, never production`,
+    headline: !ss.length ? "No backups yet. The watcher picks up each new dump and its manifest."
+      : `${ready.length} of ${done.length} backups DR ready` + (newest ? `; newest ${clock(newest.created_at)}` : "") + "."
+        + (q.length ? ` <em>${q.length} quarantined: do not restore.</em>` : ""),
+    actions: rg.sel && rg.details[rg.sel.b]?.certificate ? `<a class="btn" href="#cert">Certificate</a>` : "",
+    cols: rg.versions.map(v => ({id: v, label: `App ${v}`})),
+    rows: ss.map(b => ({
+      id: b.id, name: b.file, verdict: b.status,
+      sub: [b.created_at && clock(b.created_at), b.schema_version != null && `schema v${b.schema_version}`, mb(b.bytes)].filter(Boolean).join(" · "),
+      cells: Object.fromEntries(rg.versions.map(v => { const c = rgCell(b.id, v); return [v, {state: c.state,
+        line: cellLine(c.state, c.reason, c.elapsed_s, b.status === "running")}]; })),
+    })),
+    sel: rg.sel,
+  };
+}
+function cellLine(state, reason, s, running) {
+  if (running && ["running", "queued"].includes(state)) return reason ? `${reason}` : "waiting for a sandbox";
+  if (state === "healed") return `bridge migration · ${sec(s)}`;
+  if (state === "native") return `${sec(s)}`;
+  return [reason, sec(s)].filter(Boolean).join(" · ");
+}
+function rgPanel() {
+  if (!rg.sel) return "";
+  const d = rg.details[rg.sel.b], v = rg.sel.v;
+  if (!d) return `<div class="panel"><p class="muted">Loading</p></div>`;
+  const c = d.cells[v], live = rg.live[`${d.id}@${v}`];
+  const head = `<div class="meta mono">${esc(d.file)}</div><h2>App ${esc(v)}</h2>`;
+  if (!c) {
+    const evs = live ? live.events : [];
+    return `<div class="panel">${head}<div style="margin-top:8px">${mark(d.status === "queued" ? "queued" : "running")}</div>
+      ${evs.length ? `<section><h3><span>Live</span><span>${sec(live.t)}</span></h3>${eventRows(evs)}</section>`
+        : `<p class="lead">Each backup is proved on one app version at a time, in a fresh sandbox.</p>`}</div>`;
+  }
+  const checks = c.checks.map(k => ({name: k.check, pass: k.pass, detail: k.detail}));
+  const m = d.manifest || {};
+  return `<div class="panel">${head}
+    <div style="margin-top:8px">${mark(c.state)}</div>
+    <p class="lead">${esc(c.reason)}</p>
+    ${targetLine(c.target || c.restore_target, (d.logs[v] || []).find(e => e.type === "sandbox")?.name,
+      (d.logs[v] || []).some(e => e.type === "sandbox" && e.phase === "destroyed"))}
+    ${containment(c.signals.map(s => ({signal: s})).concat(), c.static_scan, d.logs[v])}
+    ${groups(checks).map(([g, ks]) => checkSection(g, ks)).join("")}
+    ${bridgeSection(c.bridges.map(b => ({name: b.name, round: b.round, sha256: b.sha256, changes: b.changes,
+        url: `rg/api/backups/${encodeURIComponent(d.id)}/bridges/${encodeURIComponent(b.name)}`})), c.llm_calls)}
+    ${timings(Object.entries(c.timings), c.elapsed_s)}
+    <section><h3><span>Backup manifest</span></h3><dl class="kv">
+      <dt>sha256</dt><dd>${esc(m.sha256 || "")}</dd>
+      <dt>taken</dt><dd>${esc(m.created_at || "")} by app ${esc(m.app_version || "")}</dd>
+      ${Object.entries(m.row_counts || {}).filter(([k]) => k !== "schema_version").map(([k, n]) => `<dt>${esc(k)}</dt><dd>${n.toLocaleString("en")} rows</dd>`).join("")}
+    </dl></section>
+    <details><summary>Run log, ${(d.logs[v] || []).length} events</summary>${eventRows(d.logs[v] || [])}</details>
+    <div class="links no-print">${d.certificate ? `<a href="#cert">DR certificate</a>` : ""}
+      <button class="btn" id="rerun" ${["queued", "running"].includes(d.status) ? "disabled" : ""}>Run again</button></div>
+  </div>`;
+}
+function rgStream() {
+  if (rg.es) return;
+  rg.es = new EventSource("rg/api/stream");
+  rg.es.onopen = () => setLive(true);
+  rg.es.onerror = () => setLive(false);
+  rg.es.onmessage = e => {
+    const ev = JSON.parse(e.data);
+    if (ev.type === "backup") { rgRefresh(); return; }
+    if (!ev.cell) return;
+    const L = rg.live[ev.cell] ||= {events: [], state: "running"};
+    L.events.push(ev); L.t = ev.t;
+    if (ev.type === "check") L.step = ev.check;
+    if (ev.type === "bridge") { L.state = "healing"; L.step = `bridge round ${ev.round}`; }
+    if (ev.type === "verdict") { L.state = ev.state; L.step = ev.reason; rgRefresh(); }
+    if (view === "backups") draw();
+  };
+}
+let rgTimer;
+function rgRefresh() {
+  clearTimeout(rgTimer);
+  rgTimer = setTimeout(async () => {
+    rg.summaries = await getJSON("rg/api/backups");
+    if (rg.sel) await rgDetail(rg.sel.b);
+    if (view === "backups") draw();
+  }, 300);
+}
+
+/* ---------- Drill view: preloaded dumps + upload, poisoned dump included (the spec's demo) ---------- */
+const dr = {proof: null, runId: null, live: null, sel: null, upload: null, es: null};
+
+async function drLoad() {
+  const r = await getJSON("api/runs?fixture=matrix&limit=1");
+  if (r.active.length) return drFollow(r.active[0]);
+  if (r.runs.length) { dr.runId = r.runs[0].run_id; dr.proof = await getJSON(`api/runs/${dr.runId}/proof.json`); }
+  if (dr.proof && !dr.sel) {
+    const q = dr.proof.matrix.find(m => m.status.startsWith("QUARANTINED"));
+    dr.sel = {b: (q || dr.proof.matrix[0]).backup, v: dr.proof.matrix[0].app_versions[q ? 0 : 1]?.app || dr.proof.matrix[0].app_versions[0].app};
+  }
+}
+function drFollow(runId) {
+  dr.runId = runId; dr.proof = null;
+  dr.live = {apps: [], backups: [], cells: {}, events: [], rows: {}, steps: []};
+  dr.es?.close();
+  dr.es = new EventSource(`api/runs/${runId}/events`);
+  dr.es.onopen = () => setLive(true);
+  dr.es.onmessage = e => {
+    const ev = JSON.parse(e.data), L = dr.live;
+    L.events.push(ev);
+    if (ev.type === "matrix" && ev.phase === "init") { L.apps = ev.apps; L.backups = ev.backups;
+      if (!dr.sel) dr.sel = {b: ev.backups[ev.backups.length - 1].file, v: ev.apps[0].title}; }
+    if (ev.type === "matrix" && ev.phase === "cell") L.cells[`${ev.backup}|${ev.app}`] = {...L.cells[`${ev.backup}|${ev.app}`], ...ev, t: ev.t};
+    if (ev.type === "matrix" && ev.phase === "row") L.rows[ev.backup] = ev.level;
+    if (ev.type === "step") L.steps.push(ev);
+    if (ev.type === "verdict") L.verdict = ev;
+    if (view === "drill") draw();
+  };
+  dr.es.addEventListener("end", async () => {
+    dr.es.close(); dr.es = null; setLive(view === "backups" && !!rg.es);
+    try { dr.proof = await getJSON(`api/runs/${runId}/proof.json`); dr.live = null; } catch (err) { note(`Drill ended without a certificate: ${err.message}`); }
+    if (view === "drill") draw();
+  });
+}
+const fileOf = id => dr.live?.backups.find(b => b.id === id)?.file || id;
+const titleOf = id => dr.live?.apps.find(a => a.id === id)?.title || id;
+function drReceipts(file, app) {
+  return (dr.proof?.command_receipts || []).filter(r => String(r.n).startsWith(`${file} on ${app}`));
+}
+function drView() {
+  const running = !!dr.live;
+  const base = {cols: [], rows: [], sel: dr.sel, actions: drActions(running)};
+  if (running) {
+    const L = dr.live;
+    base.cols = L.apps.map(a => ({id: a.title, label: a.title}));
+    base.rows = L.backups.map(b => ({
+      id: b.file, name: b.file, verdict: L.rows[b.id] ? ({ready: "ready", "not restorable": "failed"}[L.rows[b.id]] || L.rows[b.id]) : "running",
+      sub: `schema v${b.version} · ${mb(b.size)} · ${b.sha256.slice(0, 12)}`,
+      cells: Object.fromEntries(L.apps.map(a => { const c = L.cells[`${b.id}|${a.id}`] || {state: "running"};
+        return [a.title, {state: c.state === "drift" && c.bridge ? "healing" : c.state, line: c.state === "healing"
+          ? `bridge round ${c.round}` : (c.detail || "fresh sandbox: restore, boot, suite")}]; })),
+    }));
+    base.meta = `Drill · run ${dr.runId.slice(-6)} · running · ${sec(L.events.at(-1)?.t)}`;
+    base.headline = L.verdict ? esc(L.verdict.headline) : `${L.backups.length} backups x ${L.apps.length} app versions, one sealed sandbox per cell.`;
+    return base;
+  }
+  const p = dr.proof;
+  if (!p) return {...base, meta: "Drill", headline: "No drill has run yet."};
+  const apps = p.matrix[0].app_versions.map(a => a.app);
+  base.cols = apps.map(a => ({id: a, label: a}));
+  base.rows = p.matrix.map(m => ({
+    id: m.backup, name: m.backup,
+    verdict: m.status.startsWith("QUARANTINED") ? "quarantined" : m.status === "DR READY" ? "ready" : "failed",
+    sub: `schema v${m.schema_version} · ${mb(m.bytes)} · ${m.sha256.slice(0, 12)}`,
+    cells: Object.fromEntries(m.app_versions.map(a => {
+      const rc = drReceipts(m.backup, a.app), s = rc.reduce((t, r) => t + (r.elapsed || 0), 0);
+      const inc = p.incidents.find(i => i.backup === m.backup)?.detonations.find(d => d.app === a.app);
+      const tests = a.suite.length + a.control_plane_checks.length;
+      return [a.app, {state: a.result, line: a.result === "quarantined" && inc
+        ? `${inc.signals.length} attacks contained · exit ${inc.exit}`
+        : a.result === "healed" ? `${a.bridge} · ${tests} checks · ${sec(s)}`
+        : a.result === "native" ? `${tests} checks pass · ${sec(s)}` : a.detail}];
+    })),
+  }));
+  const ready = p.matrix.filter(m => m.status === "DR READY"), q = p.matrix.filter(m => m.status.startsWith("QUARANTINED"));
+  base.meta = `Drill · test instances only · Nordvik Handel ERP · run ${p.run_id.slice(-6)} · ${clock(p.generated_at.replace(/(\d\d)(\d\d)$/, "$1:$2"))} · ${sec(p.elapsed_s)}`;
+  base.headline = `${ready.length} of ${p.matrix.length} backups DR ready.` + (q.length ? ` <em>${q.map(m => esc(m.backup)).join(", ")} quarantined: do not restore.</em>` : "");
+  return base;
+}
+function drActions(running) {
+  return `<label class="btn" for="file" title="Your own SQL dump, up to 25 MB">${dr.upload ? esc(dr.upload.name) : "Add .sql"}</label>
+    <input type="file" id="file" accept=".sql,.db,.dump,text/plain" hidden>
+    ${dr.proof ? `<a class="btn" href="#cert">Certificate</a>` : ""}
+    <button class="btn primary" id="run" ${running ? "disabled" : ""}>${running ? "Running" : "Run drill"}</button>`;
+}
+function drPanel() {
+  if (!dr.sel) return "";
+  const {b, v} = dr.sel;
+  const head = `<div class="meta mono">${esc(b)}</div><h2>${esc(v)}</h2>`;
+  if (dr.live) {
+    const L = dr.live, bid = L.backups.find(x => x.file === b)?.id, aid = L.apps.find(x => x.title === v)?.id;
+    const c = L.cells[`${bid}|${aid}`] || {state: "running"};
+    const evs = L.events.filter(e => e.backup === bid && e.app === aid && e.type !== "cpu" && e.type !== "matrix");
+    const pol = evs.filter(e => e.type === "policy");
+    return `<div class="panel">${head}<div style="margin-top:8px">${mark(c.state === "drift" && c.bridge ? "healing" : c.state)}</div>
+      ${targetLine(null, evs.find(e => e.type === "sandbox")?.name)}
+      <p class="lead">${esc(c.detail || "")}</p>
+      ${pol.length ? `<section><h3><span>Containment</span><span>${pol.length} signals</span></h3>${eventRows(pol, true)}</section>` : ""}
+      ${c.host ? checkSection("Checks so far", c.host.map(k => ({name: k.check, pass: k.pass, detail: k.detail}))) : ""}
+      ${c.changes ? `<section><h3><span>Bridge, round ${c.round}</span></h3><div class="code">${esc(c.changes)}</div></section>` : ""}
+      <section><h3><span>Live</span><span>${sec(evs.at(-1)?.t)}</span></h3>${eventRows(evs.slice(-14))}</section></div>`;
+  }
+  const p = dr.proof, m = p.matrix.find(x => x.backup === b), a = m?.app_versions.find(x => x.app === v);
+  if (!a) return "";
+  const inc = p.incidents.find(i => i.backup === b), det = inc?.detonations.find(d => d.app === v);
+  const rc = drReceipts(b, v);
+  const checks = a.suite.map(t => ({name: t.test, pass: t.pass, detail: t.detail}))
+    .concat(a.control_plane_checks.map(k => ({name: k.check, pass: k.pass, detail: k.detail})));
+  const br = a.bridge && p.bridges[a.bridge];
+  const sandbox = det ? det.sandbox : rc.at(-1)?.name;
+  return `<div class="panel">${head}
+    <div style="margin-top:8px">${mark(a.result)}</div>
+    ${targetLine(null, sandbox, det ? det.destroyed : rc.at(-1)?.destroyed)}
+    <p class="lead">${esc(det ? "The dump tried to attack the restore host. Each attempt hit a wall, then the sandbox was destroyed." : a.detail)}</p>
+    ${det ? containmentDrill(det, inc) : ""}
+    ${groups(checks).map(([g, ks]) => checkSection(g, ks)).join("")}
+    ${br ? bridgeSection([{name: a.bridge, round: br.rounds, sha256: br.sha256, changes: br.changes,
+        url: `api/runs/${p.run_id}/bridges/${encodeURIComponent(a.bridge)}`}],
+        p.llm_calls.filter(l => l.purpose.includes(a.bridge.replace(/^bridge_|\.sql$/g, "").replace("_to_", " to ")))) : ""}
+    ${rc.length ? timings(rc.map(r => [String(r.n).split(", ").slice(1).join(", ") || "sandbox", r.elapsed]), rc.reduce((t, r) => t + r.elapsed, 0)) : ""}
+    <section><h3><span>Sandbox</span></h3><dl class="kv">
+      ${sandbox ? `<dt>last sandbox</dt><dd>${esc(sandbox)}, ${det ? `exit ${det.exit}` : `exit ${rc.at(-1)?.exit}`}, ${(det ? det.destroyed : rc.at(-1)?.destroyed) ? "destroyed" : "NOT destroyed"}</dd>` : ""}
+      <dt>policy</dt><dd>${esc(policyLine(p.sandbox_policy))}</dd>
+      <dt>backup sha256</dt><dd>${esc(m.sha256)}</dd></dl></section>
+    <div class="links no-print"><a href="#cert">DR certificate</a>${inc ? `<a href="api/runs/${p.run_id}/incident.json">Incident log (JSON)</a>` : ""}</div>
+  </div>`;
+}
+function containmentDrill(det, inc) {
+  return `<section><h3><span>Containment</span><span>${det.containment_events.length} signals</span></h3>
+    ${eventRows(det.containment_events, true)}
+    <div class="rows ev"><div><span class="t">${sec(det.elapsed_s).replace(" s", "")}</span><span>Sandbox ${esc(det.sandbox)} ${det.destroyed ? "destroyed" : "NOT destroyed"}, exit ${esc(det.exit)}</span></div></div></section>
+    <section><h3><span>Static scan of the dump</span><span>${inc.static_scan.length} lines</span></h3>
+    <div class="code">${inc.static_scan.map(f => `line ${f.line}  ${esc(f.text)}\n        ${esc(f.why)}`).join("\n")}</div></section>`;
+}
+
+/* ---------- shared panel parts ---------- */
+function checkSection(title, ks) {
+  const pass = ks.filter(k => k.pass).length;
+  const rows = `<div class="rows">${ks.map(k => {
+    const [n, when] = String(k.name).split(/ (?=\()/);
+    return `<div><span class="m ${k.pass ? "ok" : "no"}">${k.pass ? "✓" : "✕"}</span><span class="n">${esc(n)}${when ? ` <small>${esc(when)}</small>` : ""}</span><span class="d">${esc(k.detail)}</span></div>`;
+  }).join("")}</div>`;
+  // All passing: one line, rows one click away. Any failure: open, so the failing check is the first thing read.
+  if (pass === ks.length) return `<section><details class="grp"><summary><h3><span>${esc(title)}</span><span><b>✓</b> ${pass} of ${ks.length} pass</span></h3></summary>${rows}</details></section>`;
+  return `<section><h3><span>${esc(title)}</span><span>${pass} of ${ks.length}</span></h3>${rows}</section>`;
+}
+function containment(sigs, scan, events) {
+  const pol = (events || []).filter(e => e.type === "policy");
+  if (!sigs.length && !(scan || []).length) return "";
+  return `<section><h3><span>Containment</span><span>${sigs.length} signals</span></h3>${pol.length ? eventRows(pol, true)
+    : `<div class="rows">${sigs.map(s => `<div><span class="m no">●</span><span>${esc(s.signal)}</span><span></span></div>`).join("")}</div>`}</section>
+    ${(scan || []).length ? `<section><h3><span>Static scan of the dump</span><span>${scan.length}</span></h3><div class="code">${esc(scan.map(f => typeof f === "string" ? f : JSON.stringify(f)).join("\n"))}</div></section>` : ""}`;
+}
+function bridgeSection(bs, llm) {
+  if (!bs.length) return "";
+  const l = (llm || [])[0];
+  return bs.map(b => `<section><h3><span>Bridge migration, round ${esc(b.round)}</span><span>${l ? `${esc(l.model)} · ${sec(l.latency_s)}` : ""}</span></h3>
+    <div class="code">${esc(b.changes)}</div>
+    <div class="links"><a href="${b.url}" download="${esc(b.name)}">Download ${esc(b.name)}</a><span class="mono muted">sha256 ${esc(b.sha256.slice(0, 16))}</span></div></section>`).join("");
+}
+function timings(pairs, total) {
+  if (!pairs.length) return "";
+  const max = Math.max(...pairs.map(p => +p[1] || 0), 0.01);
+  return `<section><h3><span>Timing</span><span>${sec(total)}</span></h3>${pairs.map(([n, s]) =>
+    `<div class="timing"><span>${esc(n)}</span><span class="b"><i style="width:${(100 * (+s || 0) / max).toFixed(1)}%"></i></span><span class="s">${sec(s)}</span></div>`).join("")}</section>`;
+}
+function eventRows(evs, policy) {
+  return `<div class="rows ev">${evs.map(e => {
+    const text = e.type === "check" ? `${e.pass ? "✓" : "✕"} ${e.check}${e.detail ? `: ${e.detail}` : ""}`
+      : e.type === "sandbox" ? `sandbox ${e.name} ${e.phase}${e.exit != null ? `, exit ${e.exit}` : ""}`
+      : e.type === "llm" ? `${e.model} ${e.purpose} ${e.phase}${e.latency_s ? `, ${e.latency_s} s` : ""}`
+      : e.type === "bridge" ? `bridge ${e.name}, round ${e.round}`
+      : e.type === "verdict" ? `verdict: ${e.state}, ${e.reason}`
+      : e.type === "log" ? `${e.stream}: ${e.line}`
+      : e.event || e.detail || e.type;
+    return `<div><span class="t">${e.t != null ? (+e.t).toFixed(2) : ""}</span><span${policy ? ' class="st c-bad" style="font-weight:400"' : ""}>${policy ? "<i></i>" : ""}<span>${esc(calm(text))}${policy && e.detail ? `<br><span class="muted mono">${esc(e.detail)}</span>` : ""}</span></span></div>`;
+  }).join("")}</div>`;
+}
+// Every restore lands in a throwaway TEST instance of the app (own container, own DB, no network), never production.
+// Uses the runtime's explicit target when it reports one, else the sandbox that held the test instance.
+function targetLine(target, sandbox, destroyed) {
+  const t = target || (sandbox ? `test instance ${sandbox}` : "test instance (sandbox)");
+  return `<dl class="kv target"><dt>restored into</dt><dd>${esc(t)}${destroyed === false ? ", NOT destroyed" : destroyed ? ", destroyed after the checks" : ""}</dd></dl>`;
+}
+const policyLine = p => p ? [p.runtime, `network ${String(p.network).split(" ")[0]}`, `rootfs ${p.rootfs}`, `${p.memory} RAM`,
+  `${p.cpus} CPU`, `pids ${p.pids_limit}`, `caps ${p.capabilities}`, `${p.timeout_s} s cap`].join(" · ") : "";
+
+/* ---------- certificate (both engines carry the same matrix shape) ---------- */
+function certView() {
+  const c = view === "drill" ? dr.proof : rg.details[rg.sel?.b]?.certificate;
+  if (!c) return `<p class="muted">No certificate for this selection yet.</p>`;
+  const json = view === "drill" ? `api/runs/${c.run_id}/proof.json` : `rg/api/backups/${encodeURIComponent(rg.sel.b)}/certificate.json`;
+  const verdicts = c.matrix.map(m => m.status);
+  return `<div class="cert">
+    <div class="head"><div><div class="meta">${esc(c.issuer || "BackupAirlock")} · ${esc(c.generated_at)}</div>
+      <h2>DR Readiness Certificate</h2>
+      <div class="stamp">${c.matrix.map(m => `${esc(m.backup)}: ${esc(m.status.split(":")[0].toLowerCase())}`).join(" · ")}</div></div>
+      <div class="actions no-print"><a class="btn" href="#">Back</a><a class="btn" href="${json}">Export JSON</a>
+        ${view === "drill" ? `<a class="btn" href="api/runs/${c.run_id}/proof.html">Export HTML</a>` : ""}<button class="btn primary" onclick="print()">Print</button></div></div>
+    <section><h3 class="colhead">Backup x app version</h3><table><tr><th>Backup</th><th>App version</th><th>Result</th><th>Bridge</th><th>Checks</th></tr>
+      ${c.matrix.map(m => m.app_versions.map((a, i) => { const ks = (a.suite || []).concat(a.control_plane_checks || []);
+        return `<tr><td>${i ? "" : `<b class="mono">${esc(m.backup)}</b><br><span class="mono muted">${esc(m.sha256)}</span>`}</td><td>${esc(a.app)}</td>
+          <td>${mark(a.result)}</td><td class="mono">${a.bridge ? `${esc(a.bridge)}<br><span class="muted">${esc(a.bridge_sha256.slice(0, 16))}</span>` : ""}</td>
+          <td>${ks.length ? `${ks.filter(k => k.pass).length} of ${ks.length}` : "not run, sandbox killed"}</td></tr>`; }).join("")).join("")}</table></section>
+    <section><h3 class="colhead">Sandbox policy</h3><dl class="kv">${Object.entries(c.sandbox_policy).map(([k, v]) => `<dt>${esc(k.replace(/_/g, " "))}</dt><dd>${esc(v)}</dd>`).join("")}</dl></section>
+    <section><h3 class="colhead">Model calls</h3><dl class="kv"><dt>provider</dt><dd>${esc(c.inference)}</dd>
+      ${(c.llm_calls || []).map(l => `<dt>${esc(l.purpose)}</dt><dd>${esc(l.model)} · ${sec(l.latency_s)} · ${l.tokens} tokens</dd>`).join("") || "<dt>calls</dt><dd>none needed</dd>"}</dl></section>
+    <section><h3 class="colhead">Seal</h3><dl class="kv"><dt>proof sha256</dt><dd>${esc(c.proof_sha256)}</dd></dl>
+      <p class="note">sha256 over this certificate's JSON without the field itself; recompute it to check nothing was edited.</p></section>
+  </div>`;
+}
+
+/* ---------- render ---------- */
+let view = "backups";
+function setLive(on) { $("#live").className = "live" + (on ? " on" : ""); $("#live span").textContent = on ? "live" : view === "drill" ? "no drill running" : "offline"; }
+function note(t) { $("#note").textContent = t || ""; }
+function draw() {
+  document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.view === view));
+  const V = view === "drill" ? drView() : rgView();
+  $("#meta").textContent = V.meta || "";
+  $("#headline").innerHTML = V.headline || "";
+  $("#actions").innerHTML = V.actions || "";
+  if (location.hash === "#cert") { $("#body").innerHTML = certView(); return bind(); }
+  const sel = V.sel;
+  $("#body").innerHTML = `<div class="main"><div>
+    <div class="matrix"><div class="colhead corner">Backup</div>${V.cols.map(c => `<div class="colhead">${esc(c.label)}</div>`).join("")}
+    ${V.rows.map(r => `<div class="row"><div class="bk"><div class="name" title="${esc(r.name)}">${esc(r.name)}</div><div class="sub">${esc(r.sub)}</div>${verdictLine(r.verdict)}</div>
+      ${V.cols.map(c => { const x = r.cells[c.id] || {state: "not_run", line: ""};
+        return `<button class="cell" data-b="${esc(r.id)}" data-v="${esc(c.id)}" aria-pressed="${!!sel && sel.b === r.id && sel.v === c.id}">
+          <div class="app">${esc(c.label)}</div>${mark(x.state)}<div class="d" title="${esc(x.line)}">${esc(x.line)}</div></button>`; }).join("")}</div>`).join("")}
+    </div>${V.rows.length ? "" : `<div class="empty">Nothing to show yet.</div>`}</div>
+    <div>${view === "drill" ? drPanel() : rgPanel()}</div></div>`;
+  bind();
+}
+function bind() {
+  document.querySelectorAll(".cell").forEach(el => el.onclick = async () => {
+    const s = {b: el.dataset.b, v: el.dataset.v};
+    if (view === "drill") dr.sel = s; else { rg.sel = s; await rgDetail(s.b).catch(e => note(e.message)); }
+    draw();
+    if (matchMedia("(max-width:900px)").matches) document.querySelector(".panel")?.scrollIntoView({behavior: "smooth"});
+  });
+  $("#rerun")?.addEventListener("click", async () => {
+    const r = await fetch(`rg/api/backups/${encodeURIComponent(rg.sel.b)}/rerun`, {method: "POST"});
+    note(r.ok ? "Queued. The cells fill in as the sandbox reports." : `Not queued: ${(await r.json()).detail}`);
+    rgRefresh();
+  });
+  $("#file")?.addEventListener("change", async e => {
+    const f = e.target.files[0]; if (!f) return;
+    note(`Uploading ${f.name}`);
+    const r = await fetch(`api/uploads?name=${encodeURIComponent(f.name)}`, {method: "POST", body: f});
+    if (!r.ok) { dr.upload = null; note(`Upload refused: ${(await r.json()).detail}`); }
+    else { dr.upload = await r.json(); note(`${dr.upload.name} (${mb(dr.upload.bytes)}) joins the next drill as a fourth row.`); }
+    draw();
+  });
+  $("#run")?.addEventListener("click", async () => {
+    const r = await fetch(`api/runs/matrix${dr.upload ? "?upload=" + dr.upload.id : ""}`, {method: "POST"});
+    if (!r.ok) { note(`Not started: ${(await r.json()).detail}`); return; }
+    note(""); dr.sel = null; dr.upload = null; drFollow((await r.json()).run_id); draw();
+  });
+}
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+  view = b.dataset.view; history.replaceState(null, "", "?view=" + view); note(""); start();
+});
+window.addEventListener("hashchange", draw);
+async function start() {
+  draw();
   try {
-    const r = await fetch("health", {cache: "no-store"});
-    const ms = Math.round(performance.now() - t);
-    beats++;
-    $("health").classList.toggle("down", !r.ok);
-    $("htext").textContent = `Control Plane /health ${r.status} · ${ms} ms · #${beats}`;
-    const d = $("hdot"); d.classList.remove("beat"); void d.offsetWidth; d.classList.add("beat");
-  } catch (e) {
-    $("health").classList.add("down"); $("htext").textContent = "Control Plane /health unreachable";
-  }
+    if (view === "drill") await drLoad(); else { await rgLoad(); rgStream(); }
+  } catch (e) { note(view === "drill" ? `Drill results unavailable: ${e.message}` : `RestoreGuard runtime unavailable: ${e.message}`); }
+  setLive(view === "drill" ? !!dr.es : !!rg.es);
+  draw();
 }
-setInterval(health, 1000); health();
-
-async function loadFixtures() {
-  fixtures = await (await fetch("api/fixtures")).json();
-  $("fixtures").innerHTML = fixtures.map(f => `<div class="card fx" data-id="${f.id}"><b>${esc(f.title)}</b><small>${esc(f.blurb)}</small><div class="goal">Goal: ${esc(f.goal)}</div></div>`).join("");
-  document.querySelectorAll(".fx").forEach(el => el.onclick = () => pick(el.dataset.id));
-  pick(new URLSearchParams(location.search).get("fixture") || fixtures[0].id);
-}
-function pick(id) {
-  sel = fixtures.find(f => f.id === id) || fixtures[0];
-  document.body.classList.toggle("chainmode", sel.kind === "chain");
-  document.body.classList.toggle("matrixmode", sel.kind === "matrix");
-  $("up").classList.toggle("hide", sel.kind !== "matrix");
-  $("run").textContent = sel.kind === "matrix" ? "Run the matrix" : "Run restore drill";
-  document.querySelectorAll(".fx").forEach(el => el.classList.toggle("sel", el.dataset.id === sel.id));
-  timeout = sel.timeout;
-  $("ptimeout").querySelector("em").textContent = `${timeout} s, then destroyed`;
-  $("ptimeout").classList.toggle("hot", timeout <= 5);
-  $("wallv").textContent = `0 / ${timeout} s`;
-  if (!es) $("run").disabled = false;
-}
-
-function reset() {
-  $("tl").innerHTML = ""; $("term").innerHTML = ""; $("checks").innerHTML = "";
-  $("verdict").className = "verdict"; ["repair","plan","evwrap","chain","migration","matrix","contain","celldetail"].forEach(i => $(i).classList.add("hide"));
-  setBar("cpubar", 0); setBar("wallbar", 0); $("cpuv").textContent = "idle"; $("sbname").textContent = "";
-  steps = {}; chain = null; M = null;
-}
-let steps = {};
-function li(cls, icon, name, sub, t) {
-  const el = document.createElement("li");
-  el.className = cls;
-  el.innerHTML = `<i class="ic">${icon}</i><div><div class="name">${name}</div><div class="sub">${sub || ""}</div></div><span class="t">+${t.toFixed(1)}s</span>`;
-  $("tl").appendChild(el);
-  return el;
-}
-const ICON = {ok: "✓", fail: "✕", skipped: "–", running: "", info: "•"};
-const diffHtml = d => d.split("\n").map(l => `<span class="${l.startsWith("+++") || l.startsWith("---") || l.startsWith("@@") ? "h" : l[0] === "+" ? "a" : l[0] === "-" ? "d" : ""}">${esc(l) || " "}</span>`).join("");
-function setBar(id, frac, cap) {
-  $(id).querySelector("i").style.width = Math.min(100, frac * 100) + "%";
-  $(id).classList.toggle("cap", !!cap);
-}
-// Backup chain: one column per night; rows are the native restore, the migrated restore and every check.
-let chain = null;
-const ROWS = [["native", "Native restore"], ["adapt", "Restore + migrate"], ["Books balance", "Books balance"], ["Invoice totals", "Invoice totals"],
-              ["Customer receivables", "Receivables"], ["Stock on hand", "Stock on hand"], ["No orphan lines", "No orphans"], ["Row counts", "Row counts"],
-              ["Row hashes (sha256)", "Row hashes"], ["Table digests (sha256)", "Table digests"], ["Schema assertions", "Schema"], ["ERP smoke query", "Smoke query"]];
-const DATE = iso => new Date(iso).toLocaleDateString("en-GB", {day: "numeric", month: "short", timeZone: "UTC"});
-function chainInit(ev) {
-  chain = {phase: "native", cols: Object.fromEntries(ev.backups.map((b, i) => [b.backup, i])), running: 0, destroyed: 0};
-  $("chain").classList.remove("hide");
-  $("chaintitle").textContent = `Nightly ERP backups · current ERP schema v${ev.app_version}`;
-  $("strip").innerHTML = `<div></div>` + ev.backups.map((b, i) => `<div class="night${i && b.schema_version !== ev.backups[i - 1].schema_version ? " drift" : ""}" id="n-${b.backup}"><i class="d"></i><b>#${i + 1}</b>${DATE(b.taken_at)}<span class="st">schema v${b.schema_version}</span></div>`).join("");
-  $("grid").innerHTML = ROWS.map(([k, label]) => `<div class="lbl">${label === "Schema" ? `Schema v${ev.app_version}` : label}</div>` + ev.backups.map(b => `<div id="g-${CSS.escape(k)}-${b.backup}" class="na">·</div>`).join("")).join("");
-  $("chainerr").textContent = "";
-}
-function cell(row, backup, cls, text) {
-  const el = document.getElementById(`g-${CSS.escape(row)}-${backup}`);
-  if (el) { el.className = cls; el.textContent = text; }
-}
-function night(backup, cls, label) {
-  const el = $(`n-${backup}`);
-  el.className = el.className.replace(/ ?(probing|adapting|incompatible|adapted|native|failed)/g, "") + " " + cls;
-  if (label) el.querySelector(".st").textContent = label;
-}
-function chainEvent(ev) {
-  if (ev.phase === "native") {
-    cell("native", ev.backup, ev.ok ? "y" : "n", ev.ok ? "✓" : "✕");
-    if (ev.ok) { cell("adapt", ev.backup, "na", "not needed"); night(ev.backup, "native", "native"); }
-    else { night(ev.backup, "incompatible", "incompatible"); if (!$("chainerr").textContent) $("chainerr").textContent = `${ev.backup}: ${ev.error}`; }
-  } else if (ev.phase === "adapt") {
-    cell("adapt", ev.backup, ev.ok ? "y" : "n", ev.ok ? "✓" : "✕");
-    night(ev.backup, ev.ok ? "adapted" : "failed", ev.ok ? "adapted" : "failed");
-  } else if (ev.phase === "verify") {
-    ev.checks.forEach(c => cell(c.check, ev.backup, c.pass ? "y" : "n", c.pass ? "✓" : "✕"));
-    if (!ev.checks.every(c => c.pass)) night(ev.backup, "failed", "checks fail");
-  }
-}
-function sandboxCount() { $("sbname").textContent = `· ${chain.running} running, ${chain.destroyed} destroyed`; }
-function chainSandbox(ev) {
-  if (ev.phase === "started") {
-    chain.running++;
-    cell(chain.phase, ev.backup, "w", "");
-    if (chain.phase === "adapt") ROWS.slice(2).forEach(([k]) => cell(k, ev.backup, "na", "·"));
-    night(ev.backup, chain.phase === "native" ? "probing" : "adapting");
-    term(`$ docker run --network none --cpus 1 --memory 256m --read-only ... ${ev.name}  [${ev.backup}]`, "s");
-  } else if (ev.phase === "exited") {
-    chain.running--;
-    term(`[${ev.backup}] exit: ${ev.exit}  (${ev.elapsed} s)`, ev.exit === 0 ? "s" : "p");
-  } else {
-    if (ev.phase === "destroyed") chain.destroyed++;
-    else term(`WARNING: ${ev.name} still present`, "p");
-  }
-  sandboxCount();
-}
-
-// Compatibility matrix: rows are backups, columns app versions, every cell its own sandbox.
-let M = null;
-const STATE = {running: "RESTORING", native: "GREEN · NATIVE", healed: "GREEN · HEALED", drift: "RED · DRIFT",
-               failed: "RED · FAILED", healing: "YELLOW · HEALING", quarantined: "QUARANTINED"};
-function matrixInit(ev) {
-  M = {cells: {}, apps: ev.apps, hot: new Set(ev.backups.filter(b => b.findings).map(b => b.id)), sel: null, running: 0, destroyed: 0, done: false};
-  ["matrix", "contain"].forEach(i => $(i).classList.remove("hide"));
-  $("mx").innerHTML = `<div></div>` + ev.apps.map(a => `<div class="hd">${esc(a.title)} <span>schema v${a.version}</span></div>`).join("")
-    + ev.backups.map(b => `<div class="bk"><b>${esc(b.file)}</b><small>${esc(b.blurb)}</small><code>sha256 ${b.sha256.slice(0, 12)} · ${(b.size / 2 ** 20).toFixed(1)} MB · schema v${b.version || "?"}</code></div>`
-      + ev.apps.map(a => `<div class="mc" id="mc-${b.id}|${a.id}" data-k="${b.id}|${a.id}"><span class="st">QUEUED</span><div class="dt"></div><div class="dots"></div></div>`).join("")).join("");
-  document.querySelectorAll(".mc").forEach(el => el.onclick = () => showCell(el.dataset.k));
-  const hot = ev.backups.filter(b => b.findings).map(b => b.file);
-  $("containtitle").textContent = `Containment${hot.length ? " · " + hot.join(", ") : ""}`;
-  document.querySelectorAll(".badge").forEach(b => b.classList.remove("on"));
-  $("capv").textContent = `512 MB / ${timeout} s`; $("honey").textContent = ""; $("memv").textContent = `0 / 512 MB`; setBar("membar", 0);
-}
-function matrixCell(ev) {
-  const k = `${ev.backup}|${ev.app}`, el = $(`mc-${k}`);
-  M.cells[k] = ev;
-  el.className = `mc ${ev.state}${M.sel === k ? " sel" : ""}`;
-  el.querySelector(".st").textContent = STATE[ev.state] + (ev.state === "healing" ? ` r${ev.round}` : "");
-  el.querySelector(".dt").textContent = ev.state === "healed" ? `via ${ev.bridge}` : ev.detail || "";
-  el.querySelector(".dots").innerHTML = [...(ev.tests || []), ...(ev.host || [])].map(t => `<i class="${t.pass ? "y" : "n"}" title="${esc(t.test || t.check)}"></i>`).join("");
-  if ((!M.sel && ev.state === "drift") || M.sel === k) showCell(k);
-}
-function showCell(k) {
-  const c = M && M.cells[k];
-  if (!c) return;
-  M.sel = k;
-  document.querySelectorAll(".mc").forEach(el => el.classList.toggle("sel", el.dataset.k === k));
-  const row = t => `<div class="${t.pass ? "pass" : "fail"}"><span>${t.pass ? "PASS" : "FAIL"}</span><b>${esc(t.test || t.check)}</b><em>${esc(t.detail)}</em></div>`;
-  $("celldetail").classList.remove("hide");
-  $("cdtitle").textContent = `${c.backup} on ${M.apps.find(a => a.id === c.app).title}`;
-  $("cdbody").innerHTML = `<div class="cause"><b>${esc(STATE[c.state])}</b> ${esc(c.detail)}</div>`
-    + (c.tests ? `<h3>Business-logic suite, run against the booted app inside the sandbox</h3><div class="tests">${c.tests.map(row).join("")}</div>` : "")
-    + (c.host ? `<h3>Control plane re-check of the returned database</h3><div class="tests">${c.host.map(row).join("")}</div>` : "")
-    + (c.sql ? `<h3>${esc(c.bridge)}, written by Vultr Serverless Inference${M.done ? ` · <a href="api/runs/${current}/bridges/${encodeURIComponent(c.bridge)}">download</a>` : ""}</h3>`
-      + `<ul class="changes">${(c.changes || "").split("\n").filter(Boolean).map(l => `<li>${esc(l)}</li>`).join("")}</ul><pre class="code">${esc(c.sql)}</pre>` : "");
-}
-function matrixSandbox(ev) {
-  const where = `[${ev.backup} on ${ev.app}]`;
-  if (ev.type === "sandbox") {
-    if (ev.phase === "started") { M.running++; term(`$ docker run --network none --read-only --cap-drop ALL --memory 512m --cpus 1 --pids-limit 64 ... ${ev.name}  ${where}`, "s"); }
-    else if (ev.phase === "exited") { M.running--; term(`${where} exit: ${ev.exit}  (${ev.elapsed} s)`, ev.exit === 0 ? "s" : "p"); }
-    else if (ev.phase === "destroyed") {
-      M.destroyed++;
-      if (M.hot.has(ev.backup) && $("b-cap").classList.contains("on")) $("capv").textContent = $("capv").textContent.replace(/( · CONTAINER DESTROYED)?$/, " · CONTAINER DESTROYED");
-    } else term(`WARNING: ${ev.name} still present`, "p");
-    $("sbname").textContent = `· ${M.running} running, ${M.destroyed} destroyed`;
-  } else if (ev.type === "log") {
-    if (!ev.line.startsWith("@@SUITE ")) term(`${where} ${ev.line}`, ev.stream === "stderr" ? "e" : "");
-  } else if (ev.type === "cpu") {
-    if (M.hot.has(ev.backup) && !$("b-cap").classList.contains("on")) { $("memv").textContent = `${ev.mem_mb.toFixed(0)} / 512 MB`; setBar("membar", ev.mem_mb / 512, ev.mem_mb > 400); }
-  } else if (ev.type === "policy") {
-    term(`${where} ${ev.event}`, "p");
-    if (ev.signal === "honey") $("honey").textContent = `Honey file /root/.env read: "${ev.detail}". A decoy: no real secret is in any sandbox.`;
-    const b = $(`b-${ev.signal === "memory" || ev.signal === "timeout" ? "cap" : ev.signal}`);
-    if (b && !b.classList.contains("on")) {
-      b.classList.add("on");
-      if (b.id === "b-cap") { $("capv").textContent = ev.signal === "memory" ? "512 MB HIT" : `${timeout} s HIT`; setBar("membar", ev.signal === "memory" ? 1 : 0, true); if (ev.signal === "memory") $("memv").textContent = "512 / 512 MB, killed"; }
-    }
-    if (!steps["__" + ev.signal]) steps["__" + ev.signal] = li("fail alarm child", "!", esc(ev.event.split(",")[0]), esc(ev.detail || ev.event), ev.t);
-  }
-}
-
-function term(line, cls) {
-  const t = $("term"); const d = document.createElement("div");
-  if (cls) d.className = cls; d.textContent = line; t.appendChild(d); t.scrollTop = t.scrollHeight;
-}
-
-function onEvent(ev) {
-  if (ev.type === "matrix") return ev.phase === "init" ? matrixInit(ev) : ev.phase === "cell" ? matrixCell(ev) : null;
-  if (ev.app) return matrixSandbox(ev);
-  if (ev.type === "chain") return ev.phase === "init" ? chainInit(ev) : chainEvent(ev);
-  if (ev.backup && ev.type === "sandbox") return chainSandbox(ev);
-  if (ev.backup && ev.type === "log") return term(`[${ev.backup}] ${ev.line}`, ev.stream === "stderr" ? "e" : "");
-  if (ev.type === "step") {
-    if (chain && ev.status === "running") chain.phase = ev.name.startsWith("Restore + migrate") ? "adapt" : ev.name === "Native restore" ? "native" : chain.phase;
-    const prev = steps[ev.name];
-    const sub = esc(ev.detail || (ev.exit !== undefined ? `exit ${ev.exit} · ${ev.elapsed} s · ${ev.destroyed ? "sandbox destroyed" : "NOT destroyed"}` : ""));
-    if (prev && prev.classList.contains("running")) {
-      prev.className = ev.status;
-      prev.querySelector(".ic").textContent = ICON[ev.status] || "";
-      if (sub) prev.querySelector(".sub").innerHTML = sub;
-    } else {
-      steps[ev.name] = li(ev.status, ICON[ev.status] || "", esc(ev.name), sub, ev.t);
-    }
-    if (ev.name === "Plan restore" && ev.script) { $("plan").classList.remove("hide"); $("plantext").innerHTML = esc(ev.plan).replace(/\n/g, "<br>"); $("script").textContent = ev.script; }
-    if (ev.name === "Write migration" && ev.migration) {
-      $("migration").classList.remove("hide");
-      $("migtitle").textContent = `Migration v${ev.from_version} to v${ev.to_version}, written by the model`;
-      $("changes").innerHTML = ev.changes.split("\n").filter(Boolean).map(l => `<li>${esc(l)}</li>`).join("");
-      $("schemadiff").innerHTML = diffHtml(ev.schema_diff); $("migsql").textContent = ev.migration;
-    }
-    if (ev.name.startsWith("Repair") && ev.diff !== undefined) {
-      $("repair").classList.remove("hide"); $("cause").textContent = ev.cause;
-      $("diff").innerHTML = diffHtml(ev.diff);
-    }
-  } else if (ev.type === "llm" && ev.phase === "done") {
-    const last = [...$("tl").children].reverse().find(e => e.classList.contains("running"));
-    if (last) last.querySelector(".name").insertAdjacentHTML("beforeend", `<span class="chip">${esc(ev.model)} · ${ev.latency_s} s${ev.fallback ? " · fallback" : ""}</span>`);
-  } else if (ev.type === "llm" && ev.phase === "error") {
-    li("info", ICON.info, `Model ${esc(ev.model)} failed, falling back`, esc(ev.error), ev.t);
-  } else if (ev.type === "sandbox") {
-    if (ev.phase === "started") {
-      $("sbname").textContent = ev.name; term(`$ docker run --network none --cpus 1 --memory 256m --read-only ... ${ev.name}`, "s");
-      li("info child", ICON.info, "Sandbox created", `<span class="chip">${esc(ev.name)}</span><span class="chip">network none</span><span class="chip">timeout ${ev.policy.timeout_s} s</span>`, ev.t);
-      sbStart = performance.now(); clearInterval(wallTimer);
-      wallTimer = setInterval(() => { const s = (performance.now() - sbStart) / 1000; $("wallv").textContent = `${s.toFixed(1)} / ${timeout} s`; setBar("wallbar", s / timeout, s / timeout > .8); }, 100);
-    } else if (ev.phase === "exited") {
-      clearInterval(wallTimer); $("wallv").textContent = `${ev.elapsed} / ${timeout} s`; setBar("wallbar", ev.elapsed / timeout, ev.exit === "timeout");
-      term(`exit: ${ev.exit}  (${ev.elapsed} s)`, ev.exit === 0 ? "s" : "p");
-      $("cpuv").textContent = "stopped";
-    } else {
-      term(ev.phase === "destroyed" ? `sandbox destroyed: ${ev.name}` : `WARNING: ${ev.name} still present`, ev.phase === "destroyed" ? "s" : "p");
-      li(ev.phase === "destroyed" ? "ok child" : "fail child", ev.phase === "destroyed" ? ICON.ok : ICON.fail, ev.phase === "destroyed" ? "Sandbox destroyed" : "Sandbox NOT destroyed", "container removed, removal checked with docker inspect", ev.t);
-    }
-  } else if (ev.type === "log") {
-    term(ev.line, ev.stream === "stderr" ? "e" : "");
-  } else if (ev.type === "cpu") {
-    $("cpuv").textContent = `${ev.pct.toFixed(0)}% of ${ev.cap.toFixed(0)}% cap · ${ev.mem_mb} MB`;
-    // 250 ms samples of a throttled busy loop read 75-99 %, so "at cap" starts at 75 %.
-    setBar("cpubar", ev.pct / ev.cap, ev.pct >= ev.cap * .75);
-    if (ev.pct >= ev.cap * .75 && !steps.__cpu) steps.__cpu = Object.assign(li("fail alarm child", "!", "CPU: AT CAP", `${ev.pct.toFixed(0)}% of 1 core, throttled by the sandbox, host unaffected`, ev.t));
-  } else if (ev.type === "policy") {
-    term(ev.event, "p");
-    li("fail alarm child", "!", esc(ev.event.split(",")[0]), esc(ev.detail || "orchestrator kills the container"), ev.t);
-  } else if (ev.type === "check") {
-    $("evwrap").classList.remove("hide");
-    $("checks").insertAdjacentHTML("beforeend", `<div class="card ck ${ev.pass ? "pass" : "fail"}"><span class="st">${ev.pass ? "PASS" : "FAIL"}</span><b>${esc(ev.check)}</b><div class="sub">${esc(ev.detail)}</div><table>${ev.items.slice(0, 6).map(i => `<tr><td>${esc(String(i.what).slice(0, 26))}</td><td class="${i.pass ? "" : "x"}" style="text-align:right">${esc(Array.isArray(i.got) ? i.got.join(", ") : i.got)}</td></tr>`).join("")}</table></div>`);
-  } else if (ev.type === "verdict") {
-    showVerdict(ev);
-  }
-}
-
-async function showVerdict(ev) {
-  document.querySelectorAll("#tl li.running").forEach(el => { el.className = "fail"; el.querySelector(".ic").textContent = ICON.fail; });
-  const id = current, p = await (await fetch(`api/runs/${id}/proof.json`)).json();
-  const v = $("verdict");
-  v.className = "verdict " + (ev.level === "ok" ? "ok" : "bad");
-  const doc = p.matrix ? "certificate" : "proof";
-  v.innerHTML = `<h2 style="color:inherit;opacity:.7">${p.matrix ? "DR Readiness Certificate" : "Recovery Proof"}</h2><h1>${esc(ev.headline)}</h1><div>${esc(ev.reason)}</div><p>${esc(p.explanation)}</p>
-    <div class="meta">run ${esc(id)} · ${ev.elapsed_s} s end to end · ${doc} sha256 ${esc(ev.proof_sha256.slice(0, 16))}</div>
-    <a href="api/runs/${id}/proof.json">Download ${doc} JSON</a><a href="api/runs/${id}/proof.html">Download ${doc} HTML</a>`
-    + Object.keys(p.bridges || {}).map(n => `<a href="api/runs/${id}/bridges/${encodeURIComponent(n)}">${esc(n)}</a>`).join("")
-    + (p.incidents && p.incidents.length ? `<a href="api/runs/${id}/incident.json">Forensic incident log</a>` : "");
-  if (p.matrix) { M.done = true; if (M.sel) showCell(M.sel); }
-  $("evwrap").classList.remove("hide");
-  $("receipts").innerHTML = `<h2>Command receipts</h2>` + p.command_receipts.map(a => `<div><span>${typeof a.n === "number" ? "attempt " : ""}${esc(a.n)}: exit ${esc(a.exit)}</span><span>${a.elapsed} s · ${a.destroyed ? "destroyed" : "NOT destroyed"} · ${a.script_sha256.slice(0, 10)}</span></div>`).join("")
-    + p.llm_calls.map(c => `<div><span>${esc(c.purpose)}: ${esc(c.model)}</span><span>${c.latency_s} s · ${c.tokens ?? "?"} tok</span></div>`).join("");
-  $("sums").innerHTML = p.matrix ? `<h2>Backups (sha256)</h2>` + p.matrix.map(m => `<div><span>${esc(m.backup)} · ${esc(m.status)}</span><span>${m.sha256.slice(0, 16)}</span></div>`).join("")
-    + Object.entries(p.bridges).map(([n, b]) => `<div><span>${esc(n)}</span><span>${b.sha256.slice(0, 16)}</span></div>`).join("") + `<div><span>elapsed</span><span>${p.elapsed_s} s</span></div>`
-    : p.chain ? `<h2>Restored databases (sha256)</h2>` + p.chain.map(c => `<div><span>${esc(c.backup)} · ${esc(c.note)}</span><span>${c.restored_db_sha256 ? c.restored_db_sha256.slice(0, 16) : "none"}</span></div>`).join("")
-    + (p.migration ? `<div><span>migrate.sql</span><span>${p.migration.sha256.slice(0, 16)}</span></div>` : "") + `<div><span>elapsed</span><span>${p.elapsed_s} s</span></div>`
-    : `<h2>Checksums (sha256)</h2>` + Object.entries(p.backup_sha256).map(([f, h]) => `<div><span>${esc(f)}</span><span>${h.slice(0, 16)}</span></div>`).join("")
-    + `<div><span>restored.db</span><span>${p.restored_db_sha256 ? p.restored_db_sha256.slice(0, 16) : "not trusted, not kept"}</span></div><div><span>elapsed</span><span>${p.elapsed_s} s</span></div>`;
-  v.scrollIntoView({behavior: "smooth", block: "start"});
-}
-
-let current = null;
-$("run").onclick = async () => {
-  $("run").disabled = true; reset();
-  const r = await fetch(`api/runs/${sel.id}${sel.kind === "matrix" && uploadId ? "?upload=" + uploadId : ""}`, {method: "POST"});
-  if (!r.ok) { li("fail", ICON.fail, "Could not start", esc((await r.json()).detail), 0); $("run").disabled = false; return; }
-  current = (await r.json()).run_id;
-  es = new EventSource(`api/runs/${current}/events`);
-  es.onmessage = m => onEvent(JSON.parse(m.data));
-  es.addEventListener("end", () => { es.close(); es = null; $("run").disabled = false; clearInterval(wallTimer); });
-};
-$("file").onchange = async () => {
-  const f = $("file").files[0];
-  uploadId = "";
-  if (!f) return;
-  $("upst").textContent = `Uploading ${f.name} ...`;
-  const r = await fetch(`api/uploads?name=${encodeURIComponent(f.name)}`, {method: "POST", body: f});
-  const d = await r.json();
-  if (!r.ok) { $("upst").textContent = `Upload refused: ${d.detail}`; return; }
-  uploadId = d.id;
-  $("upst").textContent = `${d.name}, ${(d.bytes / 2 ** 20).toFixed(2)} MB, sha256 ${d.sha256.slice(0, 12)}. It joins the next matrix run.`;
-};
-loadFixtures();
+view = new URLSearchParams(location.search).get("view") === "drill" ? "drill" : "backups";
+start();
 </script>
 </body>
 </html>
