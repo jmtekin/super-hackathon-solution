@@ -175,7 +175,7 @@ async def lifespan(_):
         t.cancel()
 
 
-app = FastAPI(title="RestoreGuard", docs_url=None, redoc_url=None, lifespan=lifespan)
+app = FastAPI(title="BackupAirlock", docs_url=None, redoc_url=None, lifespan=lifespan)
 
 
 def _summary(b):

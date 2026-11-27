@@ -1,5 +1,5 @@
 #!/bin/sh
-# Pitch demo (~3 min): drops four backups into the running RestoreGuard, one at a time, so the Backups tab shows
+# Pitch demo (~3 min): drops four backups into the running BackupAirlock, one at a time, so the Backups tab shows
 # each state in turn: a good backup (DR ready), a corrupted one (not restorable), a schema-drift one (GLM bridge
 # heals it on app 1.0.0) and a poisoned one (quarantined). Each step waits for the verdict, then PAUSE seconds
 # of talking time. Demo copies are named *-demo-*; real backups are never touched.

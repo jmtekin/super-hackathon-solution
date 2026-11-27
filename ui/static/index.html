@@ -216,7 +216,7 @@ function groups(checks) {
   return Object.entries(out).filter(([, v]) => v.length);
 }
 
-/* ---------- Backups view: the RestoreGuard runtime (watched ERP backups) ---------- */
+/* ---------- Backups view: the BackupAirlock runtime (watched ERP backups) ---------- */
 const rg = {summaries: [], versions: [], details: {}, live: {}, sel: null, es: null};
 
 async function rgLoad() {
@@ -247,7 +247,7 @@ function rgView() {
   const ready = done.filter(b => b.status === "dr_ready"), q = done.filter(b => b.status === "quarantined");
   const newest = ready.slice().sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))[0];
   return {
-    meta: `RestoreGuard · Nordvik Handel ERP (stand-in app) · ${ss.length} backups watched · each restored into a throwaway test instance, never production`,
+    meta: `BackupAirlock · Nordvik Handel ERP (stand-in app) · ${ss.length} backups watched · each restored into a throwaway test instance, never production`,
     headline: !ss.length ? "No backups yet. The watcher picks up each new dump and its manifest."
       : `${ready.length} of ${done.length} backups DR ready` + (newest ? `; newest ${clock(newest.created_at)}` : "") + "."
         + (q.length ? ` <em>${q.length} quarantined: do not restore.</em>` : ""),
@@ -600,7 +600,7 @@ async function start() {
   draw();
   try {
     if (view === "drill") await drLoad(); else { await rgLoad(); rgStream(); }
-  } catch (e) { note(view === "drill" ? `Drill results unavailable: ${e.message}` : `RestoreGuard runtime unavailable: ${e.message}`); }
+  } catch (e) { note(view === "drill" ? `Drill results unavailable: ${e.message}` : `BackupAirlock runtime unavailable: ${e.message}`); }
   setLive(view === "drill" ? !!dr.es : !!rg.es);
   draw();
 }

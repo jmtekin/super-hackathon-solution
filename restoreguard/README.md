@@ -1,4 +1,4 @@
-# RestoreGuard runtime
+# BackupAirlock runtime
 
 Proves every backup of the Nordvik Handel ERP restores into a working app: each new `pg_dump -Fc` + manifest
 (contract: `../restorer/handoff/PROMPT-FOR-MOHAMED.md`) is restored into a throwaway **test instance** (its own
@@ -75,7 +75,7 @@ Fault kit (`python faults.py backups-frappe/<stem>.sql.gz`, copies in `faults/ou
 | `guard.py` | the cell: sandbox, checks, app probe, bridge loop, certificate |
 | `frappe_target.py`, `frappe.json` | Frappe/MariaDB target: read-only fetch from production, MariaDB sandbox, test.local replay |
 | `api.py` | service: watcher (folders, or mirror of the app's `/backups/` HTTP endpoint), queue, results API, SSE |
-| `contract/manifest.sql`, `contract/rules.sql` | the contract's numbers and rules; the backup job and RestoreGuard run the same SQL |
+| `contract/manifest.sql`, `contract/rules.sql` | the contract's numbers and rules; the backup job and BackupAirlock run the same SQL |
 | `faults.py` | fault-injection kit + table runner |
 | `standin/` | **STAND-IN** for Mohamed's app (same tables, rules, endpoints, migrations, backup job); replaced by his |
 | `apps.json` | app versions under test |

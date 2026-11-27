@@ -888,7 +888,7 @@ RESTOREGUARD = os.environ.get("RESTOREGUARD_URL", "127.0.0.1:8600")
 
 @app.api_route("/rg/{path:path}", methods=["GET", "POST"])
 async def restoreguard(path: str, request: Request):
-    """The console reads the RestoreGuard runtime (backups watcher, results API, SSE) through here: it listens on
+    """The console reads the BackupAirlock runtime (backups watcher, results API, SSE) through here: it listens on
     localhost only, and one public origin keeps the page free of CORS. GET and POST /api/backups/{id}/rerun only."""
     if not (path.startswith("api/") or path == "health") or (request.method == "POST" and not path.endswith("/rerun")):
         raise HTTPException(404, "not proxied")
@@ -896,7 +896,7 @@ async def restoreguard(path: str, request: Request):
     try:
         reader, writer = await asyncio.wait_for(asyncio.open_connection(host, int(port)), 3)
     except (OSError, asyncio.TimeoutError):
-        raise HTTPException(502, "RestoreGuard runtime is not reachable")
+        raise HTTPException(502, "BackupAirlock runtime is not reachable")
     # HTTP/1.0: no chunked encoding, the runtime closes the socket at the end of the body, SSE streams through.
     writer.write(f"{request.method} /{path} HTTP/1.0\r\nHost: {host}\r\nContent-Length: 0\r\n\r\n".encode())
     await writer.drain()

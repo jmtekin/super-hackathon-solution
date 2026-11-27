@@ -57,7 +57,7 @@ Fixtures (`fixtures/build.py`, a seeded day-by-day simulation of the company's y
 | `apps/suite.py` | the business-logic suite run against the booted app |
 | `sandbox.py` | hardened Docker runner, live CPU/memory from the container cgroup |
 | `verify.py` | the deterministic checks: five on the books, five against the manifest |
-| `static/index.html` | the console (relative paths, works under any prefix): tabs Backups (RestoreGuard runtime via `/rg/*`) and Drill; checklist ../docs/design/SPEC-CHECKLIST.md |
+| `static/index.html` | the console (relative paths, works under any prefix): tabs Backups (BackupAirlock runtime via `/rg/*`) and Drill; checklist ../docs/design/SPEC-CHECKLIST.md |
 | `fixtures/build.py` | simulates the ERP, builds the matrix dumps + the four drill fixtures + their manifests, incl. the reference v1 to v2 migration |
 | `sandbox.Dockerfile` | sandbox image `restorer-sandbox:2` (alpine + sqlite, python3, curl, honey `/root/.env`) |
 | `install.sh` | one-command install on a Vultr VM |
@@ -79,7 +79,7 @@ Env vars: `VULTR_INFERENCE_KEY` (required), `RESTORER_HOST` (default 127.0.0.1; 
 
 ## Runtime API
 
-RestoreGuard (`projects/restoreguard`, next to this repo, imports its LLM helpers) is the always-on runtime: it watches the ERP's
+BackupAirlock (`projects/restoreguard`, next to this repo, imports its LLM helpers) is the always-on runtime: it watches the ERP's
 backups and proves each one on every app version. JSON only; paths are relative (base = wherever it is served, here
 `http://127.0.0.1:8600`). Shapes are stable; fields are only ever added.
 

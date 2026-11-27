@@ -1,4 +1,4 @@
-# RestoreGuard
+# BackupAirlock
 
 Every ERP backup is proved restorable before anyone needs it: each new backup is restored into a
 throwaway, network-less test instance, checked against the source's own counts and business rules,
@@ -12,7 +12,7 @@ tests: George. UI: Jonas. Team spec: [docs/BACKUPAIRLOCK-SPEC.md](docs/BACKUPAIR
 ## Architecture
 
 ```
- ERP VM (Frappe 16 + ERPNext)                     RestoreGuard VM (Vultr, this repo)
+ ERP VM (Frappe 16 + ERPNext)                     BackupAirlock VM (Vultr, this repo)
  ┌──────────────────────────────┐   GET only     ┌───────────────────────────────────────────────┐
  │ demo.local :80  PRODUCTION   │ ─────────────► │ restoreguard/api.py  watcher + queue, :8600    │
  │   Backups page, /backups/*,  │  backup .sql.gz│   guard.py / frappe_target.py: one cell =      │

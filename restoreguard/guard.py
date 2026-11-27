@@ -501,7 +501,7 @@ def certificate(backup, cells, sandbox_policy=None):
     """BackupAirlock's DR Readiness Certificate, one backup's matrix row, sealed by its own sha256."""
     states = {c["state"] for c in cells}
     cert = {
-        "kind": "BackupAirlock DR Readiness Certificate", "issuer": "RestoreGuard",
+        "kind": "BackupAirlock DR Readiness Certificate", "issuer": "BackupAirlock",
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "backup_sha256": {backup["file"]: backup["manifest"]["sha256"]},
         "sandbox_policy": sandbox_policy or policy(), "inference": "Vultr Serverless Inference (api.vultrinference.com/v1)",
         "matrix": [{

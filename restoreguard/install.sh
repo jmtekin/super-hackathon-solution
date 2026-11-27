@@ -66,7 +66,7 @@ chown -R restoreguard:restoreguard "$DEST" /etc/restoreguard
 
 cat > /etc/systemd/system/restoreguard.service <<UNIT
 [Unit]
-Description=RestoreGuard runtime
+Description=BackupAirlock runtime
 After=network-online.target docker.service
 
 [Service]
