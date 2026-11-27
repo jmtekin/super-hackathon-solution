@@ -137,6 +137,8 @@ footer{color:var(--mute);font-size:12px;text-align:center;padding:10px 0 30px}
 </main>
 <footer>Control plane: FastAPI on a Vultr VM. Inference: Vultr Serverless Inference. Every restore runs in a disposable sandbox.</footer>
 <script>
+// Relative API paths need a trailing slash behind the Funnel /restorer prefix.
+if (!location.pathname.endsWith("/")) location.replace(location.pathname + "/" + location.search);
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 let fixtures = [], sel = null, es = null, timeout = 60, wallTimer = null, sbStart = 0;
