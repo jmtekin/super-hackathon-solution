@@ -91,12 +91,12 @@ backups and proves each one on every app version. JSON only; paths are relative 
 | `GET /api/backups/{id}/certificate.json` | DR Readiness Certificate (same format as BackupAirlock's matrix proof, `proof_sha256` seals it); 409 until finished |
 | `GET /api/backups/{id}/incident.json` | forensic log of a quarantined backup: per app version `restored_into, signals, static_scan, containment_events, errors`; 409 if not quarantined |
 | `GET /api/backups/{id}/bridges/{name}` | a bridge migration's SQL (text/plain) |
-| `POST /api/backups/{id}/rerun` | `{queued: id}`; 409 while queued/running |
+| `POST /api/backups/{id}/rerun` | `{queued: id}`; 409 while queued/running, or while its manifest is still unreadable (re-read on every rerun) |
 | `GET /api/matrix` | `{app_versions: [...], backups: [{id, schema_version, status, cells: [{app_version, state, reason}]}]}` (cells in `app_versions` order) |
 | `GET /api/stream` | SSE, one JSON event per `data:` line (below) |
 
 `status` of a backup: `queued`, `running`, `dr_ready` (restorable on at least one app version), `not_restorable`, `quarantined`,
-`failed` (unreadable manifest; never ran). Every restore goes into a throwaway test instance (own Postgres container, no network, the app version under test inside it), never into production; the certificate names it per app version (`restored_into`). `state` of a cell: `running`, `native` (restored, app runs on it as is, including the
+`failed` (unreadable manifest, never ran; or `runtime error: …`). A backup whose dump file is removed leaves the list at the next poll (SSE `status: "removed"`). Every restore goes into a throwaway test instance (own Postgres container, no network, the app version under test inside it), never into production; the certificate names it per app version (`restored_into`). `state` of a cell: `running`, `native` (restored, app runs on it as is, including the
 app's own forward migrations), `healed` (a GLM bridge migration made it run, checks pass), `failed`, `quarantined` (containment
 signal or static-scan finding), `not_run`.
 
@@ -109,6 +109,18 @@ Events (SSE and `logs`), all with `cell, backup, app_version, t` (s since the ce
 `{type: "log", stream, line}`, `{type: "policy", signal, event, detail}`, `{type: "llm", phase: "start"|"done"|"error", purpose,
 model, ...}`, `{type: "bridge", round, name, changes}`, `{type: "verdict", state, reason}`, and per backup
 `{type: "backup", id, status, reason}`.
+
+## Tests and demo (RestoreGuard runtime)
+
+Both drive the running `restoreguard.service` the way production does: copies of a real backup (or of the fault kit's
+`faults/out/`) are dropped into its watched folder under a marked name (`*-e2e-*`, `*-demo-*`); `e2e/rgctl.py` drops,
+waits and removes them without restarting the service. Neither runs in parallel with the other or with `faults.py`.
+
+- `./e2e.sh`: pytest, 20 tests, ~3.5 min: listing, `dr_ready` in test instances, SSE order, sealed certificate, each fault's
+  status, drift bridge, malformed manifests, rerun (also after a fixed manifest), 404s, prod-target startup refusal, no `rg-`
+  sandbox left.
+- `./demo.sh`: the ~3 min pitch run, good -> corrupted -> schema drift (GLM heals) -> poisoned (quarantined), `PAUSE` s of
+  talking time after each verdict (default 20). `./demo.sh reset` clears the demo copies.
 
 ## Limits (honest)
 
