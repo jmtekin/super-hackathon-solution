@@ -1,73 +1,118 @@
 {
   "row_counts": {
-    "customers": 186,
-    "orders": 1139
+    "account_account": 4,
+    "account_move": 3681,
+    "account_move_line": 11716,
+    "product_product": 40,
+    "res_partner": 206,
+    "sale_order": 1975,
+    "sale_order_line": 4354,
+    "stock_location": 3,
+    "stock_move": 4692,
+    "stock_quant": 40
   },
   "row_hashes": {
-    "customers": {
-      "1": "16d0c8f1d74e53570fef37f2bbe31cd2c1539c723f8eefdc80f297bfc8134fa5",
-      "47": "f3c328ad36c6e5be5cc7b163861e77d51ef9bb0fb223fd1721662006321e0b3b",
-      "93": "447bd6ab2b0df930557112f5135f37128eba26b30a0da25af06fba8ab43ab65b",
-      "139": "e4749576ea52d51781b8cc24a8dbe2551a4840c6c41d1ef907121a840f944952",
-      "185": "2a4cb761fd439b2ac28621ce258df42f9bf2582897bf093ff7086413c76e4feb",
-      "186": "443dac4e1d1fbbece990e88936045fffa7c8d3ccd235fe349d3c03161d5c27c1"
+    "account_move": {
+      "1": "b9a563c9f4ac81b73214fb7eb28861b2102e4424e20d0f46bc8d17d75a022a1f",
+      "921": "64553403036101b2dd76134810687d78dff0de4b6fa46382679c650f79415d06",
+      "1841": "f983f717d6ec21c2a1fc396f1a865887d02ea580cb658356ad827525cf6a33ef",
+      "2761": "d192b81d29ff69400530bf547faf7bbd563125eaf197e2003664e539da8c5b31",
+      "3681": "b946dd6854d8e596143c86ea489494d324ae8c749bebdbefedc8dd6ee2999175"
     },
-    "orders": {
-      "1": "e72b208c837dacc414d71325eeb26dc34ff849e0367c3d0dd283a65d0738c22a",
-      "356": "b9719d90835da048eed7586a4a9c4e16ab8cb9da1ef1d845f2d5c35c9312d17b",
-      "713": "bfcf0c8a4316bf3ad878ff9c5551cb490e6052c3d5805ece459a1a8587568aa0",
-      "1086": "79467d2c94026de5e35f88a3897ba9221ceb5c1c75d5fb3c450b5aa11370794f",
-      "1458": "fb14fbb7a49638b24276fcb56b24d68a163cf3743000ffa8766393ab6e628743",
-      "1460": "349d2dfa40d25ee3472552727c1e69b82f85f59755fd55f88bc1664dbc32e043"
+    "account_move_line": {
+      "1": "33d1a31bdfad82a9275b95f6102a5badf5e9f7fa0904c38d7d4c5c26a12715f8",
+      "2930": "45d5bfb1ac64def741f373947dce0848c40693386c662378bf52bbe7758067c7",
+      "5859": "456d4de060bca565ac843a30e6b245134ca99652c200b264677d0938e2453d1f",
+      "8788": "3674d83ce04bbed0bce6720ad70211f66713a7f92567b5dd4bbeb829c838f7ec",
+      "11716": "6fdcaae7b9c507bd3ecf392a743d36e24e5917c60fce4a7c4579f4fd577d42ac"
+    },
+    "stock_move": {
+      "1": "e4cf36791d60bbe2d6df652be796b2bddb33ccddea6a7b0653bbdd08f47fe164",
+      "1174": "716a51eda41d2aa8e179b2d234e57a080ad43aa012f7caa3ddbd021a1881e447",
+      "2347": "65b52d30e617eca25becb1a551821326f22ce3bb31259257044fdcfb6829cda9",
+      "3520": "11499411a3cdc122dd9e81fcfc6eea2e606de578ba09eb88fce3d00c14a2d6ce",
+      "4692": "d369b8593f7972922a6213370116f9e299d2e0a67dad28945f6fb3bd17057791"
     }
   },
+  "table_digests": {
+    "account_account": "63115208c3cd6220f4ef99d3deffd2184a1fd51674357008923c1f9b587f42ca",
+    "account_move": "9546542836f81d7ce48ffd38254ebf63654242b32a13e4914843e218a2aa399c",
+    "account_move_line": "ea532ce7efb6b1ba25db2495d32895bc28205c513c22566f01910c310868d156",
+    "product_product": "4316f83216f70b669e6156409271c7beba061c0bbd1a2af1a20bb7ba47844742",
+    "res_partner": "ad44bbd41c36f88b43162b4a16c1b6108463cca8022dfa68fe8cb03cb6f4faf3",
+    "sale_order": "e0d5b64effa77bde67666e2293048ed9f681d380431f60bc82628d8899dac4dc",
+    "sale_order_line": "2a2dc1967add08050d6161ae259fdd93b92437c051b64daa8cd22ebd7619e981",
+    "stock_location": "c5afc530dc4cb1f33fb81311b333cbc6560c758f827d97f2567ae0efe5877f26",
+    "stock_move": "5d43ecc6581792034698e3fd899930b0550c26ccdff08de16f2618b68c29ce33",
+    "stock_quant": "17f51fa533f16dc2fec098b9fa8aab05329ad94ae24ab7a8a837891fd9bb8ccf"
+  },
   "schema": {
-    "customers": [
+    "account_account": [
       [
         "id",
         "INTEGER",
         false
       ],
       [
-        "email",
+        "code",
         "TEXT",
         true
       ],
       [
-        "first_name",
+        "name",
         "TEXT",
         true
       ],
       [
-        "last_name",
-        "TEXT",
-        true
-      ],
-      [
-        "created_at",
+        "account_type",
         "TEXT",
         true
       ]
     ],
-    "orders": [
+    "account_move": [
       [
         "id",
         "INTEGER",
         false
       ],
       [
-        "customer_id",
-        "INTEGER",
-        true
-      ],
-      [
-        "sku",
+        "name",
         "TEXT",
         true
       ],
       [
-        "total_cents",
+        "move_type",
+        "TEXT",
+        true
+      ],
+      [
+        "partner_id",
         "INTEGER",
+        false
+      ],
+      [
+        "date",
+        "TEXT",
+        true
+      ],
+      [
+        "invoice_date",
+        "TEXT",
+        false
+      ],
+      [
+        "invoice_date_due",
+        "TEXT",
+        false
+      ],
+      [
+        "invoice_origin",
+        "TEXT",
+        false
+      ],
+      [
+        "state",
+        "TEXT",
         true
       ],
       [
@@ -76,29 +121,376 @@
         true
       ],
       [
-        "status",
+        "amount_untaxed",
+        "INTEGER",
+        true
+      ],
+      [
+        "amount_tax",
+        "INTEGER",
+        true
+      ],
+      [
+        "amount_total",
+        "INTEGER",
+        true
+      ],
+      [
+        "amount_residual",
+        "INTEGER",
+        true
+      ],
+      [
+        "payment_state",
+        "TEXT",
+        true
+      ]
+    ],
+    "account_move_line": [
+      [
+        "id",
+        "INTEGER",
+        false
+      ],
+      [
+        "move_id",
+        "INTEGER",
+        true
+      ],
+      [
+        "account_id",
+        "INTEGER",
+        true
+      ],
+      [
+        "partner_id",
+        "INTEGER",
+        false
+      ],
+      [
+        "product_id",
+        "INTEGER",
+        false
+      ],
+      [
+        "display_type",
         "TEXT",
         true
       ],
       [
-        "created_at",
+        "name",
         "TEXT",
+        false
+      ],
+      [
+        "quantity",
+        "INTEGER",
+        false
+      ],
+      [
+        "price_unit",
+        "INTEGER",
+        false
+      ],
+      [
+        "price_subtotal",
+        "INTEGER",
+        false
+      ],
+      [
+        "price_total",
+        "INTEGER",
+        false
+      ],
+      [
+        "debit",
+        "INTEGER",
+        true
+      ],
+      [
+        "credit",
+        "INTEGER",
+        true
+      ]
+    ],
+    "product_product": [
+      [
+        "id",
+        "INTEGER",
+        false
+      ],
+      [
+        "default_code",
+        "TEXT",
+        true
+      ],
+      [
+        "name",
+        "TEXT",
+        true
+      ],
+      [
+        "list_price",
+        "INTEGER",
+        true
+      ],
+      [
+        "standard_price",
+        "INTEGER",
+        true
+      ]
+    ],
+    "res_partner": [
+      [
+        "id",
+        "INTEGER",
+        false
+      ],
+      [
+        "name",
+        "TEXT",
+        true
+      ],
+      [
+        "is_company",
+        "INTEGER",
+        true
+      ],
+      [
+        "email",
+        "TEXT",
+        false
+      ],
+      [
+        "vat",
+        "TEXT",
+        false
+      ],
+      [
+        "city",
+        "TEXT",
+        false
+      ],
+      [
+        "country_code",
+        "TEXT",
+        true
+      ],
+      [
+        "customer_rank",
+        "INTEGER",
+        true
+      ],
+      [
+        "supplier_rank",
+        "INTEGER",
+        true
+      ],
+      [
+        "create_date",
+        "TEXT",
+        true
+      ]
+    ],
+    "sale_order": [
+      [
+        "id",
+        "INTEGER",
+        false
+      ],
+      [
+        "name",
+        "TEXT",
+        true
+      ],
+      [
+        "partner_id",
+        "INTEGER",
+        true
+      ],
+      [
+        "date_order",
+        "TEXT",
+        true
+      ],
+      [
+        "state",
+        "TEXT",
+        true
+      ],
+      [
+        "invoice_status",
+        "TEXT",
+        true
+      ],
+      [
+        "amount_untaxed",
+        "INTEGER",
+        true
+      ],
+      [
+        "amount_tax",
+        "INTEGER",
+        true
+      ],
+      [
+        "amount_total",
+        "INTEGER",
+        true
+      ]
+    ],
+    "sale_order_line": [
+      [
+        "id",
+        "INTEGER",
+        false
+      ],
+      [
+        "order_id",
+        "INTEGER",
+        true
+      ],
+      [
+        "product_id",
+        "INTEGER",
+        true
+      ],
+      [
+        "name",
+        "TEXT",
+        true
+      ],
+      [
+        "product_uom_qty",
+        "INTEGER",
+        true
+      ],
+      [
+        "price_unit",
+        "INTEGER",
+        true
+      ],
+      [
+        "price_subtotal",
+        "INTEGER",
+        true
+      ],
+      [
+        "price_tax",
+        "INTEGER",
+        true
+      ],
+      [
+        "price_total",
+        "INTEGER",
+        true
+      ]
+    ],
+    "stock_location": [
+      [
+        "id",
+        "INTEGER",
+        false
+      ],
+      [
+        "complete_name",
+        "TEXT",
+        true
+      ],
+      [
+        "usage",
+        "TEXT",
+        true
+      ]
+    ],
+    "stock_move": [
+      [
+        "id",
+        "INTEGER",
+        false
+      ],
+      [
+        "reference",
+        "TEXT",
+        true
+      ],
+      [
+        "origin",
+        "TEXT",
+        false
+      ],
+      [
+        "product_id",
+        "INTEGER",
+        true
+      ],
+      [
+        "location_id",
+        "INTEGER",
+        true
+      ],
+      [
+        "location_dest_id",
+        "INTEGER",
+        true
+      ],
+      [
+        "product_uom_qty",
+        "INTEGER",
+        true
+      ],
+      [
+        "quantity",
+        "INTEGER",
+        true
+      ],
+      [
+        "picked",
+        "INTEGER",
+        true
+      ],
+      [
+        "state",
+        "TEXT",
+        true
+      ],
+      [
+        "date",
+        "TEXT",
+        true
+      ]
+    ],
+    "stock_quant": [
+      [
+        "id",
+        "INTEGER",
+        false
+      ],
+      [
+        "product_id",
+        "INTEGER",
+        true
+      ],
+      [
+        "location_id",
+        "INTEGER",
+        true
+      ],
+      [
+        "quantity",
+        "INTEGER",
         true
       ]
     ]
   },
+  "user_version": 2,
   "smoke": {
-    "sql": "SELECT c.first_name || ' ' || c.last_name, c.email, COUNT(o.id), SUM(o.total_cents) FROM customers c JOIN orders o ON o.customer_id = c.id WHERE c.id = 42 GROUP BY c.id",
+    "sql": "SELECT p.name, COUNT(m.id), SUM(m.amount_total), SUM(m.amount_residual) FROM res_partner p JOIN account_move m ON m.partner_id = p.id AND m.move_type = 'out_invoice' AND m.state = 'posted' WHERE p.id = 42 GROUP BY p.id",
     "expect": [
-      "Lina Saleh",
-      "lina.saleh42@example.se",
-      8,
-      2257554
+      "Nyberg Måleri AB",
+      4,
+      4558250,
+      0
     ]
-  },
-  "table_digests": {
-    "customers": "4f1d4d51e06785757496dbabb2a49dd24c92989febdcf1a47e1eafefe4b4e3af",
-    "orders": "1a3cc18a5c137ad5eae18be2d45199458ba937f0bd8fddaf60dbd2a3765612ac"
-  },
-  "user_version": 2
+  }
 }

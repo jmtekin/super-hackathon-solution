@@ -1,6 +1,6 @@
 {
   "engine": "sqlite3 3.45",
-  "app": "shop-orders",
+  "app": "Odoo-style ERP, Nordvik Handel AB",
   "taken_at": "2026-11-23T02:00:04Z",
   "schema_version": 1,
   "schema": "backup/schema.sql",
