@@ -32,10 +32,7 @@ $PUBLIC_HOST {
 		not path_regexp (/events|/stream)\$
 	}
 	encode @compress gzip
-	@write not method GET HEAD
-	basicauth @write {
-		${WRITE_USER:-team} $HASH
-	}
+	# no login (Jonas 16:47 "remove login"): judges can press Run; the runtime runs one at a time, only into test copies
 	reverse_proxy 127.0.0.1:$RESTORER_PORT
 }
 CADDY
