@@ -33,24 +33,37 @@ mkdir -p "$DEST/restoreguard/backups" "$DEST/restoreguard/faults/out" "$DEST/res
 umask 077
 [ -n "${BACKUPS_TOKEN:-}" ] && printf '%s' "$BACKUPS_TOKEN" > /etc/restoreguard/backups-token
 [ -n "${ADMIN_PASSWORD:-}" ] && printf '%s' "$ADMIN_PASSWORD" > /etc/restoreguard/admin-password
-# Frappe target (optional): production is only read, the test site is the only one written. Without
-# FRAPPE_SOURCE_URL there is no /etc/restoreguard/frappe.json and the target stays off.
+# Frappe target (optional): production is only read, the test sites are the only ones written. Without
+# FRAPPE_SOURCE_URL there is no /etc/restoreguard/frappe.json and the target stays off; without
+# FRAPPE_TEST2_URL only the first column (test.local, demo_app 0.0.1) is proved.
 if [ -n "${FRAPPE_SOURCE_URL:-}" ]; then
   : "${FRAPPE_TEST_URL:?}" "${FRAPPE_SOURCE_TOKEN:?}" "${FRAPPE_TEST_TOKEN:?}" "${FRAPPE_SSH_KEY_FILE:?}" "${FRAPPE_SSH_HOST_KEY:?}"
   # test.local is restored over a forced-command SSH key; the host key is pinned, never learned on first use.
   install -m 600 "$FRAPPE_SSH_KEY_FILE" /etc/restoreguard/frappe-ssh-key
+  if [ -n "${FRAPPE_TEST2_URL:-}" ]; then
+    : "${FRAPPE_TEST2_TOKEN:?}" "${FRAPPE_TEST2_SSH_KEY_FILE:?}"
+    install -m 600 "$FRAPPE_TEST2_SSH_KEY_FILE" /etc/restoreguard/frappe-test2-ssh-key
+  fi
   install -d -m 700 "$DEST/.ssh"
   printf '%s\n' "$FRAPPE_SSH_HOST_KEY" > "$DEST/.ssh/known_hosts"
   python3 - "$SRC/frappe.json" <<'PY'
 import json, os, sys
 cfg = json.load(open(sys.argv[1]))
 env = os.environ
-src, test = env.get("FRAPPE_SOURCE_SITE", "demo.local"), env.get("FRAPPE_TEST_SITE", "test.local")
-cfg["source"] = {"site": src, "url": env["FRAPPE_SOURCE_URL"]}
-cfg["test"] = {"site": test, "url": env["FRAPPE_TEST_URL"]}
-cfg["ssh"] = {"login": env.get("FRAPPE_SSH_LOGIN") or cfg["ssh"]["login"], "key": "/etc/restoreguard/frappe-ssh-key"}
+src = env.get("FRAPPE_SOURCE_SITE", "demo.local")
+cfg["source"] = {**cfg["source"], "site": src, "url": env["FRAPPE_SOURCE_URL"]}
+tokens = {src: env["FRAPPE_SOURCE_TOKEN"]}
+tests = []
+for t, var, default, key in zip(cfg["tests"], ("FRAPPE_TEST", "FRAPPE_TEST2"), ("test.local", "test2.local"),
+                                ("frappe-ssh-key", "frappe-test2-ssh-key")):
+    if env.get(f"{var}_URL"):
+        site = env.get(f"{var}_SITE", default)
+        tests.append({**t, "site": site, "url": env[f"{var}_URL"],
+                      "ssh": {"login": env.get("FRAPPE_SSH_LOGIN") or t["ssh"]["login"], "key": f"/etc/restoreguard/{key}"}})
+        tokens[site] = env[f"{var}_TOKEN"]
+cfg["tests"] = tests
 cfg["tokens"] = "/etc/restoreguard/frappe-tokens.json"
-json.dump({src: env["FRAPPE_SOURCE_TOKEN"], test: env["FRAPPE_TEST_TOKEN"]}, open(cfg["tokens"], "w"))
+json.dump(tokens, open(cfg["tokens"], "w"))
 json.dump(cfg, open("/etc/restoreguard/frappe.json", "w"), indent=1)
 PY
 fi

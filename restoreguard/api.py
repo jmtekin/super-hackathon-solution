@@ -155,7 +155,7 @@ async def worker():
 
 
 def _targets(b):
-    return [frappe_target.target(FRAPPE)] if b.get("kind") == "frappe" else guard.apps()
+    return frappe_target.targets(FRAPPE) if b.get("kind") == "frappe" else guard.apps()
 
 
 @asynccontextmanager
@@ -201,7 +201,7 @@ def _get(bid):
 def health():
     return {"ok": True, "backups": len(backups), "queued": queue.qsize() if queue else 0,
             "app_versions": [a["version"] for a in guard.apps()],
-            "frappe": {"source": f"{FRAPPE['source']['site']} (read only)", "restores_into": FRAPPE["test"]["site"]}
+            "frappe": {"source": f"{FRAPPE['source']['site']} (read only)", "restores_into": [t["site"] for t in FRAPPE["tests"]]}
             if FRAPPE else None}
 
 
@@ -278,7 +278,7 @@ def rerun(bid: str):
 def matrix():
     versions = [a["version"] for a in guard.apps()]
     rows = sorted(backups.values(), key=lambda b: b["id"], reverse=True)
-    return {"app_versions": versions + ([FRAPPE["test"]["site"]] if FRAPPE else []),
+    return {"app_versions": versions + ([t["site"] for t in FRAPPE["tests"]] if FRAPPE else []),
             "backups": [{"id": b["id"], "schema_version": (b.get("manifest") or {}).get("schema_version"),
                          "status": b["status"],
                          "cells": [{"app_version": v, "state": b["cells"][v]["state"], "reason": b["cells"][v]["reason"]}

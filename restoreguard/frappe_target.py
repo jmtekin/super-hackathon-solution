@@ -1,10 +1,11 @@
 """RestoreGuard's Frappe target: proves a Frappe site backup restores, and never writes to production.
 
-Abdullah's ERP (Frappe 16 + ERPNext + demo_app, doctype Demo Service Request, MariaDB) runs two sites on
-one Vultr VM: demo.local on port 80 is production, test.local on 8080 a DB-isolated clone. Jonas 13:55:
+Abdullah's ERP (Frappe 16 + ERPNext + demo_app, doctype Demo Service Request, MariaDB) runs on one Vultr
+VM: demo.local on port 80 is production; each test site is one app-version column, test.local on 8080 (same
+bench, demo_app 0.0.1) and test2.local on 8081 (second bench, demo_app 2.0.0). Jonas 13:55:
 "you cant restore into prod". Production is only read: its Backups page lists the `bench backup` files,
 /backups/<file> downloads one, get_count gives the source counts that become the manifest. Site refuses to
-build a non-GET request to it, and a frappe.json whose test site could be production refuses to load.
+build a non-GET request to it, and a frappe.json with a test site that could be production refuses to load.
 
 Each backup goes through one cell:
 
@@ -20,6 +21,14 @@ hardcoded, accepts only one demo.local backup file name, flock against overlappi
 runtime can restore test.local and nothing else there. Every restore drops and recreates test.local, so
 the sandbox goes first: a backup that fails a check or carries code never reaches the VM, and the fault
 kit runs here only.
+
+A test site whose app has another Demo Service Request schema than the backup (demo_app 2.0.0 renamed
+estimated_hours to effort_hours with no migration patch and added a required category) is drift: bench
+migrate succeeds there but leaves the data wrong. The cell then restores natively once on the VM to show
+what migrate alone left, and GLM writes a MariaDB bridge (UPDATEs of that doctype only) that is validated in
+the sandbox against an emulation of migrate before the VM restores again with it: "healed". Proof of a
+bridge is data, not a field mapping the model claims: every field the app dropped must have its values,
+row for row, in one field the app added, and the app's own rules must hold.
 """
 import asyncio
 import gzip
@@ -41,12 +50,24 @@ DB_IMAGE = os.environ.get("RESTOREGUARD_MARIADB_IMAGE", "mariadb:11.8")
 DB_MEMORY = "512m"  # the data dir is tmpfs inside this cap: a full ERPNext site is ~200 MB loaded
 MIN_INTERVAL_S = 0.5  # one call to Abdullah's VM at a time, at most two a second
 RESTORE_TIMEOUT_S = 600  # bench restore + migrate of the whole site on the VM
-# the sandbox, the VM's restore, then ~135 get_count calls at MIN_INTERVAL_S
-CELL_TIMEOUT = guard.CELL_TIMEOUT + RESTORE_TIMEOUT_S + 180
+# the sandbox, the VM's restore (twice on drift: native, then bridged), then ~135 get_count calls at MIN_INTERVAL_S
+CELL_TIMEOUT = guard.CELL_TIMEOUT + 2 * RESTORE_TIMEOUT_S + 180
 MAX_SQL_BYTES = 4 << 30
 FILE = re.compile(r"^(\d{8}_\d{6}-[\w.-]+-database)\.sql\.gz$")
 DOCTYPE = re.compile(r"^[\w .-]+$")
 FIELD = re.compile(r"^\w+$")
+BRIDGE_STATEMENT = re.compile(r"^UPDATE\s+`tab([\w .-]+)`\s+SET\s", re.I)
+# bench migrate adds a new docfield's column with these types and fills existing rows with the default
+COLUMN = {"Float": "decimal(21,9) NOT NULL DEFAULT {d}", "Currency": "decimal(21,9) NOT NULL DEFAULT {d}",
+          "Int": "int(11) NOT NULL DEFAULT {d}", "Check": "int(1) NOT NULL DEFAULT {d}",
+          "Small Text": "text", "Text": "longtext", "Long Text": "longtext"}
+BRIDGE_SYSTEM = """You are BackupAirlock's bridge writer for a Frappe ERP on MariaDB. A backup made by an older version of the app was restored into a site running a newer version and bench migrate ran: migrate added the new fields' columns (filled with their defaults) and kept the old columns in the table, so the old values are still readable there. Write the SQL that puts the old data into the new fields.
+- Only UPDATE statements on the one table named below, one per line, each ending with a semicolon. No DDL, no other tables, no comments, no placeholders.
+- A field the new version renamed: copy the old column's value. A new required field: fill every row with one of its allowed options, derived from the row's data (title, notes) where it allows, else the most fitting single option.
+- Do not change any other field.
+Reply with a line starting CHANGES: followed by one short line per change, then the SQL in one ```sql block."""
+BRIDGE_REPAIR_SYSTEM = """You are BackupAirlock's bridge repairer. The bridge SQL failed or the checks after it failed. Fix it with the smallest change. Same rules: UPDATE statements on that one table only.
+Reply with a line starting CAUSE: (one sentence), then the full corrected SQL in one ```sql block."""
 LAYOUT = {"Section Break", "Column Break", "Tab Break", "HTML", "Button", "Heading", "Fold", "Image"}
 # What a site backup has no business containing: each writes or reads files, loads code or changes the
 # server for whoever restores it. Only the SQL outside string literals is read: text in a record never
@@ -67,9 +88,14 @@ def _hostport(url):
     return (u.hostname or "").lower(), u.port or {"http": 80, "https": 443}.get(u.scheme)
 
 
-def check_config(cfg):
-    """Refuse a config that could restore into production (Jonas 13:55): the test site must be another
-    site than the source, on another host:port, never on port 80 and never named demo.local."""
+def columns(cfg):
+    """One view of the config per test site, as the rest of this module reads it: cfg["test"], cfg["ssh"]."""
+    return [{**cfg, "test": t, "ssh": t["ssh"]} for t in cfg["tests"]]
+
+
+def check_column(cfg):
+    """Refuse a test site that could be production (Jonas 13:55): another site than the source, on another
+    host:port, never on port 80 and never named demo.local."""
     src, test = cfg["source"], cfg["test"]
     host, port = _hostport(test["url"])
     for bad, why in [(port == 80, f"test target {host}:{port} is on port 80, production's port"),
@@ -81,6 +107,15 @@ def check_config(cfg):
         raise ValueError(f"frappe.json refused: doctype {cfg['doctype']!r}")
     if cfg["ssh"]["login"].rsplit("@", 1)[-1].lower() != host:
         raise ValueError(f"frappe.json refused: ssh {cfg['ssh']['login']} is not the test site's host {host}")
+    return cfg
+
+
+def check_config(cfg):
+    sites = [t["site"] for t in cfg["tests"]]
+    if not sites or len(set(sites)) != len(sites):
+        raise ValueError(f"frappe.json refused: test sites {sites}")
+    for view in columns(cfg):
+        check_column(view)
     return cfg
 
 
@@ -127,6 +162,12 @@ class Site:
     def method(self, name, **args):
         q = urllib.parse.urlencode({k: v if isinstance(v, str) else json.dumps(v) for k, v in args.items()})
         return self.json(f"/api/method/{name}?{q}")["message"]
+
+    def fields(self, doctype):
+        """The doctype's data fields as this site's app version defines them."""
+        doc = self.json(f"/api/resource/DocType/{urllib.parse.quote(doctype)}")["data"]
+        return [{k: f.get(k) for k in ("fieldname", "fieldtype", "options", "reqd", "default")} for f in doc["fields"]
+                if f["fieldtype"] not in LAYOUT and FIELD.match(f["fieldname"])]
 
     def records(self, doctype, fields):
         q = urllib.parse.urlencode({"fields": json.dumps(["name", *fields]), "limit_page_length": 0})
@@ -217,18 +258,21 @@ def vm_file(cfg, name):
     return re.fullmatch(rf"\d{{8}}_\d{{6}}-{site}-database\.sql\.gz", name) is not None
 
 
-async def vm_restore(cfg, name):
-    """`bench --site test.local restore` of production's backup `name`, on the VM. Returns (rc, last line)."""
+async def vm_restore(cfg, name, bridge=None):
+    """`bench --site <test site> restore` of production's backup `name` + migrate, on the VM; with `bridge`,
+    the forced command then runs that SQL in the test site's own database. Returns (rc, last line)."""
     s = cfg["ssh"]
     rc, out, err = await guard._proc("ssh", "-F", "/dev/null", "-i", s["key"], "-o", "BatchMode=yes",
                                      "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=15",
-                                     "-o", "ServerAliveInterval=30", s["login"], name, timeout=RESTORE_TIMEOUT_S)
+                                     "-o", "ServerAliveInterval=30", s["login"], name, *(["bridge"] if bridge else []),
+                                     stdin=bridge.encode() if bridge else None, timeout=RESTORE_TIMEOUT_S)
     return rc, guard.airlock._last_line(err.decode(errors="replace")) or guard.airlock._last_line(out.decode(errors="replace"))
 
 
-def target(cfg):
-    """The one 'app version' column a Frappe backup is proved on: the configured test site."""
-    return {"version": cfg["test"]["site"], "image": DB_IMAGE, "label": f"{cfg['test']['site']} (Frappe)", "cfg": cfg}
+def targets(cfg):
+    """The app-version columns a Frappe backup is proved on: one per test site."""
+    return [{"version": c["test"]["site"], "image": DB_IMAGE, "label": f"{c['test']['site']} ({c['test']['app']})", "cfg": c}
+            for c in columns(cfg)]
 
 
 def policy():
@@ -284,10 +328,11 @@ def _close(a, b):
         return a == b
 
 
-def rules(fields, rows, existing):
+def rules(fields, rows, existing, cost):
     """Rules every Demo Service Request must meet: its doctype's own metadata (required fields, Select
     options, Link targets that exist in the same backup) plus the cost demo_app computes on save.
-    fields: [{fieldname, fieldtype, options, reqd}]; existing: {link fieldname: names present}."""
+    fields: [{fieldname, fieldtype, options, reqd}]; existing: {link fieldname: names present};
+    cost: [hours, rate, total] field names of that app version."""
     out = []
     for f in fields:
         name, kind, opts = f["fieldname"], f["fieldtype"], f.get("options") or ""
@@ -301,13 +346,13 @@ def rules(fields, rows, existing):
         if kind == "Link" and opts:
             bad = [f"{r['name']}->{r[name]}" for r in rows if r.get(name) and r[name] not in existing.get(name, set())]
             out.append((f"{name} links to an existing {opts}", not bad, ", ".join(bad[:5])))
-    names = {f["fieldname"] for f in fields}
-    if {"estimated_hours", "hourly_rate", "total_cost"} <= names:
-        bad = [f"{r['name']}: {r['estimated_hours']} x {r['hourly_rate']} != {r['total_cost']}" for r in rows
-               if not _close(float(r["estimated_hours"] or 0) * float(r["hourly_rate"] or 0), r["total_cost"] or 0)]
-        out.append(("total_cost = estimated_hours x hourly_rate", not bad, "; ".join(bad[:5])))
-        bad = [r["name"] for r in rows if float(r["estimated_hours"] or 0) <= 0 or float(r["hourly_rate"] or 0) < 0]
-        out.append(("estimated_hours > 0, hourly_rate >= 0", not bad, ", ".join(bad[:5])))
+    hours, rate, total = cost
+    if {hours, rate, total} <= {f["fieldname"] for f in fields}:
+        bad = [f"{r['name']}: {r[hours]} x {r[rate]} != {r[total]}" for r in rows
+               if not _close(float(r[hours] or 0) * float(r[rate] or 0), r[total] or 0)]
+        out.append((f"{total} = {hours} x {rate}", not bad, "; ".join(bad[:5])))
+        bad = [r["name"] for r in rows if float(r[hours] or 0) <= 0 or float(r[rate] or 0) < 0]
+        out.append((f"{hours} > 0, {rate} >= 0", not bad, ", ".join(bad[:5])))
     return out
 
 
@@ -324,6 +369,37 @@ def compare(fields, rows, got):
     if (extra := len(got) - len(rows)) > 0:
         diffs.append(f"{extra} more records on test.local than in the backup")
     return diffs
+
+
+def carried(fields, rows, want, got):
+    """Backup rows vs rows under the app's fields `want`: shared fields unchanged, and every field the app
+    dropped has its values, row for row, in one field the app added. Returns ({old: new}, problems)."""
+    have, names = [f["fieldname"] for f in fields], [f["fieldname"] for f in want]
+    by_name, mapping, problems = {d["name"]: d for d in got}, {}, []
+    for old in (n for n in have if n not in names):
+        new = next((n for n in names if n not in have and all(
+            r["name"] in by_name and _close(r.get(old), by_name[r["name"]].get(n)) for r in rows)), None)
+        if new:
+            mapping[old] = new
+        else:
+            problems.append(f"{old}: its values ({', '.join(str(r.get(old)) for r in rows[:3])}) are in no field of the new version")
+    return mapping, problems + compare([n for n in have if n in names], rows, got)
+
+
+def check_bridge(sql, doctype):
+    """Policy for model-written SQL that later runs on the VM: UPDATEs of the one doctype's table, nothing else."""
+    code = QUOTED.sub("''", sql)
+    statements = [st.strip() for st in code.split(";") if st.strip()]
+    if not statements:
+        return "no statements"
+    for st in statements:
+        m = BRIDGE_STATEMENT.match(st)
+        if not m or m[1] != doctype or "`tab" in st[m.end():] or re.search(r"\bSELECT\b", st, re.I):
+            return f"refused by policy (only UPDATE `tab{doctype}` SET ...): {st[:80]}"
+    for pattern, why in SCAN:
+        if pattern.search(code):
+            return f"refused by policy: {why}"
+    return ""
 
 
 def _fail(cell, why):
@@ -346,6 +422,8 @@ async def _cell(cell):
                "; ".join(f"line {f['line']}: {f['why']}" for f in cell.findings[:5]))
     if not ok:
         return _fail(cell, f"dump unreadable: {err}")
+    test = Site(cfg, "test")
+    app_fields = await asyncio.to_thread(test.fields, doctype)
     async with DbSandbox(cell) as sb:
         t = time.monotonic()
         rc, _, err = await sb.exec("bash", "-o", "pipefail", "-c", "gunzip -c /input/backup.sql.gz | mariadb -uroot restored",
@@ -383,25 +461,118 @@ async def _cell(cell):
             if f["fieldtype"] == "Link" and f["options"] and DOCTYPE.match(f["options"]):
                 _, out, _ = await sb.sql(f"SELECT name FROM `tab{f['options']}`")
                 existing[f["fieldname"]] = set(out.splitlines())
-        for name, passed, detail in rules(fields, rows, existing):
+        for name, passed, detail in rules(fields, rows, existing, cfg["source"]["cost"]):
             cell.check(f"rule: {name}", passed, detail)
-    if failed := [c["check"] for c in cell.checks if not c["pass"]]:
-        return _fail(cell, f"{failed[0]}; not restored into {cfg['test']['site']}")
-    await _vm(cell, fields, rows)
+        if failed := [c["check"] for c in cell.checks if not c["pass"]]:
+            return _fail(cell, f"{failed[0]}; not restored into {cfg['test']['site']}")
+        sql = None
+        if {f["fieldname"] for f in app_fields} != set(names):  # drift: the sandbox stays up for the bridge
+            if not cell.check(f"a {cfg['source']['site']} backup file name (the only kind the VM restores)", vm_file(cfg, b["file"]), b["file"]):
+                return _fail(cell, f"{b['file']} is not a production backup name; not restored into {cfg['test']['site']}")
+            native = await _native(cell, fields, rows, app_fields)
+            if (sql := await _bridge(cell, sb, fields, rows, app_fields, native)) is None:
+                return
+    await _vm(cell, fields, rows, app_fields, sql)
 
 
-async def _vm(cell, fields, rows):
-    """The sandbox passed: restore the same file into test.local on the VM, then check it there."""
-    b, m, cfg = cell.backup, cell.backup["manifest"], cell.app["cfg"]
-    site, doctype, names = cfg["test"]["site"], cfg["doctype"], [f["fieldname"] for f in fields]
-    if not cell.check(f"a {cfg['source']['site']} backup file name (the only kind the VM restores)", vm_file(cfg, b["file"]), b["file"]):
-        return _fail(cell, f"{b['file']} is not a production backup name; not restored into {site}")
+async def _restore_on_vm(cell, bridge=None):
+    b, cfg = cell.backup, cell.app["cfg"]
     t = time.monotonic()
-    cell.emit({"type": "restore", "phase": "started", "file": b["file"], "restored_into": cell.restored_into()["instance"]})
-    rc, last = await vm_restore(cfg, b["file"])
-    guard._timed(cell, "vm_restore", t)
-    cell.emit({"type": "restore", "phase": "done", "rc": rc, "s": cell.timings["vm_restore"]})
-    if not cell.check(f"{site} restored on the VM (bench restore + migrate)", rc == 0, f"exit {rc}: {last}" if rc else last):
+    cell.emit({"type": "restore", "phase": "started", "file": b["file"], "bridge": bool(bridge),
+               "restored_into": cell.restored_into()["instance"]})
+    rc, last = await vm_restore(cfg, b["file"], bridge and f"START TRANSACTION;\n{bridge}\nCOMMIT;\n")
+    guard._timed(cell, "vm_restore_bridged" if bridge else "vm_restore", t)
+    cell.emit({"type": "restore", "phase": "done", "rc": rc, "s": round(time.monotonic() - t, 2)})
+    return rc, last
+
+
+async def _native(cell, fields, rows, want):
+    """Drift: what bench restore + migrate alone leaves on the test site. Evidence for the bridge, not a check."""
+    cfg = cell.app["cfg"]
+    rc, last = await _restore_on_vm(cell)
+    if rc != 0:
+        problems = [f"bench restore + migrate failed (exit {rc}): {last}"]
+    else:
+        got = await asyncio.to_thread(Site(cfg, "test").records, cfg["doctype"], [f["fieldname"] for f in want])
+        problems = carried(fields, rows, want, got)[1] + [
+            f"{name}: {detail}" for name, ok, detail in rules([f for f in want if f["fieldtype"] != "Link"], got, {}, cfg["test"]["cost"]) if not ok]
+    cell.emit({"type": "native", "site": cfg["test"]["site"], "problems": problems})
+    return problems
+
+
+async def _migrate_like_bench(sb, doctype, want):
+    """In the sandbox, the columns bench migrate adds for the app's new fields, so a bridge runs on the same
+    table shape as on the VM (old columns kept, new ones filled with their default)."""
+    _, out, _ = await sb.sql(f"SELECT column_name FROM information_schema.columns WHERE table_name = 'tab{doctype}'")
+    present = set(out.splitlines())
+    for f in (f for f in want if f["fieldname"] not in present):
+        d = f.get("default")
+        kind = COLUMN.get(f["fieldtype"], "varchar(140) DEFAULT {s}")
+        col = kind.format(d=float(d or 0) if "{d}" in kind else "", s="NULL" if d in (None, "") else "'" + str(d).replace("'", "''") + "'")
+        rc, _, err = await sb.sql(f"ALTER TABLE `tab{doctype}` ADD COLUMN `{f['fieldname']}` {col}")
+        if rc != 0:
+            raise RuntimeError(f"sandbox migrate of {f['fieldname']}: {guard.airlock._last_line(err)}")
+
+
+async def _bridge(cell, sb, fields, rows, want, native):
+    """GLM writes the bridge, the sandbox proves it. Returns the SQL, or None with the cell failed."""
+    cfg = cell.app["cfg"]
+    doctype, names = cfg["doctype"], [f["fieldname"] for f in want]
+    await _migrate_like_bench(sb, doctype, want)
+    prompt = (f"Table: `tab{doctype}` (doctype {doctype}).\n"
+              f"Fields in the backup's app version: {json.dumps(fields)}\n"
+              f"Fields in the new app version ({cfg['test']['app']}): {json.dumps(want)}\n"
+              f"After bench migrate alone: {json.dumps(native)}\n"
+              f"Backup rows (up to 20): {json.dumps(rows[:20], default=str)[:6000]}")
+    reply = await guard.airlock.llm(cell, "bridge", BRIDGE_SYSTEM, prompt)
+    for rnd in range(1, guard.MAX_BRIDGE_ROUNDS + 1):
+        sql = guard.airlock._script(reply)
+        name = f"{cell.backup['id']}-to-{cfg['test']['site']}-r{rnd}.sql"
+        bridge = {"name": name, "round": rnd, "sha256": guard.airlock._sha(sql), "sql": sql,
+                  "changes": guard.airlock._section(reply, "CHANGES") or guard.airlock._section(reply, "CAUSE")}
+        cell.bridges.append(bridge)
+        cell.emit({"type": "bridge", "round": rnd, "name": name, "changes": bridge["changes"]})
+        failure = check_bridge(sql, doctype)
+        if not failure:
+            # one transaction, rolled back unless every statement passes, so a failed round leaves the table as migrate left it
+            rc, _, err = await sb.sql(f"START TRANSACTION;\n{sql}\nCOMMIT;")
+            failure = "" if rc == 0 else f"bridge SQL failed: {guard.airlock._last_line(err)}"
+        if not failure:
+            cols = ", ".join(f"'{n}', `{n}`" for n in ["name", *names])
+            _, out, _ = await sb.sql(f"SELECT JSON_OBJECT({cols}) FROM `tab{doctype}` ORDER BY name")
+            got = [json.loads(l) for l in out.splitlines()]
+            mapping, problems = carried(fields, rows, want, got)
+            problems += [f"{n}: {d}" for n, ok, d in rules([f for f in want if f["fieldtype"] != "Link"], got, {}, cfg["test"]["cost"]) if not ok]
+            if not problems:
+                bridge["mapping"] = mapping
+                cell.check(f"bridge round {rnd} proved in the sandbox", True,
+                           ", ".join(f"{o} -> {n}" for o, n in mapping.items()) or "values carried")
+                return sql
+            failure = "; ".join(problems[:5])
+        bridge["failure"] = failure
+        cell.emit({"type": "bridge", "round": rnd, "name": name, "failure": failure})
+        if rnd == guard.MAX_BRIDGE_ROUNDS:
+            break
+        # a rejected round may have committed: restore the backup again and redo migrate's columns
+        await sb.exec("bash", "-o", "pipefail", "-c", "mariadb -uroot -e 'DROP DATABASE restored; CREATE DATABASE restored' && "
+                      "gunzip -c /input/backup.sql.gz | mariadb -uroot restored", timeout=150)
+        await _migrate_like_bench(sb, doctype, want)
+        reply = await guard.airlock.llm(cell, "bridge repair", BRIDGE_REPAIR_SYSTEM,
+                                        f"{prompt}\n\nPrevious SQL:\n{sql}\n\nFailure: {failure}")
+    _fail(cell, f"no working bridge to {cfg['test']['site']} after {guard.MAX_BRIDGE_ROUNDS} rounds: {cell.bridges[-1].get('failure')}")
+
+
+async def _vm(cell, fields, rows, want, bridge=None):
+    """The sandbox passed (with its bridge, if the app drifted): restore the same file into the test site
+    on the VM, then check it there."""
+    b, m, cfg = cell.backup, cell.backup["manifest"], cell.app["cfg"]
+    site, doctype = cfg["test"]["site"], cfg["doctype"]
+    if not bridge and not cell.check(f"a {cfg['source']['site']} backup file name (the only kind the VM restores)",
+                                     vm_file(cfg, b["file"]), b["file"]):
+        return _fail(cell, f"{b['file']} is not a production backup name; not restored into {site}")
+    rc, last = await _restore_on_vm(cell, bridge)
+    how = "bench restore + migrate + bridge" if bridge else "bench restore + migrate"
+    if not cell.check(f"{site} restored on the VM ({how})", rc == 0, f"exit {rc}: {last}" if rc else last):
         return _fail(cell, f"restore on the VM failed (exit {rc}); {site} may be part restored")
     test = Site(cfg, "test")
     t = time.monotonic()
@@ -414,15 +585,21 @@ async def _vm(cell, fields, rows):
     off = [f"{d}: {n} vs source {m['row_counts'][d]}" for d, n in counts.items() if n != m["row_counts"][d]]
     cell.check(f"on {site}: row counts match the source ({len(counts)} doctypes)", not off,
                "; ".join(off[:5]) or f"get_count on {site} vs {cfg['source']['site']} at download")
-    got = await asyncio.to_thread(test.records, doctype, names)
+    got = await asyncio.to_thread(test.records, doctype, [f["fieldname"] for f in want])
     guard._timed(cell, "test_site", t)
-    diffs = compare(names, rows, got)
-    cell.check(f"{site} holds the backup's {len(rows)} {doctype} records", not diffs, "; ".join(diffs[:5]) or "read back, field by field")
-    for name, passed, detail in rules([f for f in fields if f["fieldtype"] != "Link"], got, {}):
+    mapping, diffs = carried(fields, rows, want, got)
+    cell.check(f"{site} holds the backup's {len(rows)} {doctype} records", not diffs, "; ".join(diffs[:5]) or
+               "read back, field by field" + "".join(f", {o} as {n}" for o, n in mapping.items()))
+    for name, passed, detail in rules([f for f in want if f["fieldtype"] != "Link"], got, {}, cfg["test"]["cost"]):
         cell.check(f"on {site}: {name}", passed, detail)
     if failed := [c["check"] for c in cell.checks if not c["pass"]]:
         return _fail(cell, failed[0])
-    cell.state, cell.reason = "native", f"restored: {site} on the VM is the backup (full site via bench), {len(rows)} {doctype} records checked"
+    if bridge:
+        rnd = len(cell.bridges)
+        cell.state, cell.reason = "healed", (f"{cfg['test']['app']}: migrate alone left the data wrong; GLM bridge round {rnd} "
+                                             f"({', '.join(f'{o} -> {n}' for o, n in mapping.items())}) restored on {site}, {len(rows)} {doctype} records checked")
+    else:
+        cell.state, cell.reason = "native", f"restored: {site} on the VM is the backup (full site via bench), {len(rows)} {doctype} records checked"
 
 
 def run_cell(backup, app, emit=lambda ev: None):

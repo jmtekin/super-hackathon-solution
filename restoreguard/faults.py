@@ -215,7 +215,7 @@ def main():
     made = make_frappe(a.backup, out) if frappe else asyncio.run(make(a.backup, out))
     print("made:", ", ".join(d.name for d in made.values()), file=sys.stderr)
     if not a.make_only:
-        ran = (run(made, frappe_target, [frappe_target.target(frappe_target.config())], FRAPPE_FAULTS) if frappe
+        ran = (run(made, frappe_target, frappe_target.targets(frappe_target.config()), FRAPPE_FAULTS) if frappe
                else run(made))
         sys.exit(0 if asyncio.run(ran) else 1)
 

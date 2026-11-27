@@ -31,7 +31,8 @@ restore at a configured database or host is refused at startup (`guard.check_app
 ## Frappe target: Abdullah's ERP (`frappe_target.py`, `frappe.json`)
 
 Frappe 16 + ERPNext + demo_app (doctype Demo Service Request) on 70.34.199.143: **demo.local :80 = production,
-read only**; test.local :8080 = DB-isolated clone, the only site written to. Tokens: `.config/restoreguard-frappe.json`;
+read only**; one app-version column per test site in `frappe.json` `tests`: test.local :8080 (same bench, demo_app
+0.0.1) and test2.local :8081 (second bench `frappe-bench-v2`, demo_app 2.0.0), the only sites written to. Tokens: `.config/restoreguard-frappe.json`;
 restore key `/opt/agent/.ssh/restoreguard_abdullah_ed25519` (600, `frappe.json` `ssh`), host key pinned in `~/.ssh/known_hosts`.
 The watcher reads production's Backups page every 120 s, downloads each new `bench backup` sql.gz from `/backups/`
 into `backups-frappe/` and writes its manifest last: `get_count` per doctype that has rows in the dump (minus the
@@ -48,11 +49,26 @@ self-growing logs in `frappe.json`), counted right after the download. Every cal
 | the real restore, on the VM: `ssh frappe@70.34.199.143 <file>`, whose forced command (`/home/frappe/bin/restore_test_site.sh`, site test.local hardcoded, flock) runs `bench --site test.local restore` of that file + migrate; ~22 s | `restore on the VM failed (exit N)` |
 | test.local: `/login` 200, `get_logged_user` 200, `get_count` of every manifest doctype vs the source, its Demo Service Requests read back field by field, rules again | `<check>` |
 
+**Drift column (test2.local, demo_app 2.0.0):** v2 renames `estimated_hours` -> `effort_hours` with no migration
+patch and adds a required Select `category`. `bench migrate` succeeds on a v1 backup but leaves the data wrong
+(`effort_hours` = its default 1, `category` empty, total_cost no longer = hours x rate). A test site whose DocType
+fields (read from its API) differ from the backup's is drift: after the sandbox checks the cell restores natively
+once on the VM (SSE `native` event lists what migrate alone left), then GLM writes a bridge, policy-checked
+(`check_bridge`: only ``UPDATE `tabDemo Service Request` SET ...``, no SELECT/other tables, scan patterns), run in
+one transaction in the sandbox after `_migrate_like_bench` added v2's columns; proved by data (`carried`: every field
+v2 dropped has its values row for row in one field v2 added; shared fields unchanged; v2's rules, cost from
+`tests[].cost`), up to 3 rounds. Then `ssh frappe@... <file> bridge` with the SQL on stdin: the forced command
+`/home/frappe/bin/restore_test2_site.sh` (test2.local hardcoded, flock, SQL <= 64 KB, run as the site's own DB
+user with `mariadb --sandbox`) restores + migrates + applies it; test2.local is then checked like test.local with
+the mapping -> `healed`. Key `/opt/agent/.ssh/restoreguard_test2_ed25519`; token `test2.local` in the tokens file.
+First run 2026-11-27 15:45 (`20261127_151409`): test.local native 130 s; test2.local healed round 1
+(`effort_hours = estimated_hours`, `category = 'Consulting'`), 25 checks, 132 s; fault kit 7/7 on both columns.
+
 API additions (not yet in `../restorer/README.md` Runtime API): `kind` (`postgres`|`frappe`) in every backup
-summary; Frappe backups have one cell, keyed `test.local`, whose `restored_into` is `{instance: "test.local on
+summary; Frappe backups have one cell per test site, keyed by site, whose `restored_into` is `{instance: "test.local on
 Vultr VM 70.34.199.143 (full site restore via bench)", database, app, production}`; `/health` has `frappe: {source,
-restores_into}`; `/api/matrix` lists `test.local` as a column, cells only where they apply; SSE adds `restore` events
-(`phase` started/done, `rc`, `s`). The Frappe cell's timeout is 960 s (sandbox + VM restore + ~135 `get_count` at 2/s).
+restores_into}`; `/api/matrix` lists each test site as a column, cells only where they apply; SSE adds `restore` events
+(`phase` started/done, `bridge`, `rc`, `s`), `native` and `bridge` events on drift. The Frappe cell's timeout is 1560 s (sandbox + up to two VM restores + ~135 `get_count` at 2/s).
 Each restore drops and recreates test.local, so a backup that fails any sandbox check never reaches the VM, and each
 new production backup costs exactly one VM restore (results persist in `state/`, a restart re-runs nothing; rerun = one more). Refused at startup (`check_config`): a test target on
 port 80, on production's host:port, named like production, or an `ssh` login on another host than the test site;

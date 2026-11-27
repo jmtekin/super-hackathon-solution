@@ -1,7 +1,13 @@
 {
- "source": {"site": "demo.local", "url": "http://70.34.199.143"},
- "test": {"site": "test.local", "url": "http://70.34.199.143:8080"},
- "ssh": {"login": "frappe@70.34.199.143", "key": "/opt/agent/.ssh/restoreguard_abdullah_ed25519"},
+ "source": {"site": "demo.local", "url": "http://70.34.199.143", "cost": ["estimated_hours", "hourly_rate", "total_cost"]},
+ "tests": [
+  {"site": "test.local", "url": "http://70.34.199.143:8080", "app": "demo_app 0.0.1",
+   "cost": ["estimated_hours", "hourly_rate", "total_cost"],
+   "ssh": {"login": "frappe@70.34.199.143", "key": "/opt/agent/.ssh/restoreguard_abdullah_ed25519"}},
+  {"site": "test2.local", "url": "http://70.34.199.143:8081", "app": "demo_app 2.0.0",
+   "cost": ["effort_hours", "hourly_rate", "total_cost"],
+   "ssh": {"login": "frappe@70.34.199.143", "key": "/opt/agent/.ssh/restoreguard_test2_ed25519"}}
+ ],
  "doctype": "Demo Service Request",
  "tokens": "/opt/agent/.config/restoreguard-frappe.json",
  "uncounted": ["Access Log", "Activity Log", "Comment", "Communication", "Console Log", "Deleted Document",
