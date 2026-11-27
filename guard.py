@@ -344,9 +344,13 @@ async def _app_probe(cell, sb, when):
     except json.JSONDecodeError:
         health = {}
     ok = status == 200 and health.get("ok") is True and health.get("schema_version") == a["schema"]
-    cell.check(f"app /health ({when})", ok, body[:200] or "no answer")
+    if not ok and not health.get("error"):
+        # busybox wget drops the body of a 5xx, so the app's own log says why it refused.
+        _, out, err = await docker("logs", "--tail", "5", sb.app_name)
+        health["error"] = (err or out).decode(errors="replace").strip()[-300:]
+    cell.check(f"app /health ({when})", ok, f"HTTP {status}: " + (body[:200] or health.get("error", "")))
     if not ok:
-        return False, health.get("error") or body[:300] or "app gave no answer"
+        return False, health.get("error") or "app gave no answer"
     status, body = await sb.wget("/api/dashboard", port=a["port"])
     try:
         counts = json.loads(body).get("counts", {})
