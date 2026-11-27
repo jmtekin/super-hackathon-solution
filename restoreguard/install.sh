@@ -18,7 +18,7 @@ systemctl enable --now docker
 id restoreguard >/dev/null 2>&1 || useradd --system --home "$DEST" --shell /usr/sbin/nologin restoreguard
 usermod -aG docker restoreguard
 mkdir -p "$DEST/restoreguard" "$DEST/restorer"
-rsync -a --delete --exclude .git --exclude state --exclude backups --exclude faults/out "$SRC"/ "$DEST/restoreguard"/
+rsync -a --delete --exclude .git --exclude state --exclude backups --exclude backups-frappe --exclude faults/out "$SRC"/ "$DEST/restoreguard"/
 rsync -a --delete --exclude .git --exclude .venv --exclude runs --exclude shots "$SRC/../ui"/ "$DEST/restorer"/
 python3 -m venv "$DEST/.venv"
 "$DEST/.venv/bin/pip" install -q -r "$DEST/restorer/requirements.txt"
@@ -27,7 +27,7 @@ docker pull -q mariadb:11.8  # Frappe target sandbox
 # Stand-in app versions until Mohamed's images replace them in apps.json.
 docker build -q -t nordvik-standin:1.0.0 --build-arg APP_VERSION=1.0.0 --build-arg SCHEMA=1 "$DEST/restoreguard/standin"
 docker build -q -t nordvik-standin:2.0.0 --build-arg APP_VERSION=2.0.0 --build-arg SCHEMA=2 "$DEST/restoreguard/standin"
-mkdir -p "$DEST/restoreguard/backups" "$DEST/restoreguard/state" /etc/restoreguard
+mkdir -p "$DEST/restoreguard/backups" "$DEST/restoreguard/faults/out" "$DEST/restoreguard/state" /etc/restoreguard
 
 # Secrets live only here and in the control-plane process, never in a sandbox.
 umask 077
@@ -55,7 +55,8 @@ RESTORER_DIR=$DEST/restorer
 RESTOREGUARD_HOST=${RESTOREGUARD_HOST:-0.0.0.0}
 RESTOREGUARD_FRAPPE=/etc/restoreguard/frappe.json
 RESTOREGUARD_PORT=$PORT
-RESTOREGUARD_BACKUPS=$DEST/restoreguard/backups
+RESTOREGUARD_BACKUPS=$DEST/restoreguard/backups:$DEST/restoreguard/faults/out
+RESTOREGUARD_POLL=2
 RESTOREGUARD_BACKUPS_URL=${RESTOREGUARD_BACKUPS_URL:-}
 RESTOREGUARD_BACKUPS_TOKEN_FILE=/etc/restoreguard/backups-token
 RESTOREGUARD_ADMIN_PASSWORD_FILE=/etc/restoreguard/admin-password

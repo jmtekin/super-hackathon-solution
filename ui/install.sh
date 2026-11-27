@@ -27,7 +27,7 @@ docker build -q -t restorer-sandbox:2 -f "$DEST/sandbox.Dockerfile" "$DEST"
 
 # The key lives only here and in the control-plane process, never in a sandbox.
 umask 077
-printf 'VULTR_INFERENCE_KEY=%s\nRESTORER_HOST=0.0.0.0\nRESTORER_PORT=%s\n' "$VULTR_INFERENCE_KEY" "$PORT" > /etc/restorer.env
+printf 'VULTR_INFERENCE_KEY=%s\nRESTORER_HOST=%s\nRESTORER_PORT=%s\n' "$VULTR_INFERENCE_KEY" "${RESTORER_HOST:-0.0.0.0}" "$PORT" > /etc/restorer.env
 umask 022
 
 cat > /etc/systemd/system/restorer.service <<UNIT
@@ -52,6 +52,6 @@ UNIT
 systemctl daemon-reload
 systemctl enable restorer >/dev/null
 systemctl restart restorer
-command -v ufw >/dev/null && ufw status | grep -q active && ufw allow "$PORT/tcp" >/dev/null || true
+[ "${RESTORER_HOST:-0.0.0.0}" = 127.0.0.1 ] || { command -v ufw >/dev/null && ufw status | grep -q active && ufw allow "$PORT/tcp" >/dev/null || true; }
 sleep 2
 curl -fsS "http://127.0.0.1:$PORT/health" && echo && echo "Restorer is up: http://$(hostname -I | awk '{print $1}'):$PORT/"
