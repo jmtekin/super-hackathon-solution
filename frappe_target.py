@@ -245,8 +245,8 @@ class DbSandbox(guard.Sandbox):
             raise RuntimeError(f"sandbox did not start: {err.decode(errors='replace')[-300:]}")
         self.cell.emit({"type": "sandbox", "phase": "started", "name": self.name, "policy": policy(),
                         "restored_into": self.cell.restored_into()["instance"]})
-        for _ in range(120):  # the entrypoint initialises a data dir and restarts once (~13 s here)
-            if (await self.sql("SELECT 1"))[0] == 0:
+        for _ in range(120):  # the entrypoint initialises a data dir and restarts once (~13 s); polled quietly
+            if (await guard.docker("exec", self.name, "mariadb", "-uroot", "-e", "SELECT 1", "restored"))[0] == 0:
                 return self
             await asyncio.sleep(0.5)
         raise RuntimeError("sandbox MariaDB does not answer queries in 60 s")
