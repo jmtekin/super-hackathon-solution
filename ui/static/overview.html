@@ -203,7 +203,7 @@ async function heal(all) {
   $("#h-on").textContent = `${from} backup on ${to}`;
   $("#h-why").textContent = why.join("; ");
   $("#h-by").textContent = `written by ${model} in ${plural(c.bridges.length, "round")}`;
-  $("#h-what").textContent = c.bridges.at(-1).changes.split("\n").map(x => x.replace(/^CHANGES:\s*/, "")).join("; ");
+  $("#h-what").textContent = c.bridges.at(-1).changes.split("\n").map(x => x.replace(/^CHANGES:\s*/, "").replace(/\.\s*$/, "")).filter(Boolean).join("; ");
   $("#h-same").textContent = `same backup on ${to}`;
   $("#h-ok").textContent = `Restored, ${after.filter(k => k.pass).length} of ${after.length} checks`;
   $("#h-where").textContent = `${d.kind === "frappe" ? c.app_version : "test instance"}, ${when(d.finished_at ? new Date(d.finished_at * 1000).toISOString() : d.created_at)}`;
