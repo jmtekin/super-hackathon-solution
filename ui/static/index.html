@@ -642,8 +642,10 @@ function ovFrame() {
   }
   ray.classList.toggle("on", !!near);
   if (!near) return;
-  const l = ray.firstElementChild;
-  l.setAttribute("x1", ovPtr.x); l.setAttribute("y1", ovPtr.y); l.setAttribute("x2", near.x); l.setAttribute("y2", near.y);
+  // The line stops at the selection ring, never over the mark.
+  const l = ray.firstElementChild, dx = ovPtr.x - near.x, dy = ovPtr.y - near.y, k = Math.max(0, 1 - 18 / (Math.hypot(dx, dy) || 1));
+  ray.classList.toggle("on", k > 0);
+  l.setAttribute("x1", ovPtr.x); l.setAttribute("y1", ovPtr.y); l.setAttribute("x2", ovPtr.x - dx * k); l.setAttribute("y2", ovPtr.y - dy * k);
   ovPick(near.m.dataset.id);
 }
 const ovDraw = () => { ovPtr.frame ||= requestAnimationFrame(ovFrame); };
