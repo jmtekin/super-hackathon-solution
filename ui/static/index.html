@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BackupAirlock</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ccircle cx=%278%27 cy=%278%27 r=%276%27 fill=%27%233fb950%27/%3E%3C/svg%3E">
 <style>
 /* Console v7 (one view: timeline at the bottom, checks above; docs/design/first-impression/README.md) on the v5 system. Colour: design/COLOR.md (Radix slate 12-step neutrals, state hues only on marks, links and the one danger word).
    Spacing: design/SPACING.md (4 8 12 16 24 32 48; inside a group < between groups < between regions).
@@ -691,7 +692,7 @@ function ovPick(id) {
 // Labels that would touch are dropped; the selected one always stays, then the latest restorable, the first and the last.
 function ovLabels() {
   const ls = [...document.querySelectorAll(".lb")];
-  ls.forEach(l => { l.hidden = false; });
+  ls.forEach(l => { l.hidden = false; l.style.translate = ""; });
   const rank = l => l.classList.contains("sel") ? 0 : l.classList.contains("latest") ? 1 : l === ls[0] || l === ls.at(-1) ? 2 : 3;
   const boxes = new Map(ls.map(l => [l, l.getBoundingClientRect()])), kept = [];
   for (const l of [...ls].sort((a, b) => rank(a) - rank(b))) {
@@ -699,6 +700,8 @@ function ovLabels() {
     if (kept.some(k => r.left < k.right + 16 && r.right > k.left - 16)) l.hidden = true;
     else kept.push(r);
   }
+  // A centred label near either edge is pulled back inside the page.
+  for (const l of ls) { const r = boxes.get(l), dx = Math.max(4 - r.left, 0) + Math.min(innerWidth - 4 - r.right, 0); if (dx) l.style.translate = `${dx}px 0`; }
 }
 addEventListener("resize", ovLabels);
 // A running log follows its newest line.
