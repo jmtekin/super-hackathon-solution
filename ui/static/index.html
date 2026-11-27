@@ -111,8 +111,13 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
 
 /* the one view (Jonas 15:35-15:36): checks of the selected backup above, the timeline of backups along the bottom, nothing else */
 .page.full{max-width:none;padding:0}
-.ov{height:100vh;height:100dvh;display:grid;grid-template-rows:minmax(0,1fr) auto}
-.dt{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);grid-template-rows:auto minmax(0,1fr);column-gap:var(--s6);row-gap:var(--s5);padding:var(--s7) var(--s7) var(--s5);min-height:0}
+.ov{height:100vh;height:100dvh;display:grid;grid-template-rows:auto minmax(0,1fr) auto}
+.brand{display:flex;align-items:baseline;gap:var(--s3);padding:var(--s4) var(--s7);border-bottom:1px solid var(--line)}
+.brand b{font-size:16px;font-weight:700;letter-spacing:-.01em}
+.brand span{font-size:13px;color:var(--ink-2)}
+.sum{grid-column:1/-1;display:flex;flex-wrap:wrap;column-gap:var(--s5);row-gap:var(--s1);margin-top:calc(var(--s3) - var(--s5));font-size:13px;color:var(--ink-2)}
+.sum strong{color:var(--ink);font-weight:600}
+.dt{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);grid-template-rows:auto auto minmax(0,1fr);column-gap:var(--s6);row-gap:var(--s5);padding:var(--s6) var(--s7) var(--s5);min-height:0}
 .dt header{grid-column:1/-1;display:flex;align-items:baseline;flex-wrap:wrap;column-gap:var(--s4);row-gap:var(--s1)}
 .dt h2{font-size:20px;line-height:28px;font-weight:600;overflow-wrap:anywhere}
 .dt .when{font-size:13px;color:var(--ink-2)}
@@ -134,7 +139,8 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
 .ck li.fail b{color:var(--ink);font-weight:600}
 .ck li.fail.c-bad b{color:var(--bad)}
 /* one mark per backup, oldest left, evenly spaced; colour = does it restore; a tick over the latest that does */
-.tl{position:relative;height:112px;margin:0 var(--s7);border-top:1px solid var(--line);touch-action:none}
+.band{--bg:var(--surface);background:var(--bg)}
+.tl{position:relative;height:152px;margin:0 var(--s7);touch-action:none}
 .tl::before{content:"";position:absolute;left:0;right:0;top:55px;height:2px;background:var(--line)}
 .mk{position:absolute;top:56px;width:44px;height:44px;margin:-22px 0 0 -22px;display:grid;place-items:center}
 .mk i{width:16px;height:16px;border-radius:50%;background:var(--c);box-shadow:0 0 0 4px var(--bg);transition:transform .12s ease-out}
@@ -142,10 +148,19 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
 .mk[aria-pressed=true] i{transform:scale(1.5);box-shadow:0 0 0 3px var(--bg),0 0 0 4px var(--ink-2)}
 .mk[aria-pressed=true] i.hollow{box-shadow:inset 0 0 0 1.5px var(--c),0 0 0 3px var(--bg),0 0 0 4px var(--ink-2)}
 .mk.latest::before{content:"";position:absolute;left:21px;top:-8px;width:2px;height:12px;background:var(--ok)}
-#ray{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;visibility:hidden}
-#ray.on{visibility:visible}
+.lb{position:absolute;top:84px;transform:translateX(-50%);white-space:nowrap;font-size:12px;line-height:16px;color:var(--ink-2);text-align:center;pointer-events:none}
+.lb span{display:block;color:var(--strong)}
+.lb:first-of-type{transform:translateX(-22px);text-align:left}
+.lb:last-of-type{transform:translateX(calc(22px - 100%));text-align:right}
+.lb b{display:none;font-weight:600;color:var(--c)}
+.lb.sel{color:var(--ink)}
+.lb.sel span{color:var(--ink-2)}
+.lb.sel b{display:block}
+#ray{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;opacity:0;transition:opacity .18s ease-out}
+#ray.on{opacity:1}
 #ray line{stroke:var(--ink-2);stroke-width:1;stroke-opacity:.45}
 @media (prefers-reduced-motion:no-preference){
+  #ray{transition:none}
   .mk i.run{animation:beat 1.2s ease-in-out infinite}
 }
 @keyframes beat{50%{transform:scale(1.3)}}
@@ -191,6 +206,9 @@ details.grp summary h3 b{color:var(--ok);font-weight:400}
   .ck{overflow:visible;margin-top:var(--s5);padding-right:0}
   .term{margin-top:var(--s5);max-height:50vh}
   .tl{margin:0 var(--s5)}
+  .brand{padding:var(--s3) var(--s4)}
+  .brand span{display:none}
+  .sum{margin-top:var(--s2)}
 }
 @media print{
   :root{--bg:#fff;--surface:#f4f4f2;--hover:#fff;--selected:#fff;--line:#ddd;--line-2:#bbb;--strong:#999;--ink:#111;--ink-2:#444;--ok:#1d6b3e;--warn:#7a5200;--bad:#a3201a;--accent:#111}
@@ -601,16 +619,21 @@ function ovSplit(c) {
 }
 // Every check under Jonas's three terms (15:35 "Verify / Heal / Restore"). A check that a passing backup of the same kind
 // runs but this one never reached is skipped.
+// The stream's events of the shown cell (any cell of the backup before its details exist).
+const ovLive = (b, c) => Object.values(rg.live).find(L => L.events[0]?.backup === b.id && (!c || L.events[0].cell === c.cell));
 function ovChecks(b) {
-  const c = ovCell(rg.details[b.id]);
+  const run = ["running", "queued"].includes(b.status), done = ovCell(rg.details[b.id]);
+  // While it runs, the previous run's results would read as this run's: only the stream's checks count.
+  const L = run && ovLive(b, done), evs = L && !L.done ? L.events : [];
+  const c = run ? {state: "running", checks: evs.filter(e => e.type === "check"), bridges: evs.filter(e => e.type === "bridge")} : done;
   if (!c) return "";
   const ref = ovSplit(ovCell(rg.details[rg.summaries.find(x => x.kind === b.kind && x.status === "dr_ready")?.id]));
-  const missing = ["running", "queued"].includes(b.status) ? "waiting" : "skipped";
+  const missing = run ? "waiting" : "skipped";
   const list = (m, refm) => [...new Set([...refm.keys(), ...m.keys()])].map(n => [n, m.has(n) ? (m.get(n) ? "done" : "fail") : missing]);
   const [v, r] = ovSplit(c);
-  const heal = c.state === "healed"
+  const heal = c.state === "healed" || c.bridges.length
     ? c.checks.filter(k => !k.pass && /\(native\)/.test(k.check)).map(k => [baseName(k.check) + " on the old schema", "fail"])
-        .concat(c.bridges.map((x, i) => [`bridge round ${x.round}`, i === c.bridges.length - 1 ? "done" : "fail"]))
+        .concat(c.bridges.map((x, i) => [`bridge round ${x.round}`, i < c.bridges.length - 1 ? "fail" : run ? "waiting" : "done"]))
     : [["schema bridge", b.status === "dr_ready" ? "skipped" : missing]];
   const fail = b.status === "quarantined" ? "c-bad" : "c-warn", C = {done: "c-ok", fail, skipped: "c-idle", waiting: "c-idle"};
   return `<div class="ck">${[["Verify", list(v, ref[0])], ["Heal", heal], ["Restore", list(r, ref[1])]].map(([g, ks]) => `<section><h3>${g}</h3><ul>
@@ -620,16 +643,25 @@ function ovChecks(b) {
 // backup runs, the stream's events.
 function ovTerm(b) {
   const d = rg.details[b.id], c = ovCell(d), key = c && Object.keys(d.cells).find(k => d.cells[k] === c);
-  const live = Object.values(rg.live).find(L => L.events[0]?.backup === b.id && (!c || L.events[0].cell === c.cell));
+  const live = ovLive(b, c);
   const evs = live?.events.length && (!live.done || !d?.logs?.[key]) ? live.events : d?.logs?.[key] || [];
   const sql = Object.fromEntries((c?.bridges || []).map(x => [x.name, x.sql]));
   const line = e => `<div class="${e.type === "policy" ? "c-bad" : e.type === "check" && !e.pass ? "c-warn" : ""}"><span class="t">${e.t != null ? (+e.t).toFixed(2) : ""}</span><span>${esc(calm(evText(e)))}</span></div>`
     + (e.type === "bridge" && sql[e.name] ? `<pre>${esc(sql[e.name])}</pre>` : "");
   return `<div class="term" id="term"${live && !live.done ? " data-live" : ""}>${evs.length ? evs.map(line).join("") : `<div><span class="t"></span><span>${["running", "queued"].includes(b.status) ? "waiting for the sandbox" : "no log"}</span></div>`}</div>`;
 }
+// The verdict in numbers, under the name: checks, time, bridge rounds, where it was restored.
+function ovSum(b) {
+  const d = rg.details[b.id] || b, c = ovCell(d), run = ["running", "queued"].includes(b.status);
+  if (run || !d.checks_total) return "";
+  const rounds = c?.bridges?.length, into = c?.restored_into?.instance?.replace(/ rg-\w+/, "");
+  return `<p class="sum"><span><strong>${d.checks_passed} of ${d.checks_total}</strong> checks passed</span><span>${sec(d.elapsed_s)}</span>
+    ${rounds ? `<span>schema bridged by ${esc(c.llm_calls?.at(-1)?.model || "the model")} in round ${rounds}</span>` : ""}
+    ${into ? `<span>restored into ${esc(into)}</span>` : ""}</p>`;
+}
 function ovDetail(b) {
   const [c, word] = OV[ovState(b)] || ["c-idle", b.status];
-  return `<header><h2>${esc(shortName(b.file))}</h2><span class="when">${esc(clock(b.created_at))}</span><div class="st ${c}"><i></i><b>${esc(word)}</b></div></header>${ovChecks(b)}${ovTerm(b)}`;
+  return `<header><h2>${esc(shortName(b.file))}</h2><span class="when">${esc(clock(b.created_at))}</span><div class="st ${c}"><i></i><b>${esc(word)}</b></div></header>${ovSum(b)}${ovChecks(b)}${ovTerm(b)}`;
 }
 function ovView() {
   const ss = ovList();
@@ -637,10 +669,13 @@ function ovView() {
   const latest = ss.filter(b => b.status === "dr_ready").at(-1);
   const sel = ss.find(b => b.id === ovSel.id) || ss.at(-1);
   ovSel.id = sel.id;
-  return `<div class="ov"><div class="dt" id="dt">${ovDetail(sel)}</div>
-    <div class="tl">${ss.map((b, i) => { const [c, word, mod] = OV[ovState(b)] || ["c-idle", b.status, "hollow"];
+  return `<div class="ov"><div class="brand"><b>BackupAirlock</b><span>Every backup restored into a sandbox, checked, and healed when the schema moved</span></div><div class="dt" id="dt">${ovDetail(sel)}</div>
+    <div class="band"><div class="tl">${ss.map((b, i) => { const [c, word, mod] = OV[ovState(b)] || ["c-idle", b.status, "hollow"];
       return `<button class="mk ${c}${b === latest ? " latest" : ""}" data-id="${esc(b.id)}" style="left:${ss.length > 1 ? i / (ss.length - 1) * 100 : 50}%"
-        aria-pressed="${b === sel}" aria-label="${esc(shortName(b.file))}, ${esc(clock(b.created_at))}: ${esc(word)}"><i class="${mod || ""}"></i></button>`; }).join("")}</div>
+        aria-pressed="${b === sel}" aria-label="${esc(shortName(b.file))}, ${esc(clock(b.created_at))}: ${esc(word)}"><i class="${mod || ""}"></i></button>`; }).join("")}
+    ${ss.map((b, i) => { const [c, word] = OV[ovState(b)] || ["c-idle", b.status];
+      return `<div class="lb ${c}${b === sel ? " sel" : ""}${b === latest ? " latest" : ""}" data-id="${esc(b.id)}" style="left:${ss.length > 1 ? i / (ss.length - 1) * 100 : 50}%"
+      aria-hidden="true">${esc(shortName(b.file))}<span>${esc(clock(b.created_at))}</span><b>${esc(word)}</b></div>`; }).join("")}</div></div>
     <svg id="ray" aria-hidden="true"><line></line></svg></div>`;
 }
 function ovPick(id) {
@@ -648,18 +683,35 @@ function ovPick(id) {
   ovSel.id = id;
   const show = () => { if (ovSel.id === id && $("#dt")) { $("#dt").innerHTML = ovDetail(rg.summaries.find(b => b.id === id)); ovTail(); } };
   document.querySelectorAll(".mk").forEach(m => m.setAttribute("aria-pressed", m.dataset.id === id));
+  document.querySelectorAll(".lb").forEach(l => l.classList.toggle("sel", l.dataset.id === id));
+  ovLabels();
   show();
   rgDetail(id).then(show, () => {});
 }
+// Labels that would touch are dropped; the selected one always stays, then the latest restorable, the first and the last.
+function ovLabels() {
+  const ls = [...document.querySelectorAll(".lb")];
+  ls.forEach(l => { l.hidden = false; });
+  const rank = l => l.classList.contains("sel") ? 0 : l.classList.contains("latest") ? 1 : l === ls[0] || l === ls.at(-1) ? 2 : 3;
+  const boxes = new Map(ls.map(l => [l, l.getBoundingClientRect()])), kept = [];
+  for (const l of [...ls].sort((a, b) => rank(a) - rank(b))) {
+    const r = boxes.get(l);
+    if (kept.some(k => r.left < k.right + 16 && r.right > k.left - 16)) l.hidden = true;
+    else kept.push(r);
+  }
+}
+addEventListener("resize", ovLabels);
 // A running log follows its newest line.
 const ovTail = () => { const t = $("#term"); if (t?.dataset.live != null) t.scrollTop = t.scrollHeight; };
-// A thin line from the cursor to the nearest mark (Jonas 15:35 "easy to not hover correctly over the dot"): no need to hit it.
+// A thin line from the cursor to the nearest mark (Jonas 15:35 "easy to not hover correctly over the dot"), only once the
+// cursor is near the timeline (15:55 "only select if quite close"); elsewhere the selection stays.
 function ovFrame() {
   ovPtr.frame = 0;
   const ray = $("#ray");
   if (!ray) return;
   let near, d = Infinity;
-  if (ovPtr.on) for (const m of document.querySelectorAll(".mk")) {
+  const tl = $(".tl")?.getBoundingClientRect(), close = tl && ovPtr.y > tl.top - 64 && ovPtr.y < tl.bottom && ovPtr.x > tl.left - 32 && ovPtr.x < tl.right + 32;
+  if (ovPtr.on && close) for (const m of document.querySelectorAll(".mk")) {
     const r = m.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, e = (x - ovPtr.x) ** 2 + (y - ovPtr.y) ** 2;
     if (e < d) { d = e; near = {m, x, y}; }
   }
@@ -672,7 +724,7 @@ function ovFrame() {
   ovPick(near.m.dataset.id);
 }
 const ovDraw = () => { ovPtr.frame ||= requestAnimationFrame(ovFrame); };
-// Mouse: anywhere on the page. Touch and pen: on the timeline, so the checks above still scroll.
+// Touch and pen: on the timeline only, so the checks above still scroll.
 const ovPoint = e => {
   if (view !== "overview" || (e.pointerType !== "mouse" && !e.target.closest?.(".tl"))) return;
   ovPtr.x = e.clientX; ovPtr.y = e.clientY; ovPtr.on = true; ovDraw();
@@ -723,7 +775,7 @@ function draw() {
   const one = view === "overview" && location.hash !== "#cert";
   $(".page").classList.toggle("full", one);
   $(".bar").hidden = $("#top").hidden = one;
-  if (one) { $("#body").innerHTML = ovView(); ovTail(); if (ovPtr.on) ovDraw(); return bind(); }
+  if (one) { $("#body").innerHTML = ovView(); ovLabels(); ovTail(); if (ovPtr.on) ovDraw(); return bind(); }
   const V = view === "drill" ? drView() : rgView();
   $("#meta").textContent = V.meta || "";
   $("#headline").innerHTML = V.headline || "";
